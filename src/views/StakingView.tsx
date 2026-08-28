@@ -4,6 +4,7 @@ import { useExchange } from '../context/ExchangeContext';
 import { SAMPLE_STAKING_VAULTS } from '../lib/constants';
 import { StakingVault } from '../types';
 import { formatCurrency, formatCrypto } from '../lib/utils';
+import { TokenLogo } from '../components/CryptoIcon';
 import { Lock, Sparkles, CheckCircle2, ShieldCheck, ArrowRight, Zap } from 'lucide-react';
 
 export const StakingView: React.FC = () => {
@@ -91,8 +92,13 @@ export const StakingView: React.FC = () => {
                 <span className="text-xs font-mono text-slate-400">Lock: {vault.lockDurationDays}d</span>
               </div>
 
-              <div className="font-bold text-sm text-white mt-3">{vault.name}</div>
-              <div className="text-[11px] text-slate-400">{vault.protocol}</div>
+              <div className="flex items-center gap-3 mt-3">
+                <TokenLogo symbol={vault.stakeToken.symbol} name={vault.stakeToken.name} src={vault.stakeToken.logoUrl} chainId={vault.stakeToken.chainId} className="w-8 h-8" />
+                <div>
+                  <div className="font-bold text-sm text-white">{vault.name}</div>
+                  <div className="text-[11px] text-slate-400">{vault.protocol}</div>
+                </div>
+              </div>
 
               <div className="mt-4 p-3 rounded-xl bg-[#121212] border border-white/5 space-y-1">
                 <div className="text-[10px] font-mono text-slate-400">ANNUAL PERCENTAGE YIELD</div>

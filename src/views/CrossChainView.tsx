@@ -4,6 +4,7 @@ import { useExchange } from '../context/ExchangeContext';
 import { SUPPORTED_CHAINS, VERIFIED_TOKENS } from '../lib/constants';
 import { ChainId, CrossChainBridgeRoute } from '../types';
 import { formatCurrency, formatCrypto } from '../lib/utils';
+import { ChainLogo, DexProtocolIcon } from '../components/CryptoIcon';
 import {
   GitFork,
   ArrowRight,
@@ -91,33 +92,39 @@ export const CrossChainView: React.FC = () => {
           {/* Source Chain */}
           <div className="p-4 rounded-xl bg-[#121212] border border-white/5 space-y-2">
             <div className="text-xs font-mono text-slate-400">Source Network</div>
-            <select
-              value={fromChain}
-              onChange={(e: any) => setFromChain(e.target.value)}
-              className="w-full bg-transparent font-bold text-white text-sm focus:outline-none cursor-pointer"
-            >
-              {Object.values(SUPPORTED_CHAINS).map((c) => (
-                <option key={c.id} value={c.id} className="bg-[#121212] text-white">
-                  {c.name} ({c.isL2 ? 'Layer 2' : 'L1'})
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <ChainLogo chainId={fromChain} className="w-5 h-5 shrink-0" />
+              <select
+                value={fromChain}
+                onChange={(e: any) => setFromChain(e.target.value)}
+                className="w-full bg-transparent font-bold text-white text-sm focus:outline-none cursor-pointer"
+              >
+                {Object.values(SUPPORTED_CHAINS).map((c) => (
+                  <option key={c.id} value={c.id} className="bg-[#121212] text-white">
+                    {c.name} ({c.isL2 ? 'Layer 2' : 'L1'})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Destination Chain */}
           <div className="p-4 rounded-xl bg-[#121212] border border-white/5 space-y-2">
             <div className="text-xs font-mono text-slate-400">Destination Network</div>
-            <select
-              value={toChain}
-              onChange={(e: any) => setToChain(e.target.value)}
-              className="w-full bg-transparent font-bold text-white text-sm focus:outline-none cursor-pointer"
-            >
-              {Object.values(SUPPORTED_CHAINS).map((c) => (
-                <option key={c.id} value={c.id} className="bg-[#121212] text-white">
-                  {c.name} ({c.isL2 ? 'Layer 2' : 'L1'})
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <ChainLogo chainId={toChain} className="w-5 h-5 shrink-0" />
+              <select
+                value={toChain}
+                onChange={(e: any) => setToChain(e.target.value)}
+                className="w-full bg-transparent font-bold text-white text-sm focus:outline-none cursor-pointer"
+              >
+                {Object.values(SUPPORTED_CHAINS).map((c) => (
+                  <option key={c.id} value={c.id} className="bg-[#121212] text-white">
+                    {c.name} ({c.isL2 ? 'Layer 2' : 'L1'})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -149,7 +156,7 @@ export const CrossChainView: React.FC = () => {
               }`}
             >
               <div className="flex items-center gap-3">
-                <span className="text-xl">{route.logo}</span>
+                <DexProtocolIcon dexId={route.protocolName} name={route.protocolName} className="w-8 h-8 rounded-xl shadow" />
                 <div>
                   <div className="font-bold text-xs text-white">{route.protocolName}</div>
                   <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">

@@ -2,6 +2,7 @@ import React from 'react';
 import { useExchange } from '../context/ExchangeContext';
 import { VERIFIED_TOKENS } from '../lib/constants';
 import { formatCurrency, formatPercent } from '../lib/utils';
+import { TokenLogo } from '../components/CryptoIcon';
 import { Star, ArrowUpRight, ArrowDownRight, ArrowLeftRight, Trash2 } from 'lucide-react';
 
 export const WatchlistView: React.FC = () => {
@@ -43,7 +44,7 @@ export const WatchlistView: React.FC = () => {
               <tr key={token.symbol} className="hover:bg-[#121212] transition-colors">
                 <td className="py-3.5 px-3">
                   <div className="flex items-center gap-3">
-                    <img src={token.logoUrl} alt={token.name} className="w-7 h-7 rounded-full" />
+                    <TokenLogo symbol={token.symbol} name={token.name} src={token.logoUrl} chainId={token.chainId} className="w-7 h-7" />
                     <div>
                       <div className="font-bold text-white">{token.symbol}</div>
                       <div className="text-[11px] text-slate-400">{token.name}</div>

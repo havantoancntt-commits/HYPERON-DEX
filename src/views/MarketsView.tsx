@@ -3,6 +3,7 @@ import { useExchange } from '../context/ExchangeContext';
 import { VERIFIED_TOKENS } from '../lib/constants';
 import { Token } from '../types';
 import { formatCurrency, formatPercent } from '../lib/utils';
+import { TokenLogo } from '../components/CryptoIcon';
 import {
   TrendingUp,
   ArrowUpRight,
@@ -128,7 +129,7 @@ export const MarketsView: React.FC = () => {
                       >
                         <Star className="w-3.5 h-3.5 fill-current" />
                       </button>
-                      <img src={token.logoUrl} alt={token.name} className="w-7 h-7 rounded-full" />
+                      <TokenLogo symbol={token.symbol} name={token.name} src={token.logoUrl} chainId={token.chainId} className="w-7 h-7" />
                       <div>
                         <div className="font-semibold text-white flex items-center gap-1.5">
                           {token.symbol}

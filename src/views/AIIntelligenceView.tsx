@@ -3,6 +3,7 @@ import { useExchange } from '../context/ExchangeContext';
 import { VERIFIED_TOKENS } from '../lib/constants';
 import { AIMarketIntelligence } from '../types';
 import { formatCurrency, formatPercent } from '../lib/utils';
+import { TokenLogo } from '../components/CryptoIcon';
 import {
   Cpu,
   Sparkles,
@@ -69,13 +70,14 @@ export const AIIntelligenceView: React.FC = () => {
               <button
                 key={t.symbol}
                 onClick={() => setSelectedSymbol(t.symbol)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-mono font-medium transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-medium transition-all cursor-pointer ${
                   selectedSymbol === t.symbol
                     ? 'bg-blue-600 text-white font-bold shadow-lg shadow-blue-900/20'
                     : 'bg-[#121212] text-slate-400 border border-white/5 hover:bg-[#181818] hover:text-slate-200'
                 }`}
               >
-                {t.symbol}
+                <TokenLogo symbol={t.symbol} className="w-3.5 h-3.5" />
+                <span>{t.symbol}</span>
               </button>
             ))}
             <button

@@ -3,6 +3,7 @@ import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
 import { VERIFIED_TOKENS, SUPPORTED_CHAINS } from '../lib/constants';
 import { shortenAddress, formatCurrency } from '../lib/utils';
+import { TokenLogo } from '../components/CryptoIcon';
 import {
   Wallet,
   ShieldCheck,
@@ -107,7 +108,12 @@ export const WalletView: React.FC = () => {
             <tbody className="divide-y divide-white/5">
               {Object.entries(tokenApprovals).map(([symbol, isApproved]) => (
                 <tr key={symbol} className="hover:bg-[#121212] transition-colors">
-                  <td className="py-3 px-3 font-bold text-white">{symbol}</td>
+                  <td className="py-3 px-3">
+                    <div className="flex items-center gap-2.5">
+                      <TokenLogo symbol={symbol} className="w-6 h-6" />
+                      <span className="font-bold text-white">{symbol}</span>
+                    </div>
+                  </td>
                   <td className="py-3 px-3 text-slate-300">
                     Aether Universal Router (0x3fC9...7FAD)
                   </td>

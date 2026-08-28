@@ -3,6 +3,7 @@ import { useExchange } from '../context/ExchangeContext';
 import { VERIFIED_TOKENS } from '../lib/constants';
 import { TokenSecurityReport } from '../types';
 import { shortenAddress } from '../lib/utils';
+import { TokenLogo } from '../components/CryptoIcon';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -99,9 +100,10 @@ export const AIRiskScannerView: React.FC = () => {
                 setTokenSymbol(t.symbol);
                 scanToken(t.address, t.symbol);
               }}
-              className="px-2.5 py-1 rounded-lg bg-[#121212] hover:bg-[#181818] border border-white/5 text-slate-300 font-mono text-[11px] transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#121212] hover:bg-[#181818] border border-white/5 text-slate-300 font-mono text-[11px] transition-colors cursor-pointer"
             >
-              {t.symbol}
+              <TokenLogo symbol={t.symbol} className="w-3.5 h-3.5" />
+              <span>{t.symbol}</span>
             </button>
           ))}
         </div>

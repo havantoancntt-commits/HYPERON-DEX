@@ -1,6 +1,7 @@
 import React from 'react';
 import { useExchange } from '../context/ExchangeContext';
 import { formatCurrency, formatPercent, shortenAddress } from '../lib/utils';
+import { TokenLogo } from '../components/CryptoIcon';
 import {
   Coins,
   ArrowUpRight,
@@ -35,7 +36,7 @@ export const TokenDetailsView: React.FC = () => {
       {/* Header Profile Card */}
       <div className="p-6 rounded-2xl bg-[#0A0A0A] border border-white/5 shadow-2xl flex flex-wrap items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <img src={selectedToken.logoUrl} alt={selectedToken.name} className="w-12 h-12 rounded-full" />
+          <TokenLogo symbol={selectedToken.symbol} name={selectedToken.name} src={selectedToken.logoUrl} chainId={selectedToken.chainId} className="w-12 h-12" />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-bold text-white">{selectedToken.name}</h1>
