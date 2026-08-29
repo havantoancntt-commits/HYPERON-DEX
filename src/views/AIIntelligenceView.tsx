@@ -66,9 +66,9 @@ export const AIIntelligenceView: React.FC = () => {
 
           {/* Asset Selector */}
           <div className="flex items-center gap-2">
-            {VERIFIED_TOKENS.slice(0, 5).map((t) => (
+            {VERIFIED_TOKENS.slice(0, 5).map((t, idx) => (
               <button
-                key={t.symbol}
+                key={`${t.chainId}-${t.symbol}-${idx}`}
                 onClick={() => setSelectedSymbol(t.symbol)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-medium transition-all cursor-pointer ${
                   selectedSymbol === t.symbol

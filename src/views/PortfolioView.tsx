@@ -28,7 +28,7 @@ export const PortfolioView: React.FC = () => {
     { token: getLiveToken('USDT'), amount: balances.USDT || 5600, avgBuyPrice: 1.00 },
     { token: getLiveToken('WBTC'), amount: balances.WBTC || 0.38, avgBuyPrice: 68400.00 },
     { token: getLiveToken('UNI'), amount: balances.UNI || 240, avgBuyPrice: 7.20 },
-    { token: getLiveToken('AETH'), amount: balances.AETH || 2500, avgBuyPrice: 3.10 },
+    { token: getLiveToken('HYPR'), amount: balances.HYPR || 2500, avgBuyPrice: 3.10 },
   ];
 
   const totalValue = holdings.reduce((sum, h) => sum + h.amount * h.token.priceUsd, 0);
@@ -100,12 +100,12 @@ export const PortfolioView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {holdings.map(({ token, amount, avgBuyPrice }) => {
+              {holdings.map(({ token, amount, avgBuyPrice }, idx) => {
                 const value = amount * token.priceUsd;
                 const pnl = (token.priceUsd - avgBuyPrice) * amount;
                 const pnlPercent = ((token.priceUsd - avgBuyPrice) / avgBuyPrice) * 100;
                 return (
-                  <tr key={token.symbol} className="hover:bg-[#121212] transition-colors">
+                  <tr key={`${token.chainId}-${token.symbol}-${idx}`} className="hover:bg-[#121212] transition-colors">
                     <td className="py-3.5 px-3">
                       <div className="flex items-center gap-2.5">
                         <TokenLogo symbol={token.symbol} name={token.name} src={token.logoUrl} chainId={token.chainId} className="w-7 h-7" />

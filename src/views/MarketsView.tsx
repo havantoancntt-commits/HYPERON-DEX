@@ -29,7 +29,7 @@ export const MarketsView: React.FC = () => {
     if (selectedSector === 'L1') return ['ETH', 'BNB', 'SOL', 'AVAX', 'SUI', 'APT', 'SEI'].includes(t.symbol);
     if (selectedSector === 'L2') return ['ARB', 'OP', 'POL', 'BASE'].includes(t.symbol);
     if (selectedSector === 'DEFI') return ['UNI', 'AAVE', 'LINK', 'MKR', 'CRV'].includes(t.symbol);
-    if (selectedSector === 'AI') return ['AETH', 'TAO', 'RENDER', 'FET', 'AGIX'].includes(t.symbol);
+    if (selectedSector === 'AI') return ['HYPR', 'AETH', 'TAO', 'RENDER', 'FET', 'AGIX'].includes(t.symbol);
     if (selectedSector === 'STABLES') return ['USDC', 'USDT', 'DAI'].includes(t.symbol);
     return true;
   }).sort((a, b) => {
@@ -115,10 +115,10 @@ export const MarketsView: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {filteredTokens.map((token) => {
+            {filteredTokens.map((token, idx) => {
               const isFav = watchlist.includes(token.symbol);
               return (
-                <tr key={token.symbol} className="hover:bg-[#121212] transition-colors group">
+                <tr key={`${token.chainId}-${token.address}-${token.symbol}-${idx}`} className="hover:bg-[#121212] transition-colors group">
                   <td className="py-3.5 px-3">
                     <div className="flex items-center gap-3">
                       <button

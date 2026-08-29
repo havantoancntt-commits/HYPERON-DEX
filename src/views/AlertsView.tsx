@@ -90,8 +90,8 @@ export const AlertsView: React.FC = () => {
               onChange={(e) => setNewSymbol(e.target.value)}
               className="w-full mt-1 p-2 rounded-xl bg-[#121212] border border-white/5 text-slate-200 focus:outline-none focus:border-blue-500"
             >
-              {VERIFIED_TOKENS.map((t) => (
-                <option key={t.symbol} value={t.symbol}>{t.symbol}</option>
+              {VERIFIED_TOKENS.map((t, idx) => (
+                <option key={`${t.chainId}-${t.symbol}-${idx}`} value={t.symbol}>{t.symbol}</option>
               ))}
               <option value="GAS">ETH Gas (Gwei)</option>
             </select>

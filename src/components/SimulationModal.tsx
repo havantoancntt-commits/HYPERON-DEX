@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useExchange } from '../context/ExchangeContext';
 import { useWallet } from '../context/WalletContext';
-import { ShieldCheck, AlertTriangle, CheckCircle2, XCircle, ArrowRight, Terminal, Lock } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, CheckCircle2, Terminal, Lock } from 'lucide-react';
 import { formatCurrency, formatCrypto } from '../lib/utils';
 
 export const SimulationModal: React.FC = () => {
-  const { activeSimulation, setActiveSimulation, addToast } = useExchange();
-  const { executeTransaction } = useWallet();
+  const { activeSimulation, setActiveSimulation, activeQuote, setActiveQuote, addToast } = useExchange();
+  const { executeTransaction, chainId } = useWallet();
   const [isExecuting, setIsExecuting] = useState(false);
 
   if (!activeSimulation) return null;
@@ -14,14 +14,18 @@ export const SimulationModal: React.FC = () => {
   const handleConfirmAndSign = async () => {
     setIsExecuting(true);
     try {
-      await new Promise((r) => setTimeout(r, 900)); // realistic wallet signing delay
+      const fromToken = activeQuote?.fromToken?.symbol || 'ETH';
+      const toToken = activeQuote?.toToken?.symbol || 'USDC';
+      const fromAmount = activeQuote?.fromAmount || 1.0;
+      const toAmount = activeQuote?.expectedOutput || 0;
+
       const tx = await executeTransaction({
-        chainId: 'ethereum',
+        chainId: (chainId as any) || 'ethereum',
         type: 'SWAP',
-        fromToken: 'ETH',
-        toToken: 'AETH',
-        fromAmount: 1.0,
-        toAmount: 708.33,
+        fromToken,
+        toToken,
+        fromAmount,
+        toAmount,
         gasSpentGwei: 19,
         gasSpentUsd: activeSimulation.gasCostUsd,
       });
@@ -32,10 +36,11 @@ export const SimulationModal: React.FC = () => {
         type: 'success',
       });
       setActiveSimulation(null);
-    } catch (err) {
+      setActiveQuote(null);
+    } catch (err: any) {
       addToast({
         title: 'Execution Failed',
-        message: 'User rejected signing or RPC simulation rejected transaction.',
+        message: err?.message || 'User rejected signing or RPC simulation rejected transaction.',
         type: 'error',
       });
     } finally {
@@ -65,12 +70,34 @@ export const SimulationModal: React.FC = () => {
             </div>
           </div>
           <button
-            onClick={() => setActiveSimulation(null)}
+            onClick={() => {
+              setActiveSimulation(null);
+              setActiveQuote(null);
+            }}
             className="text-slate-400 hover:text-white text-xs px-2.5 py-1 rounded-lg bg-[#181818] border border-white/5 transition-colors cursor-pointer"
           >
             Cancel
           </button>
         </div>
+
+        {/* Swap Summary */}
+        {activeQuote && (
+          <div className="p-3 rounded-xl bg-[#141414] border border-white/5 flex items-center justify-between text-xs">
+            <div>
+              <span className="text-slate-400">Trading:</span>{' '}
+              <span className="font-bold text-white font-mono">
+                {activeQuote.fromAmount} {activeQuote.fromToken.symbol}
+              </span>
+            </div>
+            <div className="text-slate-500">→</div>
+            <div>
+              <span className="text-slate-400">Expected:</span>{' '}
+              <span className="font-bold text-emerald-400 font-mono">
+                {activeQuote.expectedOutput} {activeQuote.toToken.symbol}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Verification Checkpoints */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -109,7 +136,9 @@ export const SimulationModal: React.FC = () => {
             <span className="flex items-center gap-1.5 text-slate-300">
               <Terminal className="w-3.5 h-3.5 text-blue-400" /> Sandboxed Trace (Block #{activeSimulation.blockNumberSimulated})
             </span>
-            <span className="text-[10px] text-emerald-400">Gas Est: {activeSimulation.gasEstimated.toLocaleString()} units (~${activeSimulation.gasCostUsd.toFixed(2)})</span>
+            <span className="text-[10px] text-emerald-400">
+              Gas Est: {activeSimulation.gasEstimated.toLocaleString()} units (~${activeSimulation.gasCostUsd.toFixed(2)})
+            </span>
           </div>
           <div className="max-h-28 overflow-y-auto space-y-1 text-slate-400 pt-1">
             {activeSimulation.simulationLogs.map((log, i) => (
@@ -142,7 +171,10 @@ export const SimulationModal: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setActiveSimulation(null)}
+              onClick={() => {
+                setActiveSimulation(null);
+                setActiveQuote(null);
+              }}
               className="px-4 py-2 rounded-xl bg-[#181818] hover:bg-[#222222] border border-white/5 text-xs font-medium text-slate-300 transition-colors cursor-pointer"
             >
               Reject

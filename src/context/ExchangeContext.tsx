@@ -54,6 +54,8 @@ interface ExchangeContextType {
   removeToast: (id: string) => void;
   activeSimulation: TransactionSimulation | null;
   setActiveSimulation: (sim: TransactionSimulation | null) => void;
+  activeQuote: SwapQuote | null;
+  setActiveQuote: (quote: SwapQuote | null) => void;
   openSwapWithTokens: (fromSymbol: string, toSymbol: string) => void;
   openTokenScannerWithAddress: (address: string, symbol: string) => void;
   openPerpetualsWithSignal: (signal: AITradingSignal) => void;
@@ -88,6 +90,7 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     },
   ]);
   const [activeSimulation, setActiveSimulation] = useState<TransactionSimulation | null>(null);
+  const [activeQuote, setActiveQuote] = useState<SwapQuote | null>(null);
   const [selectedSignal, setSelectedSignal] = useState<AITradingSignal | null>(null);
 
   // Real-time price tracking state
@@ -146,7 +149,22 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const found = liveTokens.find((t) => t.symbol.toUpperCase() === symbol.toUpperCase());
       if (found) return found;
       const staticFound = VERIFIED_TOKENS.find((t) => t.symbol.toUpperCase() === symbol.toUpperCase());
-      return staticFound || VERIFIED_TOKENS[0];
+      if (staticFound) return staticFound;
+      return {
+        address: '0x0000000000000000000000000000000000000000',
+        symbol: symbol.toUpperCase(),
+        name: symbol.toUpperCase(),
+        decimals: 18,
+        chainId: 'ethereum',
+        priceUsd: 1.0,
+        change24h: 0,
+        volume24h: 0,
+        liquidityUsd: 0,
+        marketCapUsd: 0,
+        logoUrl: '',
+        category: 'DeFi',
+        isVerified: false,
+      };
     },
     [liveTokens]
   );
@@ -240,6 +258,8 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         removeToast,
         activeSimulation,
         setActiveSimulation,
+        activeQuote,
+        setActiveQuote,
         openSwapWithTokens,
         openTokenScannerWithAddress,
         openPerpetualsWithSignal,

@@ -25,7 +25,7 @@ import {
 
 export const SwapView: React.FC = () => {
   const { balances, isConnected, connectWallet, slippage, setSlippage, mevProtected, setMevProtected } = useWallet();
-  const { selectedPair, setSelectedPair, setActiveSimulation, addToast, getLiveToken, liveTokens, isPriceLive } = useExchange();
+  const { selectedPair, setSelectedPair, setActiveSimulation, setActiveQuote, addToast, getLiveToken, liveTokens, isPriceLive } = useExchange();
 
   const [fromSymbol, setFromSymbol] = useState<string>(selectedPair.base?.symbol || 'ETH');
   const [toSymbol, setToSymbol] = useState<string>(selectedPair.quote?.symbol || 'USDC');
@@ -79,6 +79,7 @@ export const SwapView: React.FC = () => {
 
   const handleInitiateSwap = async () => {
     if (!quote) return;
+    setActiveQuote(quote);
     try {
       const res = await fetch('/api/swaps/simulate', {
         method: 'POST',
@@ -417,9 +418,9 @@ export const SwapView: React.FC = () => {
             </div>
 
             <div className="max-h-80 overflow-y-auto space-y-1 scrollbar-none">
-              {filteredSelectionTokens.map((token) => (
+              {filteredSelectionTokens.map((token, idx) => (
                 <button
-                  key={token.symbol}
+                  key={`${token.chainId}-${token.address}-${token.symbol}-${idx}`}
                   onClick={() => {
                     if (showFromSelect) setFromSymbol(token.symbol);
                     if (showToSelect) setToSymbol(token.symbol);

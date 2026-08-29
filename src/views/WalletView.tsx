@@ -106,8 +106,8 @@ export const WalletView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {Object.entries(tokenApprovals).map(([symbol, isApproved]) => (
-                <tr key={symbol} className="hover:bg-[#121212] transition-colors">
+              {Object.entries(tokenApprovals).map(([symbol, isApproved], idx) => (
+                <tr key={`${symbol}-${idx}`} className="hover:bg-[#121212] transition-colors">
                   <td className="py-3 px-3">
                     <div className="flex items-center gap-2.5">
                       <TokenLogo symbol={symbol} className="w-6 h-6" />

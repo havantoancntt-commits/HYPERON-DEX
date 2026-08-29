@@ -40,8 +40,8 @@ export const WatchlistView: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
-            {watchedTokens.map((token) => (
-              <tr key={token.symbol} className="hover:bg-[#121212] transition-colors">
+            {watchedTokens.map((token, idx) => (
+              <tr key={`${token.chainId}-${token.symbol}-${idx}`} className="hover:bg-[#121212] transition-colors">
                 <td className="py-3.5 px-3">
                   <div className="flex items-center gap-3">
                     <TokenLogo symbol={token.symbol} name={token.name} src={token.logoUrl} chainId={token.chainId} className="w-7 h-7" />

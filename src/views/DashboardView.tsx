@@ -312,10 +312,10 @@ export const DashboardView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.04]">
-              {trendingTokens.map((token) => {
+              {trendingTokens.map((token, idx) => {
                 const tick = tickDirections[token.symbol] || 'same';
                 return (
-                  <tr key={token.symbol} className="hover:bg-white/[0.02] transition-colors group">
+                  <tr key={`${token.chainId}-${token.address}-${token.symbol}-${idx}`} className="hover:bg-white/[0.02] transition-colors group">
                     <td className="py-3.5 px-3">
                       <div className="flex items-center gap-3">
                         <TokenLogo symbol={token.symbol} name={token.name} src={token.logoUrl} chainId={token.chainId} className="w-8 h-8" />

@@ -115,11 +115,11 @@ export const Header: React.FC = () => {
 
           {/* Quick Real-Time Asset Stream */}
           <div className="flex items-center gap-4 text-xs font-mono">
-            {liveTokens.slice(0, 6).map((t) => {
+            {liveTokens.slice(0, 6).map((t, idx) => {
               const tick = tickDirections[t.symbol] || 'same';
               return (
                 <button
-                  key={t.symbol}
+                  key={`${t.chainId}-${t.symbol}-${idx}`}
                   onClick={() => {
                     setSelectedToken(t);
                     setActiveView('trade');
@@ -441,9 +441,9 @@ export const Header: React.FC = () => {
                 <span>Verified Cross-Chain Assets</span>
                 <span className="text-cyan-400">INSTANT SWAP / TRADE</span>
               </div>
-              {filteredTokens.map((token) => (
+              {filteredTokens.map((token, idx) => (
                 <button
-                  key={token.symbol}
+                  key={`${token.chainId}-${token.address}-${token.symbol}-${idx}`}
                   onClick={() => {
                     setSelectedToken(token);
                     setActiveView('token-details');

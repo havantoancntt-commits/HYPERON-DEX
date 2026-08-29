@@ -349,11 +349,11 @@ export const TradeTerminalView: React.FC = () => {
 
         {/* Quick Pair Ticker Badges */}
         <div className="flex items-center gap-1.5 overflow-x-auto">
-          {VERIFIED_TOKENS.slice(0, 6).map((t) => {
+          {VERIFIED_TOKENS.slice(0, 6).map((t, idx) => {
             const currentLive = getLiveToken(t.symbol);
             return (
               <button
-                key={t.symbol}
+                key={`${t.chainId}-${t.symbol}-${idx}`}
                 onClick={() => setActiveSymbol(t.symbol)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-mono transition-all cursor-pointer flex items-center gap-1.5 ${
                   activeSymbol === t.symbol

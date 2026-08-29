@@ -92,9 +92,9 @@ export const AIRiskScannerView: React.FC = () => {
         {/* Quick select presets */}
         <div className="flex items-center gap-2 overflow-x-auto text-xs">
           <span className="text-slate-500 font-mono text-[11px]">Audit Presets:</span>
-          {VERIFIED_TOKENS.slice(0, 5).map((t) => (
+          {VERIFIED_TOKENS.slice(0, 5).map((t, idx) => (
             <button
-              key={t.symbol}
+              key={`${t.chainId}-${t.symbol}-${idx}`}
               onClick={() => {
                 setTokenAddress(t.address);
                 setTokenSymbol(t.symbol);
