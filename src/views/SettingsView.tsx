@@ -103,7 +103,7 @@ export const SettingsView: React.FC = () => {
             <Lock className="w-3.5 h-3.5 text-blue-400" /> Non-Custodial Legal & Risk Notice
           </div>
           <p>
-            AetherDEX is an open-source decentralized exchange aggregator. Smart contracts operate strictly without custody of your private cryptographic keys. All trading actions, liquidity provisions, and yield strategies are non-reversible once broadcast to finalized blockchain blocks.
+            HYPERON DEX is an institutional-grade open-source decentralized exchange aggregator and AI intelligence terminal. Smart contracts operate strictly without custody of your private cryptographic keys. All trading actions, liquidity provisions, and yield strategies are non-reversible once broadcast to finalized blockchain blocks.
           </p>
         </div>
 

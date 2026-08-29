@@ -122,6 +122,18 @@ const realTimePriceMap: Record<string, ServerLivePrice> = {
     tickDirection: 'up',
     prevPrice: 11.42,
   },
+  HYPR: {
+    symbol: 'HYPR',
+    priceUsd: 4.82,
+    change24h: 18.65,
+    high24h: 5.15,
+    low24h: 3.95,
+    volume24h: 95000000,
+    marketCapUsd: 482000000,
+    lastUpdated: Date.now(),
+    tickDirection: 'up',
+    prevPrice: 4.80,
+  },
   AETH: {
     symbol: 'AETH',
     priceUsd: 4.82,
@@ -337,7 +349,7 @@ app.get("/api/prices/realtime", (req: Request, res: Response) => {
   res.json({
     prices: realTimePriceMap,
     timestamp: Date.now(),
-    source: "AetherDEX Real-Time Multi-Exchange Oracle",
+    source: "HYPERON DEX Real-Time Multi-Exchange Oracle",
   });
 });
 
@@ -788,7 +800,7 @@ Return strictly valid JSON:
 app.post("/api/ai/portfolio-copilot", async (req: Request, res: Response) => {
   const { message, portfolioSummary } = req.body;
 
-  const prompt = `You are AetherDEX AI Portfolio Copilot, an institutional non-custodial risk advisory assistant.
+  const prompt = `You are HYPERON DEX AI Portfolio Copilot, an institutional non-custodial risk advisory assistant.
 User question: "${message}"
 Current portfolio state: ${JSON.stringify(portfolioSummary || { totalValue: 48500, ethHoldings: 65, stables: 25, altcoins: 10 })}
 
@@ -907,6 +919,544 @@ app.get("/api/staking/vaults", (req: Request, res: Response) => {
 });
 
 // -------------------------------------------------------------
+// AI Alpha Order Signals & Auto-Execution Engine (High Win Rate)
+// -------------------------------------------------------------
+app.get("/api/ai/signals", async (req: Request, res: Response) => {
+  const ethPrice = realTimePriceMap.ETH?.priceUsd || 3420.50;
+  const btcPrice = realTimePriceMap.WBTC?.priceUsd || 87400.00;
+  const solPrice = realTimePriceMap.SOL?.priceUsd || 198.50;
+  const aethPrice = realTimePriceMap.AETH?.priceUsd || 4.82;
+  const uniPrice = realTimePriceMap.UNI?.priceUsd || 11.45;
+  const linkPrice = realTimePriceMap.LINK?.priceUsd || 19.80;
+
+  const signals = [
+    {
+      id: 'sig-hypr-01',
+      symbol: 'HYPR',
+      pair: 'HYPR/USDC',
+      name: 'Hyperon Quantum AI',
+      chainId: 'arbitrum',
+      direction: 'LONG',
+      signalType: 'BREAKOUT',
+      winRateProbability: 94.2,
+      confidenceScore: 95,
+      riskRewardRatio: '1:5.4',
+      timeframe: '4H',
+      currentPrice: aethPrice,
+      entryZoneMin: Number((aethPrice * 0.985).toFixed(2)),
+      entryZoneMax: Number((aethPrice * 1.015).toFixed(2)),
+      takeProfit1: Number((aethPrice * 1.12).toFixed(2)),
+      takeProfit2: Number((aethPrice * 1.28).toFixed(2)),
+      takeProfit3: Number((aethPrice * 1.65).toFixed(2)),
+      stopLoss: Number((aethPrice * 0.965).toFixed(2)),
+      potentialGainPercent: 65.0,
+      maxLossPercent: 3.5,
+      recommendedLeverage: 10,
+      recommendedPositionSizePercent: 12,
+      indicatorsConfluence: {
+        rsi: 62.4,
+        macd: 'Strong Bullish Expansion (+0.42)',
+        whaleFlowUsd: '+$18.4M Net Inflow (Top 5 Whales Accumulating)',
+        volumeMultiplier: '4.8x 24h Average Spike',
+        orderbookImbalance: '+68% Bid Dominance',
+        fundingRate: '+0.0042% (Optimal Long Cost)',
+      },
+      aiRationale: 'Multi-timeframe liquidity compression breaking out with institutional volume delta. On-chain whale wallets have accumulated 3.8M AETH in the last 6 hours with zero sell-side pressure on Arbitrum router.',
+      invalidationCriteria: 'Sustained 15M candle close below $4.65 or sudden CEX inflow exceeding $5M.',
+      status: 'ACTIVE',
+      timestamp: Date.now() - 1000 * 60 * 12,
+      backtestStats: {
+        historicalWinRate: 91.8,
+        sampleTradesCount: 342,
+        profitFactor: 4.12,
+      },
+    },
+    {
+      id: 'sig-eth-02',
+      symbol: 'ETH',
+      pair: 'ETH/USDC',
+      name: 'Ethereum',
+      chainId: 'ethereum',
+      direction: 'LONG',
+      signalType: 'WHALE_ACCUMULATION',
+      winRateProbability: 91.5,
+      confidenceScore: 92,
+      riskRewardRatio: '1:4.8',
+      timeframe: '1H',
+      currentPrice: ethPrice,
+      entryZoneMin: Number((ethPrice * 0.992).toFixed(2)),
+      entryZoneMax: Number((ethPrice * 1.008).toFixed(2)),
+      takeProfit1: Number((ethPrice * 1.065).toFixed(2)),
+      takeProfit2: Number((ethPrice * 1.142).toFixed(2)),
+      takeProfit3: Number((ethPrice * 1.280).toFixed(2)),
+      stopLoss: Number((ethPrice * 0.975).toFixed(2)),
+      potentialGainPercent: 28.0,
+      maxLossPercent: 2.5,
+      recommendedLeverage: 15,
+      recommendedPositionSizePercent: 15,
+      indicatorsConfluence: {
+        rsi: 58.1,
+        macd: 'Golden Cross Confirmation',
+        whaleFlowUsd: '+$84.2M Inflow (CEX Outflow Trend)',
+        volumeMultiplier: '2.6x Normal',
+        orderbookImbalance: '+54% Bid Side Heavy',
+        fundingRate: '+0.0085%/8h',
+      },
+      aiRationale: 'Strong on-chain exchange reserve drainage (-48k ETH in 24h) combined with 4-hour ascending triangle breakout above local resistance level. Volatility squeeze indicates violent upward continuation.',
+      invalidationCriteria: 'Hourly breakdown below $3,330 with high selling volume.',
+      status: 'ACTIVE',
+      timestamp: Date.now() - 1000 * 60 * 25,
+      backtestStats: {
+        historicalWinRate: 89.4,
+        sampleTradesCount: 512,
+        profitFactor: 3.78,
+      },
+    },
+    {
+      id: 'sig-btc-03',
+      symbol: 'WBTC',
+      pair: 'WBTC/USDC',
+      name: 'Wrapped Bitcoin',
+      chainId: 'ethereum',
+      direction: 'LONG',
+      signalType: 'MOMENTUM_TREND',
+      winRateProbability: 93.1,
+      confidenceScore: 94,
+      riskRewardRatio: '1:4.2',
+      timeframe: '4H',
+      currentPrice: btcPrice,
+      entryZoneMin: Number((btcPrice * 0.994).toFixed(0)),
+      entryZoneMax: Number((btcPrice * 1.006).toFixed(0)),
+      takeProfit1: Number((btcPrice * 1.048).toFixed(0)),
+      takeProfit2: Number((btcPrice * 1.095).toFixed(0)),
+      takeProfit3: Number((btcPrice * 1.180).toFixed(0)),
+      stopLoss: Number((btcPrice * 0.978).toFixed(0)),
+      potentialGainPercent: 18.0,
+      maxLossPercent: 2.2,
+      recommendedLeverage: 20,
+      recommendedPositionSizePercent: 20,
+      indicatorsConfluence: {
+        rsi: 66.8,
+        macd: 'Sustained Bull Trend (Daily MACD Positive)',
+        whaleFlowUsd: '+$142.5M Institutional Inflow',
+        volumeMultiplier: '3.1x',
+        orderbookImbalance: '+62% Buy Walls',
+        fundingRate: '+0.0102%/8h',
+      },
+      aiRationale: 'Institutional spot ETF net inflows combined with miner reserves holding steady. Derivatives open interest clearing short positions with clean ascending channel.',
+      invalidationCriteria: 'Loss of $85,200 support level on 4-hour candle close.',
+      status: 'TRIGGERED',
+      timestamp: Date.now() - 1000 * 60 * 45,
+      backtestStats: {
+        historicalWinRate: 92.6,
+        sampleTradesCount: 680,
+        profitFactor: 4.45,
+      },
+    },
+    {
+      id: 'sig-sol-04',
+      symbol: 'SOL',
+      pair: 'SOL/USDC',
+      name: 'Solana',
+      chainId: 'ethereum',
+      direction: 'LONG',
+      signalType: 'LIQUIDITY_SWEEP',
+      winRateProbability: 90.8,
+      confidenceScore: 89,
+      riskRewardRatio: '1:4.5',
+      timeframe: '15M',
+      currentPrice: solPrice,
+      entryZoneMin: Number((solPrice * 0.985).toFixed(2)),
+      entryZoneMax: Number((solPrice * 1.012).toFixed(2)),
+      takeProfit1: Number((solPrice * 1.085).toFixed(2)),
+      takeProfit2: Number((solPrice * 1.185).toFixed(2)),
+      takeProfit3: Number((solPrice * 1.350).toFixed(2)),
+      stopLoss: Number((solPrice * 0.965).toFixed(2)),
+      potentialGainPercent: 35.0,
+      maxLossPercent: 3.5,
+      recommendedLeverage: 12,
+      recommendedPositionSizePercent: 10,
+      indicatorsConfluence: {
+        rsi: 48.9,
+        macd: 'Bullish Divergence on 15M/1H',
+        whaleFlowUsd: '+$24.6M DEX Volume Spike',
+        volumeMultiplier: '3.9x',
+        orderbookImbalance: '+59% Bid Depth',
+        fundingRate: '+0.0075%/8h',
+      },
+      aiRationale: 'Clean liquidation cascade sweep below local support followed by rapid V-shape recovery with massive taker buy orders. Prime high-probability continuation setup.',
+      invalidationCriteria: 'Break below swing low $191.50.',
+      status: 'ACTIVE',
+      timestamp: Date.now() - 1000 * 60 * 8,
+      backtestStats: {
+        historicalWinRate: 88.2,
+        sampleTradesCount: 420,
+        profitFactor: 3.52,
+      },
+    },
+    {
+      id: 'sig-uni-05',
+      symbol: 'UNI',
+      pair: 'UNI/USDC',
+      name: 'Uniswap',
+      chainId: 'ethereum',
+      direction: 'LONG',
+      signalType: 'BREAKOUT',
+      winRateProbability: 88.9,
+      confidenceScore: 87,
+      riskRewardRatio: '1:3.9',
+      timeframe: '4H',
+      currentPrice: uniPrice,
+      entryZoneMin: Number((uniPrice * 0.98).toFixed(2)),
+      entryZoneMax: Number((uniPrice * 1.02).toFixed(2)),
+      takeProfit1: Number((uniPrice * 1.10).toFixed(2)),
+      takeProfit2: Number((uniPrice * 1.22).toFixed(2)),
+      takeProfit3: Number((uniPrice * 1.45).toFixed(2)),
+      stopLoss: Number((uniPrice * 0.96).toFixed(2)),
+      potentialGainPercent: 45.0,
+      maxLossPercent: 4.0,
+      recommendedLeverage: 8,
+      recommendedPositionSizePercent: 8,
+      indicatorsConfluence: {
+        rsi: 59.3,
+        macd: 'Ascending Histogram',
+        whaleFlowUsd: '+$8.2M Net Inflow',
+        volumeMultiplier: '2.4x',
+        orderbookImbalance: '+51% Buy Side',
+        fundingRate: '+0.0055%/8h',
+      },
+      aiRationale: 'Fee-switch governance catalyst sentiment coupled with multi-month base accumulation breakout.',
+      invalidationCriteria: 'Loss of $10.80 support.',
+      status: 'TARGET_1_HIT',
+      timestamp: Date.now() - 1000 * 60 * 90,
+      backtestStats: {
+        historicalWinRate: 87.5,
+        sampleTradesCount: 290,
+        profitFactor: 3.35,
+      },
+    },
+    {
+      id: 'sig-link-06',
+      symbol: 'LINK',
+      pair: 'LINK/USDC',
+      name: 'Chainlink',
+      chainId: 'ethereum',
+      direction: 'LONG',
+      signalType: 'GOLDEN_CROSS',
+      winRateProbability: 92.0,
+      confidenceScore: 91,
+      riskRewardRatio: '1:4.6',
+      timeframe: '1D',
+      currentPrice: linkPrice,
+      entryZoneMin: Number((linkPrice * 0.99).toFixed(2)),
+      entryZoneMax: Number((linkPrice * 1.015).toFixed(2)),
+      takeProfit1: Number((linkPrice * 1.095).toFixed(2)),
+      takeProfit2: Number((linkPrice * 1.220).toFixed(2)),
+      takeProfit3: Number((linkPrice * 1.500).toFixed(2)),
+      stopLoss: Number((linkPrice * 0.970).toFixed(2)),
+      potentialGainPercent: 50.0,
+      maxLossPercent: 3.0,
+      recommendedLeverage: 10,
+      recommendedPositionSizePercent: 10,
+      indicatorsConfluence: {
+        rsi: 61.2,
+        macd: 'Daily EMA 50/200 Golden Cross',
+        whaleFlowUsd: '+$16.8M Smart Money Staking Inflow',
+        volumeMultiplier: '2.8x',
+        orderbookImbalance: '+64% Bid Dominance',
+        fundingRate: '+0.0062%/8h',
+      },
+      aiRationale: 'CCIP cross-chain settlement volume expansion and institutional staking lockups driving supply scarcity.',
+      invalidationCriteria: 'Daily close below $19.10.',
+      status: 'ACTIVE',
+      timestamp: Date.now() - 1000 * 60 * 30,
+      backtestStats: {
+        historicalWinRate: 90.4,
+        sampleTradesCount: 380,
+        profitFactor: 3.95,
+      },
+    },
+  ];
+
+  res.json({
+    signals,
+    meta: {
+      totalSignals: signals.length,
+      averageWinRate: 91.75,
+      overallPnlPercent: 482.6,
+      profitFactor: 3.93,
+      verifiedModel: 'Gemini 3.7 Deep Quantum Alpha',
+      timestamp: Date.now(),
+    },
+  });
+});
+
+// -------------------------------------------------------------
+// On-Chain Whale & Smart Money Radar API
+// -------------------------------------------------------------
+app.get("/api/onchain/whales", (req: Request, res: Response) => {
+  const transactions = [
+    {
+      id: 'tx-whale-01',
+      txHash: '0x8f2d9c44b1a3e8712f0099e4b6c31a78891d4e0821cba34091aefc321890abcd',
+      timestamp: Date.now() - 1000 * 45,
+      walletLabel: 'Jump Crypto / Tier-1 Market Maker',
+      walletTier: 'Mega Whale (> $25M)',
+      action: 'ACCUMULATE',
+      symbol: 'AETH',
+      amountTokens: 2500000,
+      valueUsd: 12050000,
+      fromAddress: '0x1111111254fb6c44bac0bed2854e76f90643097d (1inch v5 Router)',
+      toAddress: '0x9a84d262529944a95a485542845c43d8a0f9b311 (Vault MultiSig)',
+      aiSentiment: 'BULLISH',
+      aiInterpretation: 'Massive aggressive spot buy absorption across Uniswap v3 & Camelot liquidity pools with no immediate outbound transfers.',
+    },
+    {
+      id: 'tx-whale-02',
+      txHash: '0x33b45c22998a1f33ee4901bba29487cfa90123efca8911029485bbceee981290',
+      timestamp: Date.now() - 1000 * 180,
+      walletLabel: 'Paradigm Associated Alpha Fund',
+      walletTier: 'Institutional Fund',
+      action: 'CEX_WITHDRAWAL',
+      symbol: 'ETH',
+      amountTokens: 14500,
+      valueUsd: 49597250,
+      fromAddress: '0x28c6c06298d514db089934071355e5743bf21d60 (Binance Hot Wallet)',
+      toAddress: '0x3cd751e6b0078be393132286c442345e5dc49699 (Institutional Safe)',
+      aiSentiment: 'BULLISH',
+      aiInterpretation: 'Direct cold storage accumulation removing 14,500 ETH from liquid exchange orderbooks. Bullish supply constraint signal.',
+    },
+    {
+      id: 'tx-whale-03',
+      txHash: '0x71aa2948bbcae1092847551029384755bbceed10294875661102938475661122',
+      timestamp: Date.now() - 1000 * 320,
+      walletLabel: 'Wintermute Arbitrage Router',
+      walletTier: 'Market Maker',
+      action: 'LIQUIDITY_ADD',
+      symbol: 'WBTC',
+      amountTokens: 180,
+      valueUsd: 15732000,
+      fromAddress: '0xWintermuteMEVBot...9021',
+      toAddress: '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640 (Uniswap v3 0.05% Pool)',
+      aiSentiment: 'NEUTRAL',
+      aiInterpretation: 'Deep concentrated liquidity provision in $86,500 - $89,000 range to capture trading fees during high volatility window.',
+    },
+    {
+      id: 'tx-whale-04',
+      txHash: '0x12c9485511029384756611228833746655102938475661102948576611029488',
+      timestamp: Date.now() - 1000 * 600,
+      walletLabel: '0x72a...Early Whale Holder',
+      walletTier: 'Smart Money Alpha',
+      action: 'ACCUMULATE',
+      symbol: 'UNI',
+      amountTokens: 420000,
+      valueUsd: 4809000,
+      fromAddress: '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD (Universal Router)',
+      toAddress: '0x72a9102938475661102948576611029488471122',
+      aiSentiment: 'BULLISH',
+      aiInterpretation: 'Continuous TWAP buy orders accumulated over 3 hours without slippage, preparing for governance proposal rally.',
+    },
+  ];
+
+  res.json({
+    transactions,
+    netflows24h: {
+      totalWhaleVolumeUsd: 148500000,
+      cexNetDrainUsd: -89200000,
+      smartMoneySentiment: 'Strong Accumulation (88% Bullish Flow)',
+      topAccumulatedAsset: 'AETH / ETH',
+    },
+  });
+});
+
+// -------------------------------------------------------------
+// AI Launchpad & Fair Launch Portal API
+// -------------------------------------------------------------
+app.get("/api/launchpad/projects", (req: Request, res: Response) => {
+  const projects = [
+    {
+      id: 'launch-aether-ai',
+      name: 'Aether Quantum Agents (AQA)',
+      symbol: 'AQA',
+      tagline: 'Autonomous AI On-Chain Execution Swarm with Zero-Knowledge Proofs',
+      description: 'Next-generation AI agents executing high-frequency MEV arbitrage, cross-chain yield optimization, and autonomous treasury rebalancing verified by RISC Zero zkVM proofs.',
+      logoUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80',
+      category: 'AI Agents',
+      securityScore: 99,
+      isAuditVerified: true,
+      tokenPriceUsd: 0.15,
+      totalRaiseUsd: 1500000,
+      currentRaisedUsd: 1245000,
+      participantsCount: 3820,
+      minAllocationUsd: 50,
+      maxAllocationUsd: 5000,
+      startDate: '2026-08-25',
+      endDate: '2026-09-02',
+      status: 'LIVE',
+      vestingSchedule: '25% at TGE, 75% linear unlock over 6 months',
+      contractAddress: '0x8892A48E91029384756611029485766110294888',
+      acceptedToken: 'USDC',
+      features: [
+        '100% Liquidity Locked for 24 Months via Uncx Lock',
+        'Formal Verification by OpenZeppelin & CertiK',
+        'Anti-Bot & Anti-Whale max 1.5% wallet cap',
+        'Instant Auto-Refund Guarantee if soft cap not met',
+      ],
+    },
+    {
+      id: 'launch-nexus-l2',
+      name: 'Nexus ZK Rollup (NEXUS)',
+      symbol: 'NEXUS',
+      tagline: 'Ultra High-Throughput Layer-2 with Native AI Co-Processor',
+      description: 'Modular zk-Rollup enabling 100,000+ TPS with sub-millisecond finality and native Python/Rust AI inference smart contracts.',
+      logoUrl: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=200&auto=format&fit=crop&q=80',
+      category: 'Layer 2',
+      securityScore: 98,
+      isAuditVerified: true,
+      tokenPriceUsd: 0.85,
+      totalRaiseUsd: 3000000,
+      currentRaisedUsd: 2890000,
+      participantsCount: 6410,
+      minAllocationUsd: 100,
+      maxAllocationUsd: 10000,
+      startDate: '2026-08-20',
+      endDate: '2026-08-30',
+      status: 'LIVE',
+      vestingSchedule: '40% at TGE, 60% quarterly linear unlock',
+      contractAddress: '0x3344b10293847566110294857661102948576611',
+      acceptedToken: 'USDC',
+      features: [
+        'Backed by Tier-1 Web3 Research Foundations',
+        'Zero Private Sale Discount (100% Fair Community Pricing)',
+        'Built-in Gas Subsidy for early ecosystem dApps',
+      ],
+    },
+    {
+      id: 'launch-omni-rwa',
+      name: 'OmniYield Treasury RWA (OYT)',
+      symbol: 'OYT',
+      tagline: 'Institutional US Treasury Bills & Prime Corporate Debt on Arbitrum',
+      description: 'Real-World Asset yield token yielding 5.4% APY backed by physical custody of short-duration US Government T-Bills with daily compound rewards.',
+      logoUrl: 'https://images.unsplash.com/photo-1621416894569-0f39ed31d247?w=200&auto=format&fit=crop&q=80',
+      category: 'Real World Assets',
+      securityScore: 100,
+      isAuditVerified: true,
+      tokenPriceUsd: 1.00,
+      totalRaiseUsd: 5000000,
+      currentRaisedUsd: 1200000,
+      participantsCount: 1940,
+      minAllocationUsd: 250,
+      maxAllocationUsd: 50000,
+      startDate: '2026-09-01',
+      endDate: '2026-09-15',
+      status: 'UPCOMING',
+      vestingSchedule: '100% Instant Unlocked & Liquid Staking Enabled',
+      contractAddress: '0x9900224488110293847566110294857661102944',
+      acceptedToken: 'USDC',
+      features: [
+        'Regulated Under SEC Framework Reg D/S',
+        'Daily On-Chain Attestation by Chainlink Proof of Reserve',
+        'Instant Redeemability for USDC 24/7',
+      ],
+    },
+  ];
+
+  res.json({ projects });
+});
+
+// -------------------------------------------------------------
+// Perpetuals Pro Trading Engine API
+// -------------------------------------------------------------
+app.get("/api/perpetuals/positions", (req: Request, res: Response) => {
+  const ethPrice = realTimePriceMap.ETH?.priceUsd || 3420.50;
+  const btcPrice = realTimePriceMap.WBTC?.priceUsd || 87400.00;
+  const aethPrice = realTimePriceMap.AETH?.priceUsd || 4.82;
+
+  const positions = [
+    {
+      id: 'perp-pos-01',
+      pair: 'AETH/USDC-PERP',
+      symbol: 'AETH',
+      side: 'LONG',
+      entryPrice: 4.35,
+      markPrice: aethPrice,
+      liquidationPrice: 3.92,
+      sizeUsd: 25000,
+      marginUsd: 2500,
+      leverage: 10,
+      pnlUsd: Number((((aethPrice - 4.35) / 4.35) * 25000).toFixed(2)),
+      pnlPercent: Number((((aethPrice - 4.35) / 4.35) * 10 * 100).toFixed(2)),
+      takeProfitPrice: 6.20,
+      stopLossPrice: 4.10,
+      trailingStopPercent: 3.5,
+      fundingRate8hPercent: 0.0042,
+      fundingEarnedUsd: 14.80,
+      openedAt: Date.now() - 1000 * 60 * 60 * 14,
+    },
+    {
+      id: 'perp-pos-02',
+      pair: 'ETH/USDC-PERP',
+      symbol: 'ETH',
+      side: 'LONG',
+      entryPrice: 3340.00,
+      markPrice: ethPrice,
+      liquidationPrice: 3120.00,
+      sizeUsd: 60000,
+      marginUsd: 4000,
+      leverage: 15,
+      pnlUsd: Number((((ethPrice - 3340) / 3340) * 60000).toFixed(2)),
+      pnlPercent: Number((((ethPrice - 3340) / 3340) * 15 * 100).toFixed(2)),
+      takeProfitPrice: 3850.00,
+      stopLossPrice: 3260.00,
+      trailingStopPercent: 2.0,
+      fundingRate8hPercent: 0.0085,
+      fundingEarnedUsd: 38.40,
+      openedAt: Date.now() - 1000 * 60 * 60 * 36,
+    },
+  ];
+
+  res.json({ positions });
+});
+
+// -------------------------------------------------------------
+// Web3 Merchant Payments & Invoice API
+// -------------------------------------------------------------
+app.get("/api/payments/invoices", (req: Request, res: Response) => {
+  const invoices = [
+    {
+      id: 'inv-aether-8891',
+      title: 'Web3 Quantum Cloud Infrastructure License',
+      recipientWallet: '0x3aC91A...7FAD',
+      amountUsd: 450.00,
+      preferredToken: 'USDC',
+      status: 'PAID',
+      customerNote: 'Tier 1 Enterprise Node cluster',
+      createdAt: Date.now() - 1000 * 60 * 60 * 2,
+      txHash: '0x9910293847566110294857661102948576611029485766110293847566112233',
+      items: [
+        { description: 'Dedicated AI Inference Node (30 Days)', qty: 1, unitPrice: 350.00 },
+        { description: 'Priority MEV Flashbots Bundle Slot', qty: 1, unitPrice: 100.00 },
+      ],
+    },
+    {
+      id: 'inv-aether-8892',
+      title: 'Algorithmic Arbitrage Bot Subscription',
+      recipientWallet: '0x3aC91A...7FAD',
+      amountUsd: 199.00,
+      preferredToken: 'ETH',
+      status: 'PENDING',
+      customerNote: 'Pro trader automated signal copy',
+      createdAt: Date.now() - 1000 * 60 * 15,
+      items: [
+        { description: 'Aether Alpha Signals Engine Pro', qty: 1, unitPrice: 199.00 },
+      ],
+    },
+  ];
+
+  res.json({ invoices });
+});
+
+// -------------------------------------------------------------
 // 9. Admin & Observability Telemetry
 // -------------------------------------------------------------
 app.get("/api/admin/metrics", (req: Request, res: Response) => {
@@ -958,7 +1508,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[AetherDEX] AI-Native Web3 Super Exchange running on http://0.0.0.0:${PORT}`);
+    console.log(`[HYPERON DEX] Institutional AI-Native Web3 Super Exchange running on http://0.0.0.0:${PORT}`);
   });
 }
 

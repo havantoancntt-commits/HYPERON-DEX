@@ -18,7 +18,7 @@ export const SecurityCenterView: React.FC = () => {
           </span>
         </div>
         <p className="text-xs text-slate-400 max-w-3xl leading-relaxed">
-          AetherDEX is built around strict cryptographic non-custody. We enforce pre-flight bytecode sandboxing, private mempool transaction routing, and formal smart contract verification.
+          HYPERON DEX is built around strict cryptographic non-custody. We enforce pre-flight bytecode sandboxing, private mempool transaction routing, and formal smart contract verification.
         </p>
       </div>
 

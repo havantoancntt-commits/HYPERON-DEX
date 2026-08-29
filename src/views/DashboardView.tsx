@@ -4,6 +4,7 @@ import { useWallet } from '../context/WalletContext';
 import { VERIFIED_TOKENS, SUPPORTED_CHAINS } from '../lib/constants';
 import { formatCurrency, formatPercent } from '../lib/utils';
 import { TokenLogo } from '../components/CryptoIcon';
+import { EcosystemFlowBanner } from '../components/EcosystemFlowBanner';
 import {
   TrendingUp,
   ArrowUpRight,
@@ -21,7 +22,9 @@ import {
   Activity,
   Bot,
   PieChart,
-  LineChart
+  LineChart,
+  Target,
+  Rocket
 } from 'lucide-react';
 
 export const DashboardView: React.FC = () => {
@@ -30,6 +33,7 @@ export const DashboardView: React.FC = () => {
     setSelectedToken, 
     openSwapWithTokens, 
     openTokenScannerWithAddress, 
+    openPerpetualsWithSignal,
     liveTokens, 
     getLiveToken, 
     tickDirections 
@@ -39,17 +43,17 @@ export const DashboardView: React.FC = () => {
   const ethPrice = getLiveToken('ETH').priceUsd;
   const wbtcPrice = getLiveToken('WBTC').priceUsd;
   const solPrice = getLiveToken('SOL').priceUsd;
-  const aethPrice = getLiveToken('AETH').priceUsd;
+  const hyprPrice = getLiveToken('HYPR')?.priceUsd || getLiveToken('AETH')?.priceUsd || 4.82;
 
   const ethBalance = balances.ETH || 4.85;
   const usdcBalance = balances.USDC || 14250;
-  const aethBalance = balances.AETH || 2500;
+  const hyprBalance = balances.HYPR || balances.AETH || 2500;
   const wbtcBalance = balances.WBTC || 0.38;
 
   const totalPortfolioUsd = 
     ethBalance * ethPrice + 
     usdcBalance + 
-    aethBalance * aethPrice + 
+    hyprBalance * hyprPrice + 
     wbtcBalance * wbtcPrice;
 
   const ethChange = getLiveToken('ETH').change24h;
@@ -60,6 +64,42 @@ export const DashboardView: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
+      {/* Ecosystem Architecture & Flow Ribbon matching user request */}
+      <EcosystemFlowBanner />
+
+      {/* AI Alpha Signals High-Winrate Spotlight Banner */}
+      <div className="p-5 rounded-3xl bg-gradient-to-r from-[#0C1428] via-[#091022] to-[#070A18] border border-cyan-500/30 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 rounded-2xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-lg shadow-cyan-950/50">
+            <Sparkles className="w-6 h-6 animate-pulse" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-extrabold text-white font-sans">
+                Tín Hiệu AI Alpha Tự Động Vào Lệnh (94.2% Win-Rate)
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                HYPR/USDC • BREAKOUT
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Cá voi tích lũy +$18.4M trên Arbitrum router. Điểm vào $4.75 - $4.85, TP $6.20 (+28%), SL $4.65.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveView('ai-signals')}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white text-xs font-bold font-sans flex items-center gap-2 cursor-pointer shadow-lg shadow-blue-900/30"
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-200 fill-current" />
+            <span>Xem & Tự Động Khớp Lệnh</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
       {/* Top Banner with Multi-Chain Portfolio & AI Intelligence Score */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Portfolio Summary Card (8 Cols) */}
@@ -107,7 +147,7 @@ export const DashboardView: React.FC = () => {
               <div className="h-full rounded-l-full bg-gradient-to-r from-blue-600 to-blue-400" style={{ width: '42%' }} title="ETH 42%" />
               <div className="h-full bg-gradient-to-r from-amber-600 to-amber-400" style={{ width: '31%' }} title="WBTC 31%" />
               <div className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400" style={{ width: '18%' }} title="USDC 18%" />
-              <div className="h-full rounded-r-full bg-gradient-to-r from-indigo-600 to-purple-400" style={{ width: '9%' }} title="AETH 9%" />
+              <div className="h-full rounded-r-full bg-gradient-to-r from-indigo-600 to-purple-400" style={{ width: '9%' }} title="HYPR 9%" />
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-xs font-mono">
@@ -128,8 +168,8 @@ export const DashboardView: React.FC = () => {
               </div>
               <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#131926] border border-white/[0.06]">
                 <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-sm" />
-                <span className="text-white font-bold">AETH: 2.5k</span>
-                <span className="text-slate-400">(${(2500 * aethPrice).toFixed(0)})</span>
+                <span className="text-white font-bold">HYPR: 2.5k</span>
+                <span className="text-slate-400">(${(2500 * hyprPrice).toFixed(0)})</span>
               </div>
             </div>
           </div>

@@ -1,17 +1,22 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Token, SwapQuote, TransactionSimulation, LivePriceData } from '../types';
+import { Token, SwapQuote, TransactionSimulation, LivePriceData, AITradingSignal } from '../types';
 import { VERIFIED_TOKENS } from '../lib/constants';
 
 export type ProductView =
   | 'dashboard'
+  | 'ai-signals'
   | 'swap'
+  | 'perpetuals'
   | 'trade'
   | 'markets'
   | 'token-details'
   | 'portfolio'
+  | 'launchpad'
+  | 'onchain-radar'
   | 'wallet'
   | 'liquidity'
   | 'staking'
+  | 'payments'
   | 'ai-intelligence'
   | 'ai-risk-scanner'
   | 'ai-copilot'
@@ -40,6 +45,8 @@ interface ExchangeContextType {
   setSelectedToken: (token: Token) => void;
   selectedPair: { base: Token; quote: Token };
   setSelectedPair: (pair: { base: Token; quote: Token }) => void;
+  selectedSignal: AITradingSignal | null;
+  setSelectedSignal: (signal: AITradingSignal | null) => void;
   watchlist: string[]; // token symbols
   toggleWatchlist: (symbol: string) => void;
   toasts: ToastMessage[];
@@ -49,6 +56,8 @@ interface ExchangeContextType {
   setActiveSimulation: (sim: TransactionSimulation | null) => void;
   openSwapWithTokens: (fromSymbol: string, toSymbol: string) => void;
   openTokenScannerWithAddress: (address: string, symbol: string) => void;
+  openPerpetualsWithSignal: (signal: AITradingSignal) => void;
+  openSwapWithSignal: (signal: AITradingSignal) => void;
   // Real-time price oracle state
   livePrices: Record<string, LivePriceData>;
   liveTokens: Token[];
@@ -68,17 +77,18 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     base: VERIFIED_TOKENS[0], // ETH
     quote: VERIFIED_TOKENS[1], // USDC
   });
-  const [watchlist, setWatchlist] = useState<string[]>(['ETH', 'WBTC', 'AETH', 'UNI', 'LINK']);
+  const [watchlist, setWatchlist] = useState<string[]>(['ETH', 'WBTC', 'HYPR', 'UNI', 'LINK']);
   const [toasts, setToasts] = useState<ToastMessage[]>([
     {
       id: 'welcome-toast',
-      title: 'AetherDEX Connected',
+      title: 'HYPERON DEX Connected',
       message: 'Zero-trust security scanner & Flashbots MEV protection active.',
       type: 'info',
       timestamp: Date.now(),
     },
   ]);
   const [activeSimulation, setActiveSimulation] = useState<TransactionSimulation | null>(null);
+  const [selectedSignal, setSelectedSignal] = useState<AITradingSignal | null>(null);
 
   // Real-time price tracking state
   const [livePrices, setLivePrices] = useState<Record<string, LivePriceData>>({});
@@ -192,6 +202,26 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setActiveView('ai-risk-scanner');
   };
 
+  const openPerpetualsWithSignal = (signal: AITradingSignal) => {
+    setSelectedSignal(signal);
+    const token = getLiveToken(signal.symbol);
+    const quote = getLiveToken('USDC');
+    setSelectedPair({ base: token, quote });
+    setActiveView('perpetuals');
+  };
+
+  const openSwapWithSignal = (signal: AITradingSignal) => {
+    setSelectedSignal(signal);
+    const token = getLiveToken(signal.symbol);
+    const usdc = getLiveToken('USDC');
+    if (signal.direction === 'LONG' || signal.direction === 'BUY') {
+      setSelectedPair({ base: usdc, quote: token });
+    } else {
+      setSelectedPair({ base: token, quote: usdc });
+    }
+    setActiveView('swap');
+  };
+
   return (
     <ExchangeContext.Provider
       value={{
@@ -201,6 +231,8 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setSelectedToken,
         selectedPair,
         setSelectedPair,
+        selectedSignal,
+        setSelectedSignal,
         watchlist,
         toggleWatchlist,
         toasts,
@@ -210,6 +242,8 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setActiveSimulation,
         openSwapWithTokens,
         openTokenScannerWithAddress,
+        openPerpetualsWithSignal,
+        openSwapWithSignal,
         livePrices,
         liveTokens,
         getLiveToken,

@@ -4,7 +4,7 @@ import { useExchange } from '../context/ExchangeContext';
 import { SUPPORTED_CHAINS, VERIFIED_TOKENS } from '../lib/constants';
 import { ChainId } from '../types';
 import { shortenAddress, formatCurrency } from '../lib/utils';
-import { ChainLogo, TokenLogo } from './CryptoIcon';
+import { ChainLogo, TokenLogo, Hyperon3DLogo } from './CryptoIcon';
 import { 
   ShieldCheck, 
   Fuel, 
@@ -108,7 +108,7 @@ export const Header: React.FC = () => {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="text-white tracking-wider text-[10px]">AETHER ORACLE</span>
+            <span className="text-white tracking-wider text-[10px] font-bold">HYPERON QUANTUM ORACLE</span>
           </div>
 
           <div className="h-3 w-px bg-white/10 shrink-0" />
@@ -181,19 +181,19 @@ export const Header: React.FC = () => {
         <div className="flex items-center gap-6">
           <button 
             onClick={() => setActiveView('dashboard')}
-            className="flex items-center gap-3 group cursor-pointer focus:outline-none"
+            className="flex items-center gap-3.5 group cursor-pointer focus:outline-none"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 via-indigo-600 to-cyan-400 p-0.5 shadow-lg shadow-blue-500/20 group-hover:shadow-blue-500/40 transition-all duration-300">
-              <div className="w-full h-full bg-[#07090E] rounded-[10px] flex items-center justify-center">
-                <Sparkles className="w-4 h-4 text-cyan-400 group-hover:rotate-12 transition-transform duration-300" />
-              </div>
-            </div>
+            <Hyperon3DLogo className="w-11 h-11 shrink-0" />
             <div className="text-left">
-              <div className="font-extrabold tracking-tight text-white flex items-center gap-2 text-lg font-sans">
-                AETHER<span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-cyan-400 to-indigo-400">DEX</span>
-                <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-cyan-300 border border-cyan-500/30 uppercase tracking-widest">
-                  PRO v4.2
+              <div className="font-extrabold tracking-tight text-white flex items-center gap-2 text-xl font-sans leading-none">
+                HYPERON<span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 font-black">DEX</span>
+                <span className="text-[9px] font-mono font-extrabold px-2 py-0.5 rounded-full bg-gradient-to-r from-cyan-500/15 via-blue-500/20 to-purple-500/20 text-cyan-300 border border-cyan-400/40 uppercase tracking-widest shadow-sm shadow-cyan-500/10">
+                  AI PRO
                 </span>
+              </div>
+              <div className="text-[10px] font-mono text-slate-400 tracking-wider font-semibold uppercase mt-1 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
+                <span>QUANTUM SUPER EXCHANGE</span>
               </div>
             </div>
           </button>
@@ -350,8 +350,8 @@ export const Header: React.FC = () => {
                         <span className="text-white font-bold">${usdcBalance.toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between py-1.5 px-2.5 rounded-xl bg-[#080B12] border border-white/[0.06]">
-                        <span className="text-slate-400">AETH Token</span>
-                        <span className="text-cyan-400 font-bold">{(balances.AETH || 0).toLocaleString()} AETH</span>
+                        <span className="text-slate-400">HYPR Token</span>
+                        <span className="text-cyan-400 font-bold">{(balances.HYPR || balances.AETH || 2500).toLocaleString()} HYPR</span>
                       </div>
                     </div>
                   </div>

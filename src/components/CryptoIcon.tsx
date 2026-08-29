@@ -86,30 +86,116 @@ export const TokenVectorIcon: React.FC<{ symbol: string; className?: string }> =
         </svg>
       );
 
+    case 'HYPR':
+    case 'HYPERON':
     case 'AETH':
       return (
-        <svg viewBox="0 0 32 32" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg viewBox="0 0 48 48" className={className} fill="none" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <linearGradient id="aethGrad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#00F2FE" />
-              <stop offset="1" stopColor="#4FACFE" />
+            <linearGradient id="hyprCirRim" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#FFFFFF" />
+              <stop offset="0.2" stopColor="#00F5FF" />
+              <stop offset="0.5" stopColor="#2563EB" />
+              <stop offset="0.8" stopColor="#7C3AED" />
+              <stop offset="1" stopColor="#00F5FF" />
             </linearGradient>
+            <radialGradient id="hyprDarkCanvas" cx="24" cy="24" r="22" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#0B152B" />
+              <stop offset="0.6" stopColor="#050914" />
+              <stop offset="1" stopColor="#020408" />
+            </radialGradient>
+            <radialGradient id="hyprAuraCenter" cx="24" cy="24" r="18" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#00F5FF" stopOpacity="0.6" />
+              <stop offset="0.5" stopColor="#3B82F6" stopOpacity="0.25" />
+              <stop offset="1" stopColor="#000000" stopOpacity="0" />
+            </radialGradient>
+            <linearGradient id="hyprPillarL" x1="12" y1="8" x2="20" y2="40" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#FFFFFF" />
+              <stop offset="0.2" stopColor="#67E8F9" />
+              <stop offset="0.5" stopColor="#00F5FF" />
+              <stop offset="0.8" stopColor="#0284C7" />
+              <stop offset="1" stopColor="#0C4A6E" />
+            </linearGradient>
+            <linearGradient id="hyprPillarR" x1="28" y1="8" x2="36" y2="40" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#FFFFFF" />
+              <stop offset="0.2" stopColor="#E879F9" />
+              <stop offset="0.5" stopColor="#C084FC" />
+              <stop offset="0.8" stopColor="#7C3AED" />
+              <stop offset="1" stopColor="#4C1D95" />
+            </linearGradient>
+            <linearGradient id="hyprCoreDia" x1="18" y1="18" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#FFFFFF" />
+              <stop offset="0.3" stopColor="#67E8F9" />
+              <stop offset="0.7" stopColor="#00F5FF" />
+              <stop offset="1" stopColor="#2563EB" />
+            </linearGradient>
+            <filter id="hyprShadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="1.5" stdDeviation="2" floodColor="#00F5FF" floodOpacity="0.6" />
+            </filter>
           </defs>
-          <circle cx="16" cy="16" r="16" fill="url(#aethGrad)" />
-          <path
-            d="M16 6L23.5 13.5L16 26L8.5 13.5L16 6Z"
-            fill="#060913"
-            fillOpacity="0.85"
-          />
-          <path
-            d="M16 8.5L21 13.5L16 23.5L11 13.5L16 8.5Z"
-            fill="#FFFFFF"
-          />
-          <circle cx="16" cy="15" r="2" fill="#00F2FE" />
-          <circle cx="16" cy="6" r="1.5" fill="#FFFFFF" />
-          <circle cx="23.5" cy="13.5" r="1.5" fill="#FFFFFF" />
-          <circle cx="8.5" cy="13.5" r="1.5" fill="#FFFFFF" />
-          <circle cx="16" cy="26" r="1.5" fill="#FFFFFF" />
+
+          {/* Master Circular Bezel */}
+          <circle cx="24" cy="24" r="23" stroke="url(#hyprCirRim)" strokeWidth="1.4" />
+          <circle cx="24" cy="24" r="21.5" fill="url(#hyprDarkCanvas)" />
+          <circle cx="24" cy="24" r="21.5" fill="url(#hyprAuraCenter)" />
+
+          {/* Precision Micro Range Ticks */}
+          <circle cx="24" cy="24" r="18.5" stroke="#00F5FF" strokeOpacity="0.3" strokeWidth="0.5" strokeDasharray="2 3" />
+          <circle cx="24" cy="24" r="15" stroke="#7C3AED" strokeOpacity="0.2" strokeWidth="0.5" strokeDasharray="1 4" />
+          <line x1="24" y1="2.5" x2="24" y2="5.5" stroke="#FFFFFF" strokeWidth="1" />
+          <line x1="24" y1="42.5" x2="24" y2="45.5" stroke="#A855F7" strokeWidth="1" />
+          <line x1="2.5" y1="24" x2="5.5" y2="24" stroke="#00F5FF" strokeWidth="1" />
+          <line x1="42.5" y1="24" x2="45.5" y2="24" stroke="#00F5FF" strokeWidth="1" />
+
+          {/* 3D Polyhedral Floating "H" Monolith */}
+          <g filter="url(#hyprShadow)">
+            {/* Left Pillar Outer Facet */}
+            <polygon points="10,12 14,9 14,39 10,36" fill="#0369A1" />
+            {/* Left Pillar Front Facet */}
+            <polygon points="14,9 19,7 19,41 14,39" fill="url(#hyprPillarL)" />
+            <polygon points="10,12 14,9 19,7 15,10" fill="#FFFFFF" fillOpacity="0.95" />
+
+            {/* Right Pillar Front Facet */}
+            <polygon points="29,7 34,9 34,39 29,41" fill="url(#hyprPillarR)" />
+            {/* Right Pillar Outer Facet */}
+            <polygon points="34,9 38,12 38,36 34,39" fill="#6D28D9" />
+            <polygon points="29,7 34,9 38,12 33,10" fill="#FFFFFF" fillOpacity="0.95" />
+
+            {/* Central Octagonal Nexus Reactor */}
+            <polygon points="24,17 28,19 30,24 28,29 24,31 20,29 18,24 20,19" fill="url(#hyprCoreDia)" />
+            <polygon points="24,17 24,24 20,19" fill="#FFFFFF" fillOpacity="0.95" />
+            <polygon points="24,17 28,19 24,24" fill="#A5F3FC" fillOpacity="0.9" />
+            <polygon points="28,19 30,24 24,24" fill="#00F5FF" fillOpacity="0.9" />
+            <polygon points="30,24 28,29 24,24" fill="#2563EB" fillOpacity="0.9" />
+            <polygon points="28,29 24,31 24,24" fill="#1D4ED8" fillOpacity="0.9" />
+            <polygon points="24,31 20,29 24,24" fill="#0284C7" fillOpacity="0.9" />
+            <polygon points="20,29 18,24 24,24" fill="#38BDF8" fillOpacity="0.9" />
+            <circle cx="24" cy="24" r="1.5" fill="#FFFFFF" />
+
+            {/* Specular Razor Ridge Lines */}
+            <line x1="19" y1="7" x2="19" y2="41" stroke="#FFFFFF" strokeWidth="0.8" strokeOpacity="0.95" />
+            <line x1="29" y1="7" x2="29" y2="41" stroke="#FFFFFF" strokeWidth="0.8" strokeOpacity="0.95" />
+          </g>
+
+          {/* Micro Diamond Flare at Apex */}
+          <g transform="translate(19, 7)">
+            <ellipse rx="3" ry="0.6" fill="#FFFFFF" />
+            <ellipse rx="0.6" ry="3" fill="#FFFFFF" />
+            <circle r="1" fill="#FFFFFF" />
+          </g>
+          <g transform="translate(29, 7)">
+            <ellipse rx="3" ry="0.6" fill="#FFFFFF" />
+            <ellipse rx="0.6" ry="3" fill="#FFFFFF" />
+            <circle r="1" fill="#FFFFFF" />
+          </g>
+
+          {/* Specular Star Flare at Center */}
+          <g transform="translate(24, 24)">
+            <ellipse rx="6" ry="1" fill="#FFFFFF" fillOpacity="0.95" />
+            <ellipse rx="1" ry="6" fill="#FFFFFF" fillOpacity="0.95" />
+            <circle r="1.8" fill="#FFFFFF" />
+            <circle r="3.5" fill="#00F5FF" fillOpacity="0.5" />
+          </g>
         </svg>
       );
 
@@ -445,3 +531,326 @@ export const DexProtocolIcon: React.FC<{
     </div>
   );
 };
+
+// ============================================================================
+// HYPERON DEX 3D Ultra-Sharp International Standard Master Logo
+// ============================================================================
+export interface Hyperon3DLogoProps {
+  className?: string;
+  size?: number;
+  variant?: 'icon' | 'full' | 'glow' | 'badge' | 'hero';
+  animate?: boolean;
+}
+
+export const Hyperon3DLogo: React.FC<Hyperon3DLogoProps> = ({
+  className = 'w-11 h-11',
+  size,
+  variant = 'icon',
+  animate = true,
+}) => {
+  return (
+    <div
+      className={`relative inline-flex items-center justify-center select-none ${className} ${
+        animate ? 'group cursor-pointer' : ''
+      }`}
+      style={size ? { width: size, height: size } : undefined}
+    >
+      {/* 1. Multi-Layered Quantum Volumetric Ambient Lighting */}
+      <div className="absolute -inset-1 rounded-full bg-gradient-to-tr from-cyan-400/40 via-blue-600/30 to-fuchsia-600/40 blur-xl group-hover:blur-2xl opacity-80 group-hover:opacity-100 transition-all duration-700 -z-10 scale-95 group-hover:scale-110" />
+      <div className="absolute inset-0 rounded-full bg-cyan-500/20 blur-md -z-10 animate-pulse" />
+
+      {/* 2. Master Ultra-Detailed 3D Sovereign Medallion */}
+      <svg
+        viewBox="0 0 120 120"
+        className="w-full h-full drop-shadow-[0_10px_30px_rgba(0,245,255,0.5)] transition-all duration-500 ease-out group-hover:scale-[1.06]"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <defs>
+          {/* Multi-Stop Hyper Metallic Bezel Gradients */}
+          <linearGradient id="hypRingBezelGrad" x1="0" y1="0" x2="120" y2="120" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#FFFFFF" />
+            <stop offset="12%" stopColor="#A5F3FC" />
+            <stop offset="25%" stopColor="#00F5FF" />
+            <stop offset="42%" stopColor="#2563EB" />
+            <stop offset="65%" stopColor="#7C3AED" />
+            <stop offset="82%" stopColor="#EC4899" />
+            <stop offset="92%" stopColor="#00F5FF" />
+            <stop offset="100%" stopColor="#FFFFFF" />
+          </linearGradient>
+
+          <radialGradient id="hypInnerBezelCavity" cx="60" cy="60" r="58" gradientUnits="userSpaceOnUse">
+            <stop offset="70%" stopColor="#030712" />
+            <stop offset="88%" stopColor="#0F172A" />
+            <stop offset="95%" stopColor="#1E293B" />
+            <stop offset="100%" stopColor="#38BDF8" stopOpacity="0.8" />
+          </radialGradient>
+
+          <radialGradient id="hypObsidianMirror" cx="60" cy="52" r="52" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#111C38" />
+            <stop offset="45%" stopColor="#070C1B" />
+            <stop offset="85%" stopColor="#03050C" />
+            <stop offset="100%" stopColor="#000000" />
+          </radialGradient>
+
+          {/* Central Reactor Nebula Aura */}
+          <radialGradient id="hypPlasmaCore" cx="60" cy="60" r="40" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.9" />
+            <stop offset="18%" stopColor="#00F5FF" stopOpacity="0.75" />
+            <stop offset="45%" stopColor="#3B82F6" stopOpacity="0.4" />
+            <stop offset="75%" stopColor="#7C3AED" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+          </radialGradient>
+
+          {/* Left Wing Facet 3D Gradients */}
+          <linearGradient id="facetPillarLeft1" x1="28" y1="22" x2="48" y2="96" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#FFFFFF" />
+            <stop offset="15%" stopColor="#67E8F9" />
+            <stop offset="45%" stopColor="#00F5FF" />
+            <stop offset="80%" stopColor="#0284C7" />
+            <stop offset="100%" stopColor="#0C4A6E" />
+          </linearGradient>
+
+          <linearGradient id="facetPillarLeft2" x1="22" y1="26" x2="38" y2="92" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#38BDF8" />
+            <stop offset="50%" stopColor="#0369A1" />
+            <stop offset="100%" stopColor="#082F49" />
+          </linearGradient>
+
+          <linearGradient id="facetPillarLeft3" x1="18" y1="32" x2="30" y2="86" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#0284C7" />
+            <stop offset="60%" stopColor="#0F172A" />
+            <stop offset="100%" stopColor="#020617" />
+          </linearGradient>
+
+          {/* Right Wing Facet 3D Gradients */}
+          <linearGradient id="facetPillarRight1" x1="72" y1="22" x2="92" y2="96" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#FFFFFF" />
+            <stop offset="15%" stopColor="#E879F9" />
+            <stop offset="45%" stopColor="#C084FC" />
+            <stop offset="80%" stopColor="#7C3AED" />
+            <stop offset="100%" stopColor="#4C1D95" />
+          </linearGradient>
+
+          <linearGradient id="facetPillarRight2" x1="82" y1="26" x2="98" y2="92" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#C084FC" />
+            <stop offset="50%" stopColor="#6D28D9" />
+            <stop offset="100%" stopColor="#2E1065" />
+          </linearGradient>
+
+          <linearGradient id="facetPillarRight3" x1="90" y1="32" x2="102" y2="86" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#7C3AED" />
+            <stop offset="60%" stopColor="#1E1B4B" />
+            <stop offset="100%" stopColor="#020617" />
+          </linearGradient>
+
+          {/* Hyper-Prism Central Octagonal Diamond */}
+          <linearGradient id="octaDiamondGrad" x1="42" y1="42" x2="78" y2="78" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#FFFFFF" />
+            <stop offset="25%" stopColor="#A5F3FC" />
+            <stop offset="60%" stopColor="#00F5FF" />
+            <stop offset="100%" stopColor="#2563EB" />
+          </linearGradient>
+
+          <linearGradient id="octaDiamondFacetTop" x1="60" y1="44" x2="60" y2="60" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#FFFFFF" />
+            <stop offset="100%" stopColor="#67E8F9" />
+          </linearGradient>
+
+          <linearGradient id="octaDiamondFacetBottom" x1="60" y1="60" x2="60" y2="76" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#0284C7" />
+            <stop offset="100%" stopColor="#1E3A8A" />
+          </linearGradient>
+
+          {/* Glow Filters */}
+          <filter id="laserGlowFilter" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="0" stdDeviation="3.5" floodColor="#00F5FF" floodOpacity="0.8" />
+          </filter>
+
+          <filter id="deepHShadow" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#000000" floodOpacity="0.95" />
+          </filter>
+        </defs>
+
+        {/* ------------------------------------------------------------- */}
+        {/* Layer 1: Multi-Ring Diamond-Cut Sovereign Outer Bezel         */}
+        {/* ------------------------------------------------------------- */}
+        {/* Outer Laser Chroma Ring */}
+        <circle cx="60" cy="60" r="57.5" stroke="url(#hypRingBezelGrad)" strokeWidth="2.2" />
+        
+        {/* Secondary Concentric Polished Titanium Ring */}
+        <circle cx="60" cy="60" r="55" stroke="#00F5FF" strokeWidth="0.6" strokeOpacity="0.6" />
+
+        {/* Outer Bezel Cavity */}
+        <circle cx="60" cy="60" r="53.5" fill="url(#hypInnerBezelCavity)" />
+
+        {/* Obsidian Glass Canvas */}
+        <circle cx="60" cy="60" r="50.5" fill="url(#hypObsidianMirror)" stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />
+
+        {/* Reactor Core Background Aura */}
+        <circle cx="60" cy="60" r="48" fill="url(#hypPlasmaCore)" />
+
+        {/* ------------------------------------------------------------- */}
+        {/* Layer 2: Precision Micro-Engravings & Geodetic Compass Lines  */}
+        {/* ------------------------------------------------------------- */}
+        <g stroke="#00F5FF" strokeOpacity="0.28" strokeWidth="0.6">
+          {/* Sub-Millimeter Scale Calibration Circles */}
+          <circle cx="60" cy="60" r="46" strokeDasharray="3 4" />
+          <circle cx="60" cy="60" r="42" strokeDasharray="1 6" strokeOpacity="0.4" />
+          <circle cx="60" cy="60" r="37" strokeOpacity="0.15" />
+
+          {/* 12-Point Precision Chrono-Dial Index Ticks */}
+          <line x1="60" y1="10" x2="60" y2="15" stroke="#FFFFFF" strokeWidth="1.2" strokeOpacity="0.9" />
+          <line x1="60" y1="105" x2="60" y2="110" stroke="#C084FC" strokeWidth="1.2" strokeOpacity="0.9" />
+          <line x1="10" y1="60" x2="15" y2="60" stroke="#00F5FF" strokeWidth="1.2" strokeOpacity="0.9" />
+          <line x1="105" y1="60" x2="110" y2="60" stroke="#00F5FF" strokeWidth="1.2" strokeOpacity="0.9" />
+
+          <line x1="25" y1="25" x2="29" y2="29" stroke="#00F5FF" strokeOpacity="0.5" />
+          <line x1="95" y1="25" x2="91" y2="29" stroke="#C084FC" strokeOpacity="0.5" />
+          <line x1="25" y1="95" x2="29" y2="91" stroke="#00F5FF" strokeOpacity="0.5" />
+          <line x1="95" y1="95" x2="91" y2="91" stroke="#C084FC" strokeOpacity="0.5" />
+
+          {/* Diagonal Micro Cross-Hair Marks */}
+          <path d="M57 14H63M60 11V17" stroke="#FFFFFF" strokeOpacity="0.6" strokeWidth="0.8" />
+          <path d="M57 106H63M60 103V109" stroke="#C084FC" strokeOpacity="0.6" strokeWidth="0.8" />
+        </g>
+
+        {/* ------------------------------------------------------------- */}
+        {/* Layer 3: Ultra-Sharp Master 3D Polyhedral "H" Monolith        */}
+        {/* ------------------------------------------------------------- */}
+        <g id="polyhedral-master-h" filter="url(#deepHShadow)">
+          {/* --- LEFT MULTI-FACETED CRYSTAL PILLAR --- */}
+          {/* Outer Chamfer Edge 3 */}
+          <polygon points="18,34 26,27 26,93 18,86" fill="url(#facetPillarLeft3)" />
+          {/* Middle Transition Facet 2 */}
+          <polygon points="26,27 36,21 36,99 26,93" fill="url(#facetPillarLeft2)" />
+          {/* Front Light Reflection Facet 1 */}
+          <polygon points="36,21 47,17 47,103 36,99" fill="url(#facetPillarLeft1)" />
+
+          {/* Top Crown Chamfer (Mirror Polish) */}
+          <polygon points="18,34 26,27 36,21 47,17 38,23 28,30" fill="#FFFFFF" fillOpacity="0.95" />
+          {/* Bottom Foot Chamfer */}
+          <polygon points="18,86 26,93 36,99 47,103 38,97 28,90" fill="#0284C7" fillOpacity="0.8" />
+
+          {/* --- RIGHT MULTI-FACETED CRYSTAL PILLAR --- */}
+          {/* Front Light Reflection Facet 1 */}
+          <polygon points="73,17 84,21 84,99 73,103" fill="url(#facetPillarRight1)" />
+          {/* Middle Transition Facet 2 */}
+          <polygon points="84,21 94,27 94,93 84,99" fill="url(#facetPillarRight2)" />
+          {/* Outer Chamfer Edge 3 */}
+          <polygon points="94,27 102,34 102,86 94,93" fill="url(#facetPillarRight3)" />
+
+          {/* Top Crown Chamfer (Mirror Polish) */}
+          <polygon points="73,17 84,21 94,27 102,34 92,30 82,23" fill="#FFFFFF" fillOpacity="0.95" />
+          {/* Bottom Foot Chamfer */}
+          <polygon points="73,103 84,99 94,93 102,86 92,90 82,97" fill="#7C3AED" fillOpacity="0.8" />
+
+          {/* --- CENTER HYPER-PRISM CONNECTOR & OCTAGONAL REACTOR CORE --- */}
+          {/* Upper Bridge Wing */}
+          <polygon points="47,48 60,42 73,48 60,54" fill="url(#octaDiamondFacetTop)" />
+          {/* Lower Bridge Wing */}
+          <polygon points="47,72 60,78 73,72 60,66" fill="url(#octaDiamondFacetBottom)" />
+
+          {/* Left/Right Bridge Struts */}
+          <polygon points="47,48 47,72 54,66 54,54" fill="#0284C7" fillOpacity="0.9" />
+          <polygon points="73,48 73,72 66,66 66,54" fill="#7C3AED" fillOpacity="0.9" />
+
+          {/* Master 3D Floating Octagonal Quantum Reactor */}
+          <polygon
+            points="60,44 71,49 76,60 71,71 60,76 49,71 44,60 49,49"
+            fill="url(#octaDiamondGrad)"
+            filter="url(#laserGlowFilter)"
+          />
+
+          {/* Inner Facet Star Refraction of the Diamond */}
+          <polygon points="60,44 60,60 49,49" fill="#FFFFFF" fillOpacity="0.95" />
+          <polygon points="60,44 71,49 60,60" fill="#E0F2FE" fillOpacity="0.85" />
+          <polygon points="71,49 76,60 60,60" fill="#67E8F9" fillOpacity="0.75" />
+          <polygon points="76,60 71,71 60,60" fill="#00F5FF" fillOpacity="0.9" />
+          <polygon points="71,71 60,76 60,60" fill="#2563EB" fillOpacity="0.9" />
+          <polygon points="60,76 49,71 60,60" fill="#1D4ED8" fillOpacity="0.85" />
+          <polygon points="49,71 44,60 60,60" fill="#0284C7" fillOpacity="0.85" />
+          <polygon points="44,60 49,49 60,60" fill="#38BDF8" fillOpacity="0.95" />
+
+          {/* Core Singularity Point */}
+          <circle cx="60" cy="60" r="3.2" fill="#FFFFFF" />
+          <circle cx="60" cy="60" r="1.6" fill="#00F5FF" />
+
+          {/* --- ULTRA-SHARP SPECULAR RAZOR RIDGES --- */}
+          {/* Main Ridge Specular Bevels */}
+          <line x1="47" y1="17" x2="47" y2="103" stroke="#FFFFFF" strokeWidth="1.4" strokeOpacity="0.95" />
+          <line x1="36" y1="21" x2="36" y2="99" stroke="#E0F2FE" strokeWidth="1" strokeOpacity="0.8" />
+          <line x1="26" y1="27" x2="26" y2="93" stroke="#00F5FF" strokeWidth="0.8" strokeOpacity="0.7" />
+
+          <line x1="73" y1="17" x2="73" y2="103" stroke="#FFFFFF" strokeWidth="1.4" strokeOpacity="0.95" />
+          <line x1="84" y1="21" x2="84" y2="99" stroke="#F3E8FF" strokeWidth="1" strokeOpacity="0.8" />
+          <line x1="94" y1="27" x2="94" y2="93" stroke="#C084FC" strokeWidth="0.8" strokeOpacity="0.7" />
+        </g>
+
+        {/* ------------------------------------------------------------- */}
+        {/* Layer 4: Multi-Point Diamond Optical Glints & Flares          */}
+        {/* ------------------------------------------------------------- */}
+        {/* Top Left Apex Starburst */}
+        <g transform="translate(47, 17)">
+          <ellipse rx="8" ry="1.2" fill="#FFFFFF" fillOpacity="0.95" />
+          <ellipse rx="1.2" ry="8" fill="#FFFFFF" fillOpacity="0.95" />
+          <circle r="2.4" fill="#FFFFFF" />
+          <circle r="6" fill="#00F5FF" fillOpacity="0.6" />
+        </g>
+
+        {/* Top Right Apex Starburst */}
+        <g transform="translate(73, 17)">
+          <ellipse rx="8" ry="1.2" fill="#FFFFFF" fillOpacity="0.95" />
+          <ellipse rx="1.2" ry="8" fill="#FFFFFF" fillOpacity="0.95" />
+          <circle r="2.4" fill="#FFFFFF" />
+          <circle r="6" fill="#E879F9" fillOpacity="0.6" />
+        </g>
+
+        {/* Center Reactor Master Flare */}
+        <g transform="translate(60, 60)">
+          <ellipse rx="14" ry="1.8" fill="#FFFFFF" fillOpacity="0.98" />
+          <ellipse rx="1.8" ry="14" fill="#FFFFFF" fillOpacity="0.98" />
+          <circle r="4" fill="#FFFFFF" />
+          <circle r="9" fill="#00F5FF" fillOpacity="0.65" />
+        </g>
+
+        {/* Bottom Vertex Glints */}
+        <circle cx="47" cy="103" r="2.2" fill="#00F5FF" />
+        <circle cx="47" cy="103" r="4.5" fill="#00F5FF" fillOpacity="0.5" />
+        <circle cx="73" cy="103" r="2.2" fill="#C084FC" />
+        <circle cx="73" cy="103" r="4.5" fill="#A855F7" fillOpacity="0.5" />
+
+        {/* ------------------------------------------------------------- */}
+        {/* Layer 5: Dynamic Quantum Orbital Rings & Laser Sheen          */}
+        {/* ------------------------------------------------------------- */}
+        {/* Primary Orbital Ellipse */}
+        <ellipse
+          cx="60"
+          cy="60"
+          rx="50"
+          ry="21"
+          stroke="url(#hypRingBezelGrad)"
+          strokeWidth="0.8"
+          strokeDasharray="5 7"
+          strokeOpacity="0.5"
+          transform="rotate(-28 60 60)"
+        />
+        {/* Orbital Quantum Particle Nodes */}
+        <circle cx="23" cy="41" r="2" fill="#FFFFFF" />
+        <circle cx="23" cy="41" r="4" fill="#00F5FF" fillOpacity="0.5" />
+        <circle cx="97" cy="79" r="2" fill="#E879F9" />
+        <circle cx="97" cy="79" r="4" fill="#C084FC" fillOpacity="0.5" />
+
+        {/* Ultra-Fine Diagonal Glass Glare Sweep */}
+        <path
+          d="M12 24L108 96"
+          stroke="url(#octaDiamondGrad)"
+          strokeWidth="0.4"
+          strokeOpacity="0.25"
+          strokeDasharray="10 16"
+        />
+      </svg>
+    </div>
+  );
+};
+

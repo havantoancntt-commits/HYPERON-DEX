@@ -2,14 +2,19 @@ export type ChainId = 'ethereum' | 'base' | 'arbitrum' | 'optimism' | 'bsc' | 'p
 
 export type ProductView =
   | 'dashboard'
+  | 'ai-signals'
   | 'swap'
+  | 'perpetuals'
   | 'trade'
   | 'markets'
   | 'token-details'
   | 'portfolio'
+  | 'launchpad'
+  | 'onchain-radar'
   | 'wallet'
   | 'liquidity'
   | 'staking'
+  | 'payments'
   | 'ai-intelligence'
   | 'ai-risk-scanner'
   | 'ai-copilot'
@@ -347,4 +352,127 @@ export interface SystemAuditLog {
   actor: string;
   ipAddress: string;
   details: string;
+}
+
+export type SignalDirection = 'LONG' | 'SHORT' | 'BUY' | 'SELL';
+export type SignalType = 'BREAKOUT' | 'WHALE_ACCUMULATION' | 'MOMENTUM_TREND' | 'MEAN_REVERSION' | 'LIQUIDITY_SWEEP' | 'GOLDEN_CROSS';
+export type SignalStatus = 'ACTIVE' | 'TRIGGERED' | 'TARGET_1_HIT' | 'TARGET_2_HIT' | 'COMPLETED' | 'INVALIDATED';
+
+export interface AITradingSignal {
+  id: string;
+  symbol: string;
+  pair: string;
+  name: string;
+  logoUrl?: string;
+  chainId: ChainId;
+  direction: SignalDirection;
+  signalType: SignalType;
+  winRateProbability: number; // e.g. 93.8 (%)
+  confidenceScore: number; // 0 - 100
+  riskRewardRatio: string; // e.g. "1:4.8"
+  timeframe: '15M' | '1H' | '4H' | '1D';
+  currentPrice: number;
+  entryZoneMin: number;
+  entryZoneMax: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  takeProfit3: number;
+  stopLoss: number;
+  potentialGainPercent: number;
+  maxLossPercent: number;
+  recommendedLeverage: number; // 1x - 25x
+  recommendedPositionSizePercent: number; // e.g. 5% - 15%
+  indicatorsConfluence: {
+    rsi: number;
+    macd: string;
+    whaleFlowUsd: string;
+    volumeMultiplier: string;
+    orderbookImbalance: string;
+    fundingRate: string;
+  };
+  aiRationale: string;
+  invalidationCriteria: string;
+  status: SignalStatus;
+  timestamp: number;
+  backtestStats?: {
+    historicalWinRate: number;
+    sampleTradesCount: number;
+    profitFactor: number;
+  };
+}
+
+export interface PerpetualPosition {
+  id: string;
+  pair: string;
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  entryPrice: number;
+  markPrice: number;
+  liquidationPrice: number;
+  sizeUsd: number;
+  marginUsd: number;
+  leverage: number;
+  pnlUsd: number;
+  pnlPercent: number;
+  takeProfitPrice?: number;
+  stopLossPrice?: number;
+  trailingStopPercent?: number;
+  fundingRate8hPercent: number;
+  fundingEarnedUsd: number;
+  openedAt: number;
+}
+
+export interface LaunchpadProject {
+  id: string;
+  name: string;
+  symbol: string;
+  tagline: string;
+  description: string;
+  logoUrl: string;
+  category: 'AI Agents' | 'Layer 2' | 'DeFi 3.0' | 'Real World Assets' | 'Zero-Knowledge' | 'Infrastructure';
+  securityScore: number; // 0 - 100
+  isAuditVerified: boolean;
+  tokenPriceUsd: number;
+  totalRaiseUsd: number;
+  currentRaisedUsd: number;
+  participantsCount: number;
+  minAllocationUsd: number;
+  maxAllocationUsd: number;
+  startDate: string;
+  endDate: string;
+  status: 'UPCOMING' | 'LIVE' | 'ENDED';
+  vestingSchedule: string;
+  contractAddress: string;
+  acceptedToken: string;
+  userCommittedAmount?: number;
+  features: string[];
+}
+
+export interface OnChainWhaleTransaction {
+  id: string;
+  txHash: string;
+  timestamp: number;
+  walletLabel: string;
+  walletTier: 'Mega Whale (> $25M)' | 'Smart Money Alpha' | 'Market Maker' | 'Institutional Fund' | 'DEX Arbitrageur';
+  action: 'ACCUMULATE' | 'DISTRIBUTE' | 'CEX_WITHDRAWAL' | 'DEX_SWAP' | 'LIQUIDITY_ADD';
+  symbol: string;
+  amountTokens: number;
+  valueUsd: number;
+  fromAddress: string;
+  toAddress: string;
+  aiSentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  aiInterpretation: string;
+}
+
+export interface Web3MerchantInvoice {
+  id: string;
+  title: string;
+  recipientWallet: string;
+  amountUsd: number;
+  preferredToken: string;
+  status: 'PAID' | 'PENDING' | 'EXPIRED';
+  customerNote: string;
+  createdAt: number;
+  txHash?: string;
+  items?: { description: string; qty: number; unitPrice: number }[];
 }

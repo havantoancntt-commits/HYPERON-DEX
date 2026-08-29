@@ -160,8 +160,8 @@ export const VERIFIED_TOKENS: Token[] = [
   },
   {
     address: '0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0',
-    symbol: 'AETH',
-    name: 'Aether Native AI',
+    symbol: 'HYPR',
+    name: 'Hyperon AI Engine',
     decimals: 18,
     chainId: 'ethereum',
     priceUsd: 4.82,
@@ -169,8 +169,9 @@ export const VERIFIED_TOKENS: Token[] = [
     volume24h: 95000000,
     liquidityUsd: 42000000,
     marketCapUsd: 482000000,
-    logoUrl: 'https://assets.coingecko.com/coins/images/29850/small/fetch.png',
+    logoUrl: '',
     isVerified: true,
+    isNative: false,
     category: 'AI',
   },
   {
@@ -338,9 +339,9 @@ export const SAMPLE_POOLS: LiquidityPool[] = [
     },
   },
   {
-    id: 'pool-aeth-eth',
+    id: 'pool-hypr-eth',
     chainId: 'ethereum',
-    name: 'AETH / ETH 1.0%',
+    name: 'HYPR / ETH 1.0%',
     token0: VERIFIED_TOKENS[5],
     token1: VERIFIED_TOKENS[0],
     feeTierPercent: 1.0,
@@ -365,9 +366,9 @@ export const SAMPLE_POOLS: LiquidityPool[] = [
 
 export const SAMPLE_STAKING_VAULTS: StakingVault[] = [
   {
-    id: 'vault-aeth-governance',
+    id: 'vault-hypr-governance',
     chainId: 'ethereum',
-    protocolName: 'Aether Native Staking',
+    protocolName: 'Hyperon Quantum Staking',
     asset: VERIFIED_TOKENS[5],
     rewardToken: VERIFIED_TOKENS[5],
     totalStakedUsd: 94000000,

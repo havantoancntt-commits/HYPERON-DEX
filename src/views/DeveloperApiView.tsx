@@ -48,10 +48,10 @@ export const DeveloperApiView: React.FC = () => {
     });
   };
 
-  const sdkCode = `import { AetherDEXClient } from '@aetherdex/sdk';
+  const sdkCode = `import { HyperonDEXClient } from '@hyperondex/sdk';
 
 // Initialize non-custodial client
-const client = new AetherDEXClient({
+const client = new HyperonDEXClient({
   chainId: 'ethereum',
   mevProtection: true,
 });

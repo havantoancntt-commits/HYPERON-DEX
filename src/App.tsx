@@ -8,12 +8,17 @@ import { ToastContainer } from './components/ToastContainer';
 
 // Views
 import { DashboardView } from './views/DashboardView';
+import { AISignalsView } from './views/AISignalsView';
 import { SwapView } from './views/SwapView';
+import { PerpetualsView } from './views/PerpetualsView';
 import { TradeTerminalView } from './views/TradeTerminalView';
 import { MarketsView } from './views/MarketsView';
 import { TokenDetailsView } from './views/TokenDetailsView';
 import { LiquidityView } from './views/LiquidityView';
 import { StakingView } from './views/StakingView';
+import { LaunchpadView } from './views/LaunchpadView';
+import { OnChainRadarView } from './views/OnChainRadarView';
+import { PaymentsView } from './views/PaymentsView';
 import { CrossChainView } from './views/CrossChainView';
 import { AIIntelligenceView } from './views/AIIntelligenceView';
 import { AIRiskScannerView } from './views/AIRiskScannerView';
@@ -36,8 +41,18 @@ const MainLayout: React.FC = () => {
     switch (activeView) {
       case 'dashboard':
         return <DashboardView />;
+      case 'ai-signals':
+        return <AISignalsView />;
       case 'swap':
         return <SwapView />;
+      case 'perpetuals':
+        return <PerpetualsView />;
+      case 'launchpad':
+        return <LaunchpadView />;
+      case 'onchain-radar':
+        return <OnChainRadarView />;
+      case 'payments':
+        return <PaymentsView />;
       case 'trade':
         return <TradeTerminalView />;
       case 'markets':

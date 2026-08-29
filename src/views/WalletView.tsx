@@ -115,7 +115,7 @@ export const WalletView: React.FC = () => {
                     </div>
                   </td>
                   <td className="py-3 px-3 text-slate-300">
-                    Aether Universal Router (0x3fC9...7FAD)
+                    Hyperon Universal Router (0x3fC9...7FAD)
                   </td>
                   <td className="py-3 px-3 text-slate-400">
                     {isApproved ? 'Unlimited (0xffffff...)' : '0.00 (Revoked)'}

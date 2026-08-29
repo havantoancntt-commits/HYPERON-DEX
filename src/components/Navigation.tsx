@@ -25,7 +25,9 @@ import {
   ChevronRight,
   Flame,
   Zap,
-  Activity
+  Activity,
+  Rocket,
+  CreditCard
 } from 'lucide-react';
 
 interface NavItem {
@@ -46,29 +48,34 @@ export const Navigation: React.FC = () => {
 
   const sections: NavSection[] = [
     {
-      title: 'CORE TRADING',
+      title: 'AI ALPHA & SIGNALS',
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { id: 'swap', label: 'DEX Aggregator', icon: ArrowLeftRight, badge: 'Smart Route', badgeColor: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' },
-        { id: 'trade', label: 'Trade Terminal', icon: LineChart, badge: 'Pro', badgeColor: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+        { id: 'ai-signals', label: 'AI Alpha Signals', icon: Sparkles, badge: '94% Win', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+        { id: 'onchain-radar', label: 'Whale Radar', icon: Activity, badge: 'Smart Money', badgeColor: 'bg-teal-500/10 text-teal-400 border-teal-500/20' },
+        { id: 'ai-intelligence', label: 'Market Sentiment', icon: Cpu, badge: 'Gemini 3.7', badgeColor: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' },
+        { id: 'ai-risk-scanner', label: 'Token Risk Scanner', icon: ShieldAlert, badge: 'Audit', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+        { id: 'ai-copilot', label: 'Portfolio Copilot', icon: BrainCircuit },
+        { id: 'ai-agent', label: 'AI Trading Bot', icon: Bot, badge: 'Active', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+      ],
+    },
+    {
+      title: 'TRADE & DERIVATIVES',
+      items: [
+        { id: 'swap', label: 'DEX Aggregator', icon: ArrowLeftRight, badge: 'Best MEV', badgeColor: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' },
+        { id: 'perpetuals', label: 'Perpetuals Pro', icon: LineChart, badge: '50x', badgeColor: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+        { id: 'trade', label: 'Spot Terminal', icon: TrendingUp },
         { id: 'markets', label: 'Global Markets', icon: TrendingUp },
         { id: 'token-details', label: 'Token Explorer', icon: Coins },
       ],
     },
     {
-      title: 'AI INTELLIGENCE',
+      title: 'LAUNCHPAD & DEFI',
       items: [
-        { id: 'ai-intelligence', label: 'Market Mood', icon: Cpu, badge: 'Gemini 3.7', badgeColor: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' },
-        { id: 'ai-risk-scanner', label: 'Token Risk Scanner', icon: ShieldAlert, badge: 'Audit', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-        { id: 'ai-copilot', label: 'Portfolio Copilot', icon: BrainCircuit },
-        { id: 'ai-agent', label: 'AI Trading Agent', icon: Bot, badge: 'Active', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-      ],
-    },
-    {
-      title: 'LIQUIDITY & DEFI',
-      items: [
+        { id: 'launchpad', label: 'AI Fair Launchpad', icon: Rocket, badge: 'Anti-Rug', badgeColor: 'bg-pink-500/10 text-pink-400 border-pink-500/20' },
         { id: 'liquidity', label: 'Liquidity Pools', icon: Layers },
         { id: 'staking', label: 'Staking & Yield', icon: Lock, badge: '35% APY', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+        { id: 'payments', label: 'Web3 Payments', icon: CreditCard, badge: '0% Slip', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
         { id: 'cross-chain', label: 'Cross-Chain Bridge', icon: GitFork },
       ],
     },
