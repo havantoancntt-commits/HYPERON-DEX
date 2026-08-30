@@ -5,6 +5,7 @@ import { SUPPORTED_CHAINS, VERIFIED_TOKENS } from '../lib/constants';
 import { ChainId } from '../types';
 import { shortenAddress, formatCurrency } from '../lib/utils';
 import { ChainLogo, TokenLogo, Hyperon3DLogo } from './CryptoIcon';
+import { soundManager } from '../lib/sound';
 import { 
   ShieldCheck, 
   Fuel, 
@@ -25,7 +26,9 @@ import {
   Radio,
   Zap,
   Copy,
-  RefreshCw
+  RefreshCw,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -58,6 +61,17 @@ export const Header: React.FC = () => {
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [copied, setCopied] = useState(false);
+  const [soundActive, setSoundActive] = useState(soundManager.getSoundEnabled());
+
+  const toggleSound = () => {
+    const next = soundManager.toggleSound();
+    setSoundActive(next);
+    addToast({
+      title: next ? 'Tactile Audio Enabled' : 'Audio Muted',
+      message: next ? 'Institutional synthetic sound effects active.' : 'Synthetic sound effects muted.',
+      type: 'info'
+    });
+  };
 
   const currentChain = SUPPORTED_CHAINS[chainId] || SUPPORTED_CHAINS.ethereum;
   const ethBalance = balances.ETH || 0;
@@ -243,6 +257,19 @@ export const Header: React.FC = () => {
               <span>AI Intelligence</span>
             </button>
           </div>
+
+          {/* Sound FX Toggle Button */}
+          <button
+            onClick={toggleSound}
+            className={`p-2 rounded-xl border transition-all cursor-pointer ${
+              soundActive 
+                ? 'bg-[#0D111A] border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 shadow-sm shadow-cyan-500/10' 
+                : 'bg-[#0D111A] border-white/[0.08] text-slate-500 hover:text-slate-300 hover:bg-white/5'
+            }`}
+            title={soundActive ? 'Tactile Audio Feedback ON (Click to mute)' : 'Tactile Audio Feedback MUTED (Click to enable)'}
+          >
+            {soundActive ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+          </button>
 
           {/* Execution Chain Switcher */}
           <div className="relative">

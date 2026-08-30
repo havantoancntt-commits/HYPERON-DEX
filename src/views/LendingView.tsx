@@ -5,6 +5,7 @@ import { SAMPLE_LENDING_MARKETS, SAMPLE_FLASH_LOANS } from '../lib/constants';
 import { LendingMarketAsset, FlashLoanOpportunity, UserLendingHealth } from '../types';
 import { formatCurrency, formatCrypto } from '../lib/utils';
 import { TokenLogo } from '../components/CryptoIcon';
+import { soundManager } from '../lib/sound';
 import {
   Landmark,
   ShieldCheck,
@@ -202,6 +203,7 @@ export const LendingView: React.FC = () => {
       withdraw: 'Withdrawn',
     };
 
+    soundManager.playSuccess();
     addToast({
       title: `${actionNames[activeAction]} Successfully`,
       message: `${amount} ${selectedAsset.token.symbol} processed on ${selectedAsset.chainId.toUpperCase()} with 0% slippage.`,
@@ -223,6 +225,7 @@ export const LendingView: React.FC = () => {
       gasSpentUsd: 12.50,
     });
     setIsProcessing(false);
+    soundManager.playSuccess();
 
     addToast({
       title: 'Atomic Flash Loan Executed',

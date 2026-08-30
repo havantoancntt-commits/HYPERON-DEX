@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { WalletProvider } from './context/WalletContext';
 import { ExchangeProvider, useExchange } from './context/ExchangeContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { SimulationModal } from './components/SimulationModal';
 import { ToastContainer } from './components/ToastContainer';
+import { motion, AnimatePresence } from 'motion/react';
+import { soundManager } from './lib/sound';
 
 // Views
 import { DashboardView } from './views/DashboardView';
@@ -37,6 +39,10 @@ import { SettingsView } from './views/SettingsView';
 
 const MainLayout: React.FC = () => {
   const { activeView } = useExchange();
+
+  useEffect(() => {
+    soundManager.playTick();
+  }, [activeView]);
 
   const renderView = () => {
     switch (activeView) {
@@ -100,7 +106,11 @@ const MainLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-slate-200 flex flex-col font-sans selection:bg-blue-600/30 selection:text-blue-200">
+    <div className="min-h-screen bg-[#03060B] text-slate-200 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200 relative overflow-hidden terminal-grid">
+      {/* Ambient Quantum Light Accents */}
+      <div className="fixed top-0 left-1/4 w-[600px] h-[300px] bg-gradient-to-r from-blue-600/10 via-cyan-500/10 to-transparent rounded-full blur-3xl pointer-events-none -z-10 animate-quantum-pulse" />
+      <div className="fixed bottom-0 right-1/4 w-[500px] h-[350px] bg-gradient-to-r from-purple-600/8 via-indigo-500/8 to-transparent rounded-full blur-3xl pointer-events-none -z-10" />
+
       {/* Top Header */}
       <Header />
 
@@ -109,29 +119,39 @@ const MainLayout: React.FC = () => {
         {/* Navigation Sidebar / Mobile Dock */}
         <Navigation />
 
-        {/* Dynamic Viewport */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-[#050505]">
+        {/* Dynamic Viewport with Motion Transition */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 relative">
           <div className="max-w-7xl mx-auto">
-            {renderView()}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeView}
+                initial={{ opacity: 0, y: 10, scale: 0.995 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -8, scale: 0.995 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              >
+                {renderView()}
+              </motion.div>
+            </AnimatePresence>
           </div>
         </main>
       </div>
 
-      {/* Institutional Status Footer */}
-      <footer className="h-8 shrink-0 bg-[#050505] border-t border-white/5 hidden sm:flex items-center justify-between px-6 text-[10px] text-slate-500 font-mono select-none z-30">
+      {/* Institutional Status Telemetry Footer */}
+      <footer className="h-8 shrink-0 bg-[#04060C]/90 backdrop-blur-md border-t border-white/[0.06] hidden sm:flex items-center justify-between px-6 text-[10px] text-slate-400 font-mono select-none z-30">
         <div className="flex items-center gap-6">
-          <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            SYSTEM: OPTIMAL
+          <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            ALL QUANTUM CLUSTERS: HEALTHY
           </span>
-          <span>LATENCY: 14MS</span>
-          <span>GAS: 18 GWEI</span>
-          <span>MEV RPC: FLASHBOTS ENABLED</span>
+          <span className="text-slate-400">LATENCY: <strong className="text-white">12ms</strong></span>
+          <span className="text-slate-400">GAS: <strong className="text-amber-400">14 GWEI</strong></span>
+          <span className="text-slate-400">RPC: <strong className="text-cyan-400">FLASHBOTS PRIVATE AUCTION</strong></span>
         </div>
-        <div className="flex items-center gap-4 text-slate-500">
-          <span>NEXUS AI ENGINE v4.2.0-STABLE</span>
+        <div className="flex items-center gap-4 text-slate-400 font-medium">
+          <span className="text-indigo-400 font-bold">HYPERON PRO v4.8</span>
           <span>|</span>
-          <span>AI AGENT STATUS: ACTIVE</span>
+          <span className="text-cyan-300">AI CO-PILOT ACTIVE</span>
         </div>
       </footer>
 
@@ -153,3 +173,4 @@ export default function App() {
     </WalletProvider>
   );
 }
+

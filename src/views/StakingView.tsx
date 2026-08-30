@@ -5,6 +5,7 @@ import { SAMPLE_STAKING_VAULTS, SAMPLE_RESTAKING_STRATEGIES } from '../lib/const
 import { StakingVault, RestakingStrategy } from '../types';
 import { formatCurrency, formatCrypto } from '../lib/utils';
 import { TokenLogo } from '../components/CryptoIcon';
+import { soundManager } from '../lib/sound';
 import {
   Lock,
   Sparkles,
@@ -109,6 +110,7 @@ export const StakingView: React.FC = () => {
     );
 
     setIsProcessing(false);
+    soundManager.playSuccess();
     addToast({
       title: 'Staking Deposit Confirmed',
       message: `Locked ${amount} ${tokenSymbol} into ${selectedVault.protocolName || selectedVault.name} for ${lockDurationDays} days earning ${selectedVault.totalApyPercent || selectedVault.aprPercent}% APY.`,
@@ -146,6 +148,7 @@ export const StakingView: React.FC = () => {
     );
 
     setIsProcessing(false);
+    soundManager.playSuccess();
     addToast({
       title: 'Restaking Mint Completed',
       message: `Deposited ${amount} ${selectedRestake.asset.symbol} and minted ${selectedRestake.derivativeTokenSymbol} at ${selectedRestake.totalApyPercent}% total APY.`,
@@ -178,6 +181,7 @@ export const StakingView: React.FC = () => {
       })
     );
 
+    soundManager.playSuccess();
     addToast({
       title: 'Rewards Claimed',
       message: `Claimed ${rewards.toFixed(2)} ${vault.rewardToken.symbol} to wallet.`,
@@ -197,6 +201,7 @@ export const StakingView: React.FC = () => {
       gasSpentUsd: 3.50,
     });
     setIsProcessing(false);
+    soundManager.playSuccess();
 
     addToast({
       title: 'AI Auto-Compound Executed',
