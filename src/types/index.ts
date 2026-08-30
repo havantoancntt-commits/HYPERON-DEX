@@ -304,7 +304,7 @@ export interface TransactionHistoryItem {
   id: string;
   txHash: string;
   chainId: ChainId;
-  type: 'SWAP' | 'LIMIT_ORDER' | 'ADD_LIQUIDITY' | 'REMOVE_LIQUIDITY' | 'STAKE' | 'UNSTAKE' | 'CLAIM_REWARDS' | 'APPROVE' | 'BRIDGE';
+  type: 'SWAP' | 'LIMIT_ORDER' | 'ADD_LIQUIDITY' | 'REMOVE_LIQUIDITY' | 'STAKE' | 'UNSTAKE' | 'CLAIM_REWARDS' | 'APPROVE' | 'BRIDGE' | 'SUPPLY' | 'BORROW' | 'REPAY' | 'WITHDRAW_LENDING' | 'FLASH_LOAN' | 'RESTAKE';
   status: 'confirmed' | 'pending' | 'failed';
   fromToken?: string;
   toToken?: string;
@@ -476,3 +476,70 @@ export interface Web3MerchantInvoice {
   txHash?: string;
   items?: { description: string; qty: number; unitPrice: number }[];
 }
+
+export interface LendingMarketAsset {
+  id: string;
+  token: Token;
+  chainId: ChainId;
+  supplyApyPercent: number;
+  borrowAprPercent: number;
+  stableBorrowAprPercent: number;
+  totalSupplyUsd: number;
+  totalBorrowUsd: number;
+  availableLiquidityUsd: number;
+  utilizationRatePercent: number;
+  maxLtvPercent: number; // e.g. 80%
+  liquidationThresholdPercent: number; // e.g. 85%
+  liquidationPenaltyPercent: number; // e.g. 5%
+  collateralEnabled: boolean;
+  canBeBorrowed: boolean;
+  userSuppliedAmount: number;
+  userBorrowedAmount: number;
+  isCollateralActive: boolean;
+  aiRiskTier: 'AAA - Minimal' | 'AA - Secure' | 'A - Moderate' | 'BBB - Volatile';
+  reserveFactorPercent: number;
+}
+
+export interface UserLendingHealth {
+  totalCollateralUsd: number;
+  totalBorrowedUsd: number;
+  currentLtvPercent: number;
+  maxBorrowCapacityUsd: number;
+  borrowPowerUsedPercent: number;
+  healthFactor: number; // e.g. 2.45
+  netApyPercent: number;
+  liquidationRiskTier: 'SAFE' | 'MODERATE' | 'ELEVATED' | 'CRITICAL' | 'LIQUIDATION';
+  aiDeleverageRecommended: boolean;
+  aiAdvice: string;
+}
+
+export interface FlashLoanOpportunity {
+  id: string;
+  token: Token;
+  maxAvailableUsd: number;
+  protocolFeePercent: number; // e.g. 0.05%
+  estimatedGasGwei: number;
+  targetDEXA: string;
+  targetDEXB: string;
+  spreadPercent: number;
+  estimatedNetProfitUsd: number;
+  executionRoute: string;
+  aiConfidenceScore: number;
+}
+
+export interface RestakingStrategy {
+  id: string;
+  name: string;
+  protocol: 'EigenLayer' | 'Symbiotic' | 'Karak' | 'Hyperon Restake AVS';
+  asset: Token;
+  derivativeTokenSymbol: string;
+  totalApyPercent: number;
+  baseStakingApy: number;
+  restakingRewardApy: number;
+  avsCount: number;
+  slashingRiskScore: number; // 0 - 100
+  tvlUsd: number;
+  userStakedAmount: number;
+  instantUnstakeFeePercent: number;
+}
+

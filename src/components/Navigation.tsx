@@ -27,7 +27,8 @@ import {
   Zap,
   Activity,
   Rocket,
-  CreditCard
+  CreditCard,
+  Landmark
 } from 'lucide-react';
 
 interface NavItem {
@@ -73,8 +74,9 @@ export const Navigation: React.FC = () => {
       title: 'LAUNCHPAD & DEFI',
       items: [
         { id: 'launchpad', label: 'AI Fair Launchpad', icon: Rocket, badge: 'Anti-Rug', badgeColor: 'bg-pink-500/10 text-pink-400 border-pink-500/20' },
+        { id: 'lending', label: 'Smart Lending & Borrows', icon: Landmark, badge: 'AI Radar', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+        { id: 'staking', label: 'Staking & Restake', icon: Lock, badge: '35% APY', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
         { id: 'liquidity', label: 'Liquidity Pools', icon: Layers },
-        { id: 'staking', label: 'Staking & Yield', icon: Lock, badge: '35% APY', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
         { id: 'payments', label: 'Web3 Payments', icon: CreditCard, badge: '0% Slip', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
         { id: 'cross-chain', label: 'Cross-Chain Bridge', icon: GitFork },
       ],

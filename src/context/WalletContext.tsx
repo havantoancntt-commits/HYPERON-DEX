@@ -251,6 +251,22 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
         [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
       }));
+    } else if ((txData.type === 'SUPPLY' || txData.type === 'STAKE' || txData.type === 'REPAY') && txData.fromToken && txData.fromAmount) {
+      setBalances((prev) => ({
+        ...prev,
+        [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
+      }));
+    } else if ((txData.type === 'BORROW' || txData.type === 'WITHDRAW_LENDING' || txData.type === 'CLAIM_REWARDS') && txData.toToken && txData.toAmount) {
+      setBalances((prev) => ({
+        ...prev,
+        [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
+      }));
+    } else if (txData.type === 'RESTAKE' && txData.fromToken && txData.toToken && txData.fromAmount && txData.toAmount) {
+      setBalances((prev) => ({
+        ...prev,
+        [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
+        [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
+      }));
     }
 
     const newTx: TransactionHistoryItem = {

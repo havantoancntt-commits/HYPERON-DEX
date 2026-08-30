@@ -16,6 +16,7 @@ export type ProductView =
   | 'wallet'
   | 'liquidity'
   | 'staking'
+  | 'lending'
   | 'payments'
   | 'ai-intelligence'
   | 'ai-risk-scanner'

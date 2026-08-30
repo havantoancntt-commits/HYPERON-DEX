@@ -16,6 +16,7 @@ import { MarketsView } from './views/MarketsView';
 import { TokenDetailsView } from './views/TokenDetailsView';
 import { LiquidityView } from './views/LiquidityView';
 import { StakingView } from './views/StakingView';
+import { LendingView } from './views/LendingView';
 import { LaunchpadView } from './views/LaunchpadView';
 import { OnChainRadarView } from './views/OnChainRadarView';
 import { PaymentsView } from './views/PaymentsView';
@@ -63,6 +64,8 @@ const MainLayout: React.FC = () => {
         return <LiquidityView />;
       case 'staking':
         return <StakingView />;
+      case 'lending':
+        return <LendingView />;
       case 'cross-chain':
         return <CrossChainView />;
       case 'ai-intelligence':
