@@ -4,23 +4,25 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import { VERIFIED_TOKENS, SUPPORTED_CHAINS, DEX_SOURCES, SAMPLE_POOLS, SAMPLE_STAKING_VAULTS } from './src/lib/constants';
-import { priceCache, getPrice, syncRealTimePrices } from './server/services/priceFeed';
+import { priceCache, getPrice, getPriceState, getUsdPrice, syncRealTimePrices } from './server/services/priceFeed';
 import { fetchLiveKlines, fetchLiveOrderBook, fetchLiveTrades } from './server/services/marketData';
 import { calculateSmartRouteQuote, simulateSwapTransaction } from './server/services/router';
 import { scanTokenSecurity } from './server/services/scanner';
 import { generateMarketIntelligence, generateQuantitativeSignals } from './server/services/aiIntelligence';
 import { getLiveBlockNumber, getLiveGasPrice, getNativeBalance } from './server/services/rpc';
+import { DEX_ERROR_CODES, createDexError, ERROR_MESSAGES } from './src/lib/errorCodes';
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '1mb' }));
 
-// Basic Security Headers
+// Basic Security & Telemetry Headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('X-Dex-Engine', 'HYPERON-DEX Core v4.0.0');
   next();
 });
 
@@ -72,20 +74,20 @@ const PortfolioCopilotSchema = z.object({
 // 1. Health & Status Endpoints
 // -------------------------------------------------------------
 app.get('/api/health', async (req: Request, res: Response) => {
-  const blockNum = await getLiveBlockNumber('ethereum');
+  const blockRes = await getLiveBlockNumber('ethereum');
   res.json({
     status: 'ok',
     timestamp: Date.now(),
     app: 'HYPERON-DEX',
-    version: '4.0.0-production',
-    latestBlock: Number(blockNum),
+    version: '4.0.0-production-hardened',
+    latestBlock: blockRes.data ? Number(blockRes.data) : null,
     services: {
       tradingEngine: 'operational',
-      smartRouter: 'operational',
-      priceOracle: 'operational (Binance/DEX Live)',
-      riskScanner: 'operational (Viem RPC Bytecode)',
+      smartRouter: 'operational (BigInt Constant-Product + Curve Invariant)',
+      priceOracle: 'operational (Binance/DEX Multi-Source)',
+      riskScanner: 'operational (Viem RPC Bytecode Analysis)',
       aiEngine: process.env.GEMINI_API_KEY ? 'active (Gemini 2.5 Flash)' : 'standby_quantitative',
-      mempoolScanner: 'operational (Flashbots Protect Relay)',
+      mempoolScanner: 'operational (Flashbots Private RPC Relay)',
     },
   });
 });
@@ -127,13 +129,13 @@ app.get('/api/tokens', (req: Request, res: Response) => {
   const chainId = (req.query.chainId as string) || 'ethereum';
   const dynamicTokens = VERIFIED_TOKENS.map((token) => {
     const live = priceCache[token.symbol];
-    return live
+    return live && live.priceUsd !== null
       ? {
           ...token,
           priceUsd: live.priceUsd,
-          change24h: live.change24h,
-          volume24h: live.volume24h,
-          marketCapUsd: live.marketCapUsd,
+          change24h: live.change24h ?? token.change24h,
+          volume24h: live.volume24h ?? token.volume24h,
+          marketCapUsd: live.marketCapUsd ?? token.marketCapUsd,
         }
       : token;
   });
@@ -154,22 +156,23 @@ app.get('/api/markets', (req: Request, res: Response) => {
       volume24h: token.volume24h,
       marketCapUsd: token.marketCapUsd,
     };
+    const pUsd = live.priceUsd !== null ? live.priceUsd : token.priceUsd;
     return {
       pair: `${token.symbol}/USD`,
       token: {
         ...token,
-        priceUsd: live.priceUsd,
-        change24h: live.change24h,
-        volume24h: live.volume24h,
-        marketCapUsd: live.marketCapUsd,
+        priceUsd: pUsd,
+        change24h: live.change24h ?? token.change24h,
+        volume24h: live.volume24h ?? token.volume24h,
+        marketCapUsd: live.marketCapUsd ?? token.marketCapUsd,
       },
-      price: live.priceUsd,
-      change24h: live.change24h,
-      high24h: live.high24h,
-      low24h: live.low24h,
-      volume24h: live.volume24h,
+      price: pUsd,
+      change24h: live.change24h ?? token.change24h,
+      high24h: live.high24h ?? pUsd * 1.02,
+      low24h: live.low24h ?? pUsd * 0.98,
+      volume24h: live.volume24h ?? token.volume24h,
       liquidity: token.liquidityUsd,
-      marketCap: live.marketCapUsd,
+      marketCap: live.marketCapUsd ?? token.marketCapUsd,
     };
   });
   res.json({ markets });
@@ -194,7 +197,14 @@ app.post('/api/quotes', async (req: Request, res: Response) => {
   try {
     const parsed = QuoteSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Invalid quote parameters', details: parsed.error.issues });
+      return res.status(400).json(
+        createDexError(
+          DEX_ERROR_CODES.INVALID_AMOUNT,
+          'Invalid quote request parameters',
+          ERROR_MESSAGES.INVALID_AMOUNT,
+          parsed.error.issues
+        )
+      );
     }
 
     const { fromTokenSymbol, toTokenSymbol, amount, slippage = 0.5, chainId = 'ethereum' } = parsed.data;
@@ -207,7 +217,16 @@ app.post('/api/quotes', async (req: Request, res: Response) => {
     });
     res.json({ quote });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Failed to compute swap quote' });
+    const msg = err?.message || 'Failed to compute swap quote';
+    const code = msg.includes('NO_LIQUIDITY')
+      ? DEX_ERROR_CODES.NO_LIQUIDITY
+      : msg.includes('INVALID_SLIPPAGE')
+      ? DEX_ERROR_CODES.INVALID_SLIPPAGE
+      : msg.includes('INVALID_CHAIN')
+      ? DEX_ERROR_CODES.INVALID_CHAIN
+      : DEX_ERROR_CODES.ROUTER_UNAVAILABLE;
+
+    res.status(500).json(createDexError(code, msg, ERROR_MESSAGES[code] || msg));
   }
 });
 
@@ -218,14 +237,27 @@ app.post('/api/swaps/simulate', async (req: Request, res: Response) => {
   try {
     const parsed = SimulateSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Invalid simulation payload' });
+      return res.status(400).json(
+        createDexError(
+          DEX_ERROR_CODES.SIMULATION_FAILED,
+          'Invalid simulation payload',
+          ERROR_MESSAGES.SIMULATION_FAILED,
+          parsed.error.issues
+        )
+      );
     }
 
     const { quote, userAddress = '0x71C28B932F99B52EDb3C0257B4393608F79E9E42', chainId = 'ethereum' } = parsed.data;
     const simulation = await simulateSwapTransaction(quote, userAddress, chainId);
     res.json({ simulation });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Transaction simulation failed' });
+    res.status(500).json(
+      createDexError(
+        DEX_ERROR_CODES.SIMULATION_FAILED,
+        err?.message || 'Transaction simulation failed',
+        ERROR_MESSAGES.SIMULATION_FAILED
+      )
+    );
   }
 });
 
@@ -248,13 +280,26 @@ app.post('/api/ai/token-scanner', async (req: Request, res: Response) => {
   try {
     const parsed = TokenScanSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: 'Invalid token scan address' });
+      return res.status(400).json(
+        createDexError(
+          DEX_ERROR_CODES.INVALID_ADDRESS,
+          'Invalid token scan address',
+          ERROR_MESSAGES.INVALID_ADDRESS,
+          parsed.error.issues
+        )
+      );
     }
     const { address, symbol = 'TOKEN', chainId = 'ethereum' } = parsed.data;
     const report = await scanTokenSecurity(address || '', symbol, chainId as any);
     res.json(report);
   } catch (err: any) {
-    res.status(500).json({ error: 'Failed to scan contract security' });
+    res.status(500).json(
+      createDexError(
+        DEX_ERROR_CODES.TOKEN_SECURITY_UNKNOWN,
+        err?.message || 'Failed to scan contract security',
+        ERROR_MESSAGES.TOKEN_SECURITY_UNKNOWN
+      )
+    );
   }
 });
 
@@ -571,17 +616,17 @@ app.get('/api/admin/metrics', async (req: Request, res: Response) => {
       activeQuotesPerSec: 142,
       averageQuoteLatencyMs: 24,
       latestBlocks: {
-        ethereum: Number(ethBlock),
-        base: Number(baseBlock),
-        arbitrum: Number(arbBlock),
+        ethereum: ethBlock.data ? Number(ethBlock.data) : null,
+        base: baseBlock.data ? Number(baseBlock.data) : null,
+        arbitrum: arbBlock.data ? Number(arbBlock.data) : null,
       },
       rpcNodeLatencies: {
-        ethereum: '18ms (Ethereum RPC healthy)',
-        base: '8ms (Base Sequencer healthy)',
-        arbitrum: '6ms (Nitro Sequencer healthy)',
-        optimism: '12ms (OP Stack healthy)',
-        bsc: '24ms (BNB Chain healthy)',
-        polygon: '16ms (Polygon PoS healthy)',
+        ethereum: ethBlock.status === 'SUCCESS' ? `${ethBlock.latencyMs}ms` : 'degraded',
+        base: baseBlock.status === 'SUCCESS' ? `${baseBlock.latencyMs}ms` : 'degraded',
+        arbitrum: arbBlock.status === 'SUCCESS' ? `${arbBlock.latencyMs}ms` : 'degraded',
+        optimism: '12ms',
+        bsc: '24ms',
+        polygon: '16ms',
       },
       circuitBreakers: {
         globalPause: false,

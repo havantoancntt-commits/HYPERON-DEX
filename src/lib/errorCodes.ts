@@ -1,0 +1,72 @@
+/**
+ * HYPERON-DEX Centralized Error Codes & Error Formatting
+ * Production-Grade Error Management for Web3 Financial Systems
+ */
+
+export const DEX_ERROR_CODES = {
+  INVALID_ADDRESS: 'INVALID_ADDRESS',
+  INVALID_CHAIN: 'INVALID_CHAIN',
+  RPC_UNAVAILABLE: 'RPC_UNAVAILABLE',
+  PRICE_UNAVAILABLE: 'PRICE_UNAVAILABLE',
+  STALE_PRICE: 'STALE_PRICE',
+  INSUFFICIENT_BALANCE: 'INSUFFICIENT_BALANCE',
+  INSUFFICIENT_ALLOWANCE: 'INSUFFICIENT_ALLOWANCE',
+  APPROVAL_REQUIRED: 'APPROVAL_REQUIRED',
+  NO_LIQUIDITY: 'NO_LIQUIDITY',
+  QUOTE_EXPIRED: 'QUOTE_EXPIRED',
+  SIMULATION_FAILED: 'SIMULATION_FAILED',
+  TRANSACTION_REVERTED: 'TRANSACTION_REVERTED',
+  ROUTER_UNAVAILABLE: 'ROUTER_UNAVAILABLE',
+  TOKEN_SECURITY_UNKNOWN: 'TOKEN_SECURITY_UNKNOWN',
+  MEV_UNAVAILABLE: 'MEV_UNAVAILABLE',
+  INVALID_SLIPPAGE: 'INVALID_SLIPPAGE',
+  INVALID_AMOUNT: 'INVALID_AMOUNT',
+  RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
+} as const;
+
+export type DexErrorCode = (typeof DEX_ERROR_CODES)[keyof typeof DEX_ERROR_CODES];
+
+export interface DexErrorResponse {
+  code: DexErrorCode;
+  message: string;
+  userMessage: string;
+  details?: unknown;
+  timestamp: number;
+  requestId?: string;
+}
+
+export function createDexError(
+  code: DexErrorCode,
+  message: string,
+  userMessage: string,
+  details?: unknown
+): DexErrorResponse {
+  return {
+    code,
+    message,
+    userMessage,
+    details,
+    timestamp: Date.now(),
+  };
+}
+
+export const ERROR_MESSAGES: Record<DexErrorCode, string> = {
+  INVALID_ADDRESS: 'The provided Ethereum address is invalid or not properly formatted.',
+  INVALID_CHAIN: 'The requested blockchain network is unsupported or unavailable.',
+  RPC_UNAVAILABLE: 'Unable to connect to the blockchain RPC node. Please try again or switch networks.',
+  PRICE_UNAVAILABLE: 'Real-time price feed is currently unavailable for this asset.',
+  STALE_PRICE: 'The market price feed is stale and cannot guarantee execution precision.',
+  INSUFFICIENT_BALANCE: 'Your wallet has insufficient token balance for this swap amount.',
+  INSUFFICIENT_ALLOWANCE: 'Token spending approval is required before executing this trade.',
+  APPROVAL_REQUIRED: 'Please approve the DEX router contract to spend your tokens.',
+  NO_LIQUIDITY: 'No viable liquidity pool or depth found across connected decentralized exchanges.',
+  QUOTE_EXPIRED: 'The swap quote has expired due to block time progression. Refreshing quote...',
+  SIMULATION_FAILED: 'Pre-flight transaction simulation failed on-chain. Order will not be submitted.',
+  TRANSACTION_REVERTED: 'The transaction reverted during on-chain execution.',
+  ROUTER_UNAVAILABLE: 'The DEX router contract is unavailable on the target network.',
+  TOKEN_SECURITY_UNKNOWN: 'Contract security verification is inconclusive. Proceed with extreme caution.',
+  MEV_UNAVAILABLE: 'Private MEV relay is currently unavailable. Swap will use public mempool.',
+  INVALID_SLIPPAGE: 'Slippage tolerance must be between 0.01% and 50.0%.',
+  INVALID_AMOUNT: 'The swap input amount must be a positive non-zero number.',
+  RATE_LIMIT_EXCEEDED: 'API rate limit exceeded. Please wait a moment before sending new requests.',
+};
