@@ -1,6 +1,7 @@
 /**
  * HYPERON-DEX Automated Regression & Verification Test Suite
- * Mathematical AMM precision, price feed integrity, routing, scanner, and simulation tests.
+ * Mathematical AMM precision, property-based invariant testing, price feed integrity,
+ * routing graph optimization, scanner, simulation engine, and cryptographic VRF tests.
  */
 
 import { UniswapV2Adapter, UniswapV3Adapter, CurveAdapter, BalancerAdapter } from '../server/services/ammEngine';
@@ -8,6 +9,8 @@ import { parseUnits, formatUnits } from 'viem';
 import { calculateSmartRouteQuote } from '../server/services/router';
 import { scanTokenSecurity } from '../server/services/scanner';
 import { getPriceState, getUsdPrice } from '../server/services/priceFeed';
+import { decodeRevertReason, SimulationEngine } from '../server/services/simulationEngine';
+import { deriveWinningDigitsFromSeed, generateCryptographicTicketNumbers } from '../server/services/lotteryEngine';
 import { DEX_ERROR_CODES } from '../src/lib/errorCodes';
 
 let totalTests = 0;
@@ -68,9 +71,40 @@ async function runTests() {
   assert(noLiqQuote.status === 'NO_LIQUIDITY', 'Undefined reserves return status NO_LIQUIDITY');
 
   // -------------------------------------------------------------
-  // Test 2: Curve StableSwap Invariant Adapter
+  // Test 2: AMM Property-Based Fuzz & Invariant Verification
   // -------------------------------------------------------------
-  console.log('\n--- 2. Curve StableSwap Invariant Adapter ---');
+  console.log('\n--- 2. AMM Property-Based Invariant Fuzz Tests ---');
+  // Property A: k_after >= k_before due to fee accumulation
+  let invariantPassed = true;
+  let monotonicPassed = true;
+  let prevOut = 0n;
+
+  for (let i = 1; i <= 20; i++) {
+    const inputEth = parseUnits(`${i * 0.5}`, 18);
+    const q = uniV2.computeQuote(inputEth, 18, 6, mockReserves);
+
+    if (q.amountOutRaw <= prevOut) {
+      monotonicPassed = false;
+    }
+    prevOut = q.amountOutRaw;
+
+    const r0After = mockReserves.reserve0 + inputEth;
+    const r1After = mockReserves.reserve1 - q.amountOutRaw;
+    const kBefore = mockReserves.reserve0 * mockReserves.reserve1;
+    const kAfter = r0After * r1After;
+
+    if (kAfter < kBefore) {
+      invariantPassed = false;
+    }
+  }
+
+  assert(invariantPassed, 'Property: Invariant k strictly increases or stays constant (k_after >= k_before)');
+  assert(monotonicPassed, 'Property: Monotonicity holds (larger input dx strictly yields larger output dy)');
+
+  // -------------------------------------------------------------
+  // Test 3: Curve StableSwap Invariant Adapter
+  // -------------------------------------------------------------
+  console.log('\n--- 3. Curve StableSwap Invariant Adapter ---');
   const curve = new CurveAdapter();
   const stableReserves = {
     reserve0: parseUnits('10000000', 6), // 10M USDC
@@ -94,9 +128,9 @@ async function runTests() {
   assert(curveQuote.priceImpactPercent < 0.1, 'Curve stable swap has minimal price impact (<0.1%)');
 
   // -------------------------------------------------------------
-  // Test 3: Price Feed Oracle & Zero $1.00 Fallbacks
+  // Test 4: Price Feed Oracle & Zero $1.00 Fallbacks
   // -------------------------------------------------------------
-  console.log('\n--- 3. Price Feed Oracle Integrity ---');
+  console.log('\n--- 4. Price Feed Oracle Integrity ---');
   const ethState = getPriceState('ETH');
   assert(ethState.symbol === 'ETH', 'Price feed correctly maps ETH symbol');
   assert(ethState.status === 'LIVE' || ethState.status === 'UNAVAILABLE', 'Price status is strictly typed');
@@ -109,9 +143,9 @@ async function runTests() {
   assert(unknownNum === null, 'getUsdPrice returns null for unverified tokens');
 
   // -------------------------------------------------------------
-  // Test 4: Smart Router & Multi-Chain Quotes
+  // Test 5: Smart Router & Multi-Chain Quotes
   // -------------------------------------------------------------
-  console.log('\n--- 4. Smart DEX Router ---');
+  console.log('\n--- 5. Smart DEX Router ---');
   const routeQuote = await calculateSmartRouteQuote({
     fromTokenSymbol: 'ETH',
     toTokenSymbol: 'USDC',
@@ -146,12 +180,35 @@ async function runTests() {
   assert(slippageErrorCaught, 'Router strictly rejects excessive slippage (>50%)');
 
   // -------------------------------------------------------------
-  // Test 5: Token Security Forensics Engine
+  // Test 6: Simulation Engine Revert Decoder
   // -------------------------------------------------------------
-  console.log('\n--- 5. Token Security Forensics Engine ---');
+  console.log('\n--- 6. Simulation Engine Revert Decoder ---');
+  const stfError = decodeRevertReason('0x535446');
+  assert(stfError.includes('SafeTransferFailed'), 'Decodes Uniswap STF error');
+
+  const panicError = decodeRevertReason('0x4e487b710000000000000000000000000000000000000000000000000000000000000012');
+  assert(panicError.includes('Division by zero'), 'Decodes EVM Panic(0x12) division by zero');
+
+  // -------------------------------------------------------------
+  // Test 7: Provably Fair VRF 2.5 Derivation
+  // -------------------------------------------------------------
+  console.log('\n--- 7. Provably Fair Chainlink VRF 2.5 ---');
+  const seed = '0x8f4d9b23c5e81a0293817f763abdf543918a992bc6643210aa39ec77281ab091';
+  const digits1 = deriveWinningDigitsFromSeed(seed);
+  const digits2 = deriveWinningDigitsFromSeed(seed);
+
+  assert(digits1.length === 6, 'VRF derives exactly 6 digits');
+  assert(digits1.every((d) => d >= 0 && d <= 9), 'All digits are between 0 and 9 inclusive');
+  assert(JSON.stringify(digits1) === JSON.stringify(digits2), 'VRF derivation is 100% deterministic given the same seed');
+
+  // -------------------------------------------------------------
+  // Test 8: Token Security Forensics Engine
+  // -------------------------------------------------------------
+  console.log('\n--- 8. Token Security Forensics Engine ---');
   const ethSecurity = await scanTokenSecurity('0x0000000000000000000000000000000000000000', 'ETH', 'ethereum');
   assert(ethSecurity.securityScore === 100, 'Native ETH receives 100/100 score');
   assert(ethSecurity.isHoneypot === false, 'Native ETH is not a honeypot');
+  assert(ethSecurity.honeypotStatus === 'VERIFIED_SAFE', 'Native ETH honeypotStatus is VERIFIED_SAFE');
   assert(ethSecurity.evidence.length > 0, 'Native token audit includes factual evidence list');
 
   const unverifiedAddress = '0x1234567890123456789012345678901234567890';
@@ -160,9 +217,9 @@ async function runTests() {
   assert(unverifiedReport.unknownFactors.length > 0, 'Unverified contract explicitly flags unknown factors');
 
   // -------------------------------------------------------------
-  // Test 6: Centralized Error Codes
+  // Test 9: Centralized Error Codes
   // -------------------------------------------------------------
-  console.log('\n--- 6. Centralized Error Codes Verification ---');
+  console.log('\n--- 9. Centralized Error Codes Verification ---');
   assert(DEX_ERROR_CODES.INVALID_AMOUNT === 'INVALID_AMOUNT', 'INVALID_AMOUNT error code exists');
   assert(DEX_ERROR_CODES.NO_LIQUIDITY === 'NO_LIQUIDITY', 'NO_LIQUIDITY error code exists');
   assert(DEX_ERROR_CODES.SIMULATION_FAILED === 'SIMULATION_FAILED', 'SIMULATION_FAILED error code exists');
