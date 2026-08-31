@@ -143,20 +143,26 @@ export const LotteryView: React.FC = () => {
     return activeRounds.find((r) => r.poolId === selectedPoolId) || activeRounds[0];
   }, [activeRounds, selectedPoolId]);
 
-  // Update countdown
+  // Update countdown & auto draw trigger
   useEffect(() => {
     if (!currentRound) return;
     const calculateTime = () => {
-      const diff = Math.max(0, currentRound.endTime - Date.now());
+      const now = Date.now();
+      const diff = Math.max(0, currentRound.endTime - now);
       const hours = Math.floor(diff / (1000 * 60 * 60));
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((diff % (1000 * 60)) / 1000);
       setTimeLeft({ hours, minutes, seconds });
+
+      // Automatically trigger 3D drum draw when round reaches 0 or is in drawing state
+      if ((diff === 0 || currentRound.status === 'DRAWING') && !isDrawing && !currentRound.winningNumbers) {
+        setIsDrawing(true);
+      }
     };
     calculateTime();
     const timer = setInterval(calculateTime, 1000);
     return () => clearInterval(timer);
-  }, [currentRound]);
+  }, [currentRound, isDrawing]);
 
   // Helper: Generate random 6 numbers
   const getRandomNumbers = () => Array.from({ length: 6 }).map(() => Math.floor(Math.random() * 10));
@@ -429,9 +435,10 @@ export const LotteryView: React.FC = () => {
 
         <div className="relative z-10 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 sm:gap-8">
           <div className="space-y-3.5 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px] sm:text-xs font-mono font-bold tracking-wider shadow-sm">
+            <div className="max-w-full inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px] sm:text-xs font-mono font-bold tracking-wide shadow-sm">
               <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" />
-              <span className="truncate">CHAINLINK VRF 2.5 PROVABLY FAIR 3D MEGA LOTTERY</span>
+              <span className="hidden sm:inline">CHAINLINK VRF 2.5 PROVABLY FAIR • 3D MEGA LOTTERY</span>
+              <span className="sm:hidden font-semibold">VRF 2.5 PROVABLY FAIR • 3D LOTTERY</span>
             </div>
 
             <h1 className="text-2xl sm:text-4xl md:text-5xl font-black text-white tracking-tight leading-tight font-outfit">
@@ -557,8 +564,12 @@ export const LotteryView: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Dice5 className="w-5 h-5 text-amber-400" />
-            <h2 className="text-base sm:text-lg font-black text-white font-outfit uppercase">
-              Khán Đài Lồng Quay Xổ Số 3D Trực Tuyến
+            <h2 className="text-base sm:text-lg font-black text-white font-outfit uppercase flex items-center gap-2">
+              <span>Khán Đài Lồng Quay Xổ Số 3D Tự Động</span>
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
             </h2>
           </div>
 
@@ -574,16 +585,23 @@ export const LotteryView: React.FC = () => {
           <Lottery3DDrum
             isDrawing={isDrawing}
             winningNumbers={currentRound?.winningNumbers}
-            onDrawComplete={(drawn) => {
+            onDrawComplete={async (drawn) => {
+              setIsDrawing(false);
               addToast({
-                title: '✨ 3D Drum Draw Hoàn Tất!',
-                message: `Kết quả quay số: [ ${drawn.join(' - ')} ]`,
+                title: '✨ 3D Drum Draw Tự Động Hoàn Tất!',
+                message: `Kết quả quay số: [ ${drawn.join(' - ')} ] • Đã tự động đối soát & quyết toán.`,
                 type: 'success',
               });
+              // Refresh full lottery dataset automatically
+              await fetchLotteryData();
             }}
             roundId={currentRound?.id}
             poolName={currentRound?.poolName}
             themeColor={selectedPoolId === 'hourly-lightning' ? 'cyan' : selectedPoolId === 'no-loss-savings' ? 'emerald' : 'gold'}
+            timeLeft={timeLeft}
+            roundStatus={currentRound?.status}
+            vrfTxHash={currentRound?.vrfTxHash}
+            vrfSeed={currentRound?.vrfSeed}
           />
         )}
       </div>

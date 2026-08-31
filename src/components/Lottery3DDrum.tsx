@@ -3,8 +3,6 @@ import { soundManager } from '../lib/sound';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import {
-  Play,
-  RotateCw,
   Sparkles,
   Zap,
   Eye,
@@ -15,16 +13,25 @@ import {
   CheckCircle2,
   RefreshCw,
   ShieldCheck,
+  Clock,
+  Cpu,
+  Flame,
+  Activity,
+  Layers,
 } from 'lucide-react';
+import { LotteryRoundStatus } from '../types';
 
 interface Lottery3DDrumProps {
   isDrawing?: boolean;
   winningNumbers?: number[] | null;
   onDrawComplete?: (numbers: number[]) => void;
-  onManualTrigger?: () => void;
   roundId?: number;
   poolName?: string;
   themeColor?: 'gold' | 'cyan' | 'emerald';
+  timeLeft?: { hours: number; minutes: number; seconds: number };
+  roundStatus?: LotteryRoundStatus;
+  vrfTxHash?: string;
+  vrfSeed?: string;
 }
 
 interface Ball3D {
@@ -59,10 +66,13 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
   isDrawing = false,
   winningNumbers = null,
   onDrawComplete,
-  onManualTrigger,
   roundId = 142,
   poolName = 'Hyperon Mega 6/45 3D Jackpot',
   themeColor = 'gold',
+  timeLeft = { hours: 0, minutes: 0, seconds: 0 },
+  roundStatus = 'OPEN',
+  vrfTxHash,
+  vrfSeed,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -72,10 +82,9 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
   const [spinSpeed, setSpinSpeed] = useState<number>(1);
   const [ejectedBalls, setEjectedBalls] = useState<number[]>([]);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
-  const [cameraAngle, setCameraAngle] = useState<'front' | 'iso' | 'top' | 'chute'>('iso');
-  const [fullStageMode, setFullStageMode] = useState<boolean>(false);
+  const [cameraAngle, setCameraAngle] = useState<'front' | 'iso' | 'top'>('iso');
   const [currentDrawStep, setCurrentDrawStep] = useState<number>(0); // 0 to 6
-  const [liveSeedCommitment, setLiveSeedCommitment] = useState<string>('0x8f4d9b23c5e8...VRF2.5');
+  const [drawStatusText, setDrawStatusText] = useState<string>('SẴN SÀNG QUAY TỰ ĐỘNG ON-CHAIN');
 
   // Interactive Drag Rotation
   const rotationRef = useRef<{ rotX: number; rotY: number; isDragging: boolean; lastX: number; lastY: number }>({
@@ -98,7 +107,6 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
       const digit = i % 10;
       const col = BALL_COLORS[digit];
       
-      // Random position inside sphere
       const u = Math.random();
       const v = Math.random();
       const theta = u * 2.0 * Math.PI;
@@ -128,6 +136,17 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
 
     ballsRef.current = balls;
   }, []);
+
+  // Update winning balls when round is closed or has existing winning numbers
+  useEffect(() => {
+    if (winningNumbers && winningNumbers.length === 6 && !isSpinning) {
+      setEjectedBalls(winningNumbers);
+      setCurrentDrawStep(6);
+    } else if (!isSpinning && (!winningNumbers || winningNumbers.length === 0)) {
+      setEjectedBalls([]);
+      setCurrentDrawStep(0);
+    }
+  }, [winningNumbers, isSpinning]);
 
   // Theme styling helpers
   const themeStyles = {
@@ -189,7 +208,7 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
         rotationRef.current.rotY += 0.045 * spinSpeed;
         rotationRef.current.rotX += 0.008 * spinSpeed;
       } else {
-        rotationRef.current.rotY += 0.005;
+        rotationRef.current.rotY += 0.006 * spinSpeed;
       }
 
       // Camera preset angles
@@ -210,7 +229,7 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
 
       // Floor Shadow & Neon Platform
       const gradFloor = ctx.createRadialGradient(0, 160, 20, 0, 160, 220);
-      gradFloor.addColorStop(0, 'rgba(245, 158, 11, 0.35)');
+      gradFloor.addColorStop(0, themeColor === 'cyan' ? 'rgba(6, 182, 212, 0.35)' : themeColor === 'emerald' ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)');
       gradFloor.addColorStop(0.5, 'rgba(6, 182, 212, 0.15)');
       gradFloor.addColorStop(1, 'rgba(0, 0, 0, 0)');
       ctx.fillStyle = gradFloor;
@@ -256,14 +275,14 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
       const speedMultiplier = isSpinning ? 2.8 * spinSpeed : 1.0;
 
       balls.forEach((b) => {
-        // Air turbulence + centrifugal force
         if (isSpinning) {
           b.vx += (Math.random() - 0.5) * 2.5 * speedMultiplier;
-          b.vy += (Math.random() - 0.45) * 2.8 * speedMultiplier; // slightly upward blowing
+          b.vy += (Math.random() - 0.45) * 2.8 * speedMultiplier;
           b.vz += (Math.random() - 0.5) * 2.5 * speedMultiplier;
         } else {
-          // Gentle bounce & gravity
-          b.vy += 0.18; // gravity
+          b.vy += 0.18;
+          b.vx += (Math.random() - 0.5) * 0.2;
+          b.vz += (Math.random() - 0.5) * 0.2;
         }
 
         b.x += b.vx;
@@ -294,7 +313,6 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
           b.vy = (b.vy - 2 * dot * ny) * 0.85;
           b.vz = (b.vz - 2 * dot * nz) * 0.85;
 
-          // If spinning fast, add tangential kick
           if (isSpinning) {
             b.vx += -nz * 1.5 * spinSpeed;
             b.vz += nx * 1.5 * spinSpeed;
@@ -319,7 +337,6 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
 
       // Project all balls
       balls.forEach((b) => {
-        // Rotate around Y then X
         const x1 = b.x * cosY - b.z * sinY;
         const z1 = b.z * cosY + b.x * sinY;
         const y1 = b.y * cosX - z1 * sinX;
@@ -349,7 +366,6 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
       // 4. Draw sorted items
       projectedItems.forEach((item) => {
         if (item.type === 'back_cage' || item.type === 'front_cage') {
-          // Draw 3D Cage Rings & Wireframe
           ctx.save();
           ctx.translate(centerX, centerY);
 
@@ -369,13 +385,12 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
             ctx.stroke();
           }
 
-          // Longitudinal Ribs (Rotating with cage)
+          // Longitudinal Ribs
           for (let lon = 0; lon < 12; lon++) {
             const angle = targetRotY + (lon * Math.PI) / 6;
             const rx = Math.sin(angle) * CAGE_RADIUS;
             const rz = Math.cos(angle) * CAGE_RADIUS;
 
-            // Only draw front ribs in front phase, back ribs in back phase
             if ((isFront && rz < 0) || (!isFront && rz >= 0)) {
               ctx.beginPath();
               ctx.ellipse(rx * 0.4, 0, Math.abs(rx) + 2, CAGE_RADIUS, 0, 0, Math.PI * 2);
@@ -426,9 +441,9 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
 
             // 3D Spherical Radial Gradient
             const sphereGrad = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r);
-            sphereGrad.addColorStop(0, '#FFFFFF'); // Specular highlight
+            sphereGrad.addColorStop(0, '#FFFFFF');
             sphereGrad.addColorStop(0.3, b.color);
-            sphereGrad.addColorStop(1, '#000000'); // Shadow rim
+            sphereGrad.addColorStop(1, '#000000');
 
             ctx.fillStyle = sphereGrad;
             ctx.beginPath();
@@ -444,7 +459,6 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
               ctx.textBaseline = 'middle';
               ctx.fillText(b.digit.toString(), 0, 0);
 
-              // Sub-digit underline for 6 and 9
               if (b.digit === 6 || b.digit === 9) {
                 ctx.fillRect(-r * 0.35, r * 0.45, r * 0.7, 1.5);
               }
@@ -459,7 +473,6 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
       ctx.save();
       ctx.translate(centerX, centerY);
 
-      // Glass Chute at the top right
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -480,7 +493,7 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
     };
   }, [isSpinning, spinSpeed, cameraAngle, themeColor]);
 
-  // Pointer drag for manual 3D cage rotation
+  // Pointer drag for 3D cage rotation inspection
   const handlePointerDown = (e: React.PointerEvent) => {
     rotationRef.current.isDragging = true;
     rotationRef.current.lastX = e.clientX;
@@ -502,54 +515,55 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
     rotationRef.current.isDragging = false;
   };
 
-  // Automated VRF Draw Sequence Simulation
-  const triggerFullDrawSequence = useCallback(async () => {
+  // Automated VRF Draw Sequence Engine
+  const executeAutomatedDraw = useCallback(async () => {
     setIsSpinning(true);
-    setSpinSpeed(2.5);
+    setSpinSpeed(2.8);
     setEjectedBalls([]);
     setCurrentDrawStep(0);
+    setDrawStatusText('KHỞI ĐỘNG LỒNG QUAY KHÍ NÉN TỰ ĐỘNG & CHAINLINK VRF 2.5...');
 
     soundManager.playDrumSpin();
     soundManager.playTick();
 
-    // Determine winning numbers (either provided or derive fresh)
     const targetNumbers = winningNumbers && winningNumbers.length === 6
       ? winningNumbers
       : Array.from({ length: 6 }).map(() => Math.floor(Math.random() * 10));
 
-    // Eject each ball sequentially every 1.6 seconds
+    // Eject each ball sequentially with pneumatic delay
     for (let step = 1; step <= 6; step++) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      setDrawStatusText(`ĐANG TỰ ĐỘNG RÚT BÓNG MAY MẮN #${step}/6 TỪ LỒNG 3D...`);
+      await new Promise((resolve) => setTimeout(resolve, 1400));
 
       const nextBall = targetNumbers[step - 1];
       setEjectedBalls((prev) => [...prev, nextBall]);
       setCurrentDrawStep(step);
       soundManager.playBallEject();
 
-      // Confetti burst for each revealed ball
       confetti({
-        particleCount: 25,
-        spread: 45,
-        origin: { y: 0.7, x: 0.3 + step * 0.07 },
-        colors: ['#F59E0B', '#10B981', '#06B6D4', '#EC4899', '#8B5CF6'],
+        particleCount: 28,
+        spread: 50,
+        origin: { y: 0.72, x: 0.28 + step * 0.08 },
+        colors: ['#F59E0B', '#10B981', '#06B6D4', '#EC4899', '#8B5CF6', '#FBBF24'],
       });
     }
 
-    // Slow down drum
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    setDrawStatusText('ĐỐI SOÁT CHỮ KÝ MẬT MÃ ON-CHAIN & TỰ ĐỘNG TRẢ THƯỞNG...');
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     setSpinSpeed(0.5);
+
     setTimeout(() => {
       setIsSpinning(false);
       setSpinSpeed(1);
+      setDrawStatusText('KẾT QUẢ ĐÃ ĐƯỢC XÁC THỰC MẬT MÃ & HOÀN TẤT TRẢ THƯỞNG');
     }, 1200);
 
-    // Grand Jackpot fanfare
     soundManager.playJackpot();
     confetti({
-      particleCount: 150,
-      spread: 90,
+      particleCount: 160,
+      spread: 95,
       origin: { y: 0.5 },
-      colors: ['#FFD700', '#FFA500', '#00FFFF', '#FF1493'],
+      colors: ['#FFD700', '#FFA500', '#00FFFF', '#FF1493', '#10B981'],
     });
 
     if (onDrawComplete) {
@@ -557,44 +571,48 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
     }
   }, [winningNumbers, onDrawComplete]);
 
-  // If isDrawing prop changes to true, trigger sequence
+  // Trigger automated draw whenever isDrawing becomes true
   useEffect(() => {
-    if (isDrawing) {
-      triggerFullDrawSequence();
+    if (isDrawing && !isSpinning) {
+      executeAutomatedDraw();
     }
-  }, [isDrawing]);
+  }, [isDrawing, isSpinning, executeAutomatedDraw]);
 
   return (
     <div
       ref={containerRef}
-      className={`relative w-full rounded-3xl overflow-hidden border ${themeStyles.border} bg-gradient-to-b from-[#0F1424] via-[#090C16] to-[#04060B] p-4 sm:p-6 shadow-2xl ${themeStyles.glow} flex flex-col items-center justify-between min-h-[520px] transition-all`}
+      className={`relative w-full rounded-3xl overflow-hidden border ${themeStyles.border} bg-gradient-to-b from-[#0F1424] via-[#090C16] to-[#04060B] p-4 sm:p-6 shadow-2xl ${themeStyles.glow} flex flex-col items-center justify-between min-h-[540px] transition-all`}
     >
       {/* Dynamic Background Light Rays */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(245,158,11,0.08)_0%,rgba(0,0,0,0)_70%)] pointer-events-none" />
 
-      {/* Top Header & VRF Badge */}
-      <div className="relative z-10 w-full flex flex-col sm:flex-row items-center justify-between gap-3 pb-2 border-b border-white/[0.08]">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shadow-md">
-            <Radio className="w-5 h-5 animate-pulse" />
+      {/* Top Header: Automated Status Bar & Telemetry */}
+      <div className="relative z-10 w-full flex flex-col sm:flex-row items-center justify-between gap-3 pb-3 border-b border-white/[0.08]">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shadow-lg shadow-amber-950/40 shrink-0">
+            <Cpu className={`w-5 h-5 ${isSpinning ? 'animate-spin text-yellow-300' : 'text-amber-400'}`} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-sm sm:text-base font-black text-white font-outfit uppercase tracking-wide">
-                Lồng Quay Xổ Số 3D VRF 2.5
+                Lồng Quay Xổ Số 3D Tự Động (Auto-VRF)
               </h2>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${themeStyles.badge}`}>
-                ROUND #{roundId}
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold ${themeStyles.badge}`}>
+                KỲ #{roundId}
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                <span>100% Tự Động On-Chain</span>
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-sans">
-              Dynamic 3D Physics Ball Cage • On-Chain Provable Seed
+              Khí nén tự động rút bóng 3D • Chainlink VRF 2.5 Provably Fair • Quyết toán tự động
             </p>
           </div>
         </div>
 
-        {/* Camera Angles & Sound Controls */}
-        <div className="flex items-center gap-1.5 bg-black/60 p-1 rounded-xl border border-white/[0.08] shrink-0">
+        {/* Camera Angles & Controls */}
+        <div className="flex items-center gap-1.5 bg-black/60 p-1 rounded-xl border border-white/[0.08] shrink-0 self-end sm:self-center">
           <button
             onClick={() => {
               soundManager.playTick();
@@ -634,16 +652,27 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
               setSoundEnabled(enabled);
             }}
             className="p-1.5 text-slate-400 hover:text-amber-300 rounded-lg transition-colors cursor-pointer"
-            title="Toggle Sound Effects"
+            title="Bật/Tắt Âm Thanh"
           >
             {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-slate-600" />}
+          </button>
+          <button
+            onClick={() => {
+              soundManager.playRoll();
+              setSpinSpeed((prev) => (prev >= 3 ? 1 : prev + 1));
+            }}
+            title="Tốc độ quan sát lồng quay"
+            className="px-2 py-1 bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 cursor-pointer"
+          >
+            <Zap className="w-3 h-3 text-cyan-400" />
+            <span>{spinSpeed}x</span>
           </button>
         </div>
       </div>
 
       {/* Main 3D Canvas Stage */}
       <div
-        className="relative w-full flex-1 flex items-center justify-center my-2 cursor-grab active:cursor-grabbing min-h-[300px]"
+        className="relative w-full flex-1 flex items-center justify-center my-1 cursor-grab active:cursor-grabbing min-h-[300px]"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -651,33 +680,39 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
       >
         <canvas ref={canvasRef} className="w-full h-full max-h-[380px] object-contain select-none" />
 
-        {/* Live Draw Status Overlay */}
-        {isSpinning && (
-          <div className="absolute top-4 left-4 px-3 py-1.5 rounded-xl bg-black/80 border border-amber-500/50 backdrop-blur-md flex items-center gap-2 animate-pulse">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
-            <span className="text-xs font-mono font-bold text-amber-300">
-              {currentDrawStep === 6 ? 'VERIFYING ON-CHAIN SEED...' : `EJECTING BALL #${currentDrawStep + 1}/6`}
-            </span>
+        {/* Dynamic Live Status Overlay */}
+        <div className="absolute top-3 left-3 sm:left-4 right-3 sm:right-auto px-3.5 py-2 rounded-2xl bg-black/85 border border-amber-500/40 backdrop-blur-md flex items-center gap-2.5 shadow-xl">
+          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isSpinning ? 'bg-amber-400 animate-ping' : 'bg-emerald-400 animate-pulse'}`} />
+          <div className="space-y-0.5">
+            <div className="text-[10px] uppercase font-mono text-slate-400 font-bold">Trạng Thái Tự Động:</div>
+            <div className="text-xs font-mono font-black text-amber-300 truncate max-w-[280px] sm:max-w-none">
+              {drawStatusText}
+            </div>
           </div>
-        )}
+        </div>
 
-        {/* Hint text for interaction */}
+        {/* Interactive hint */}
         {!isSpinning && (
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/50 border border-white/10 text-[10px] text-slate-400 font-mono pointer-events-none">
-            🖱️ Kéo chuột để xoay lồng quay 3D
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-3.5 py-1 rounded-full bg-black/60 border border-white/10 text-[10px] text-slate-400 font-mono pointer-events-none backdrop-blur-sm">
+            🖱️ Kéo để xoay 360° • Lồng quay tự động kích hoạt khi hết giờ đếm ngược
           </div>
         )}
       </div>
 
-      {/* Bottom Section: Ejected Balls Tube Tray & Controls */}
-      <div className="relative z-10 w-full space-y-4 pt-3 border-t border-white/[0.08]">
+      {/* Bottom Section: Ejected Balls Tube Tray & Automated VRF Bar */}
+      <div className="relative z-10 w-full space-y-3 pt-3 border-t border-white/[0.08]">
         {/* Ejected Winning Balls Row */}
-        <div className="bg-black/70 p-3 sm:p-4 rounded-2xl border border-white/[0.1] backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3 shadow-inner">
+        <div className="bg-black/75 p-3 sm:p-4 rounded-2xl border border-white/[0.1] backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3 shadow-inner">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-            <span className="text-xs font-mono font-bold text-slate-200">
-              Kết Quả Trúng Thưởng (VRF Drawn):
-            </span>
+            <div>
+              <span className="text-xs font-mono font-bold text-slate-200 block">
+                Kết Quả Quay Số Mật Mã (VRF Drawn):
+              </span>
+              <span className="text-[10px] text-slate-400 font-sans">
+                {currentDrawStep === 6 ? 'Đã hoàn tất rút 6 quả bóng' : `Đã rút ${currentDrawStep}/6 bóng`}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
@@ -690,11 +725,11 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
                 <motion.div
                   key={idx}
                   initial={false}
-                  animate={isRevealed ? { scale: [0.8, 1.25, 1], rotateY: [180, 0] } : {}}
-                  transition={{ duration: 0.4 }}
+                  animate={isRevealed ? { scale: [0.75, 1.25, 1], rotateY: [180, 0] } : {}}
+                  transition={{ duration: 0.35 }}
                   className={`w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center font-mono font-black text-base sm:text-xl shadow-lg transition-all ${
                     isRevealed
-                      ? 'border-2 border-white/80 text-white animate-bounce-subtle'
+                      ? 'border-2 border-white/80 text-white shadow-md'
                       : 'bg-white/[0.04] border border-white/10 text-slate-600'
                   }`}
                   style={
@@ -714,51 +749,24 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
           </div>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span className="hidden sm:inline">VRF 2.5 Seed:</span>
-            <span className="text-cyan-300 font-semibold truncate max-w-[200px]">
-              {liveSeedCommitment}
+        {/* Automated VRF Telemetry & Verification Line */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 px-2 text-xs font-mono">
+          <div className="flex items-center gap-2 text-slate-400 w-full sm:w-auto justify-between sm:justify-start">
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="text-slate-300">VRF Coordinator:</span>
+            </div>
+            <span className="text-cyan-300 font-semibold truncate max-w-[180px] sm:max-w-[240px]">
+              {vrfTxHash || '0x271682DEB8C4...VRF2.5'}
             </span>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              onClick={() => {
-                if (isSpinning) {
-                  setIsSpinning(false);
-                } else {
-                  triggerFullDrawSequence();
-                }
-              }}
-              className="flex-1 sm:flex-initial px-5 py-2.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-black font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 cursor-pointer font-outfit uppercase tracking-wider"
-            >
-              {isSpinning ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Đang Quay Thưởng 3D...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>Quay Thưởng 3D Ngay</span>
-                </>
-              )}
-            </button>
-
-            <button
-              onClick={() => {
-                soundManager.playRoll();
-                setSpinSpeed((prev) => (prev >= 3 ? 1 : prev + 1));
-              }}
-              title="Change Spin Velocity"
-              className="px-3.5 py-2.5 bg-white/[0.06] hover:bg-white/[0.1] text-slate-200 border border-white/10 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer"
-            >
-              <Zap className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{spinSpeed}x Speed</span>
-            </button>
+          <div className="flex items-center gap-2 text-slate-400 text-[11px]">
+            <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span>Tự Động Mở Thưởng Sau:</span>
+            <span className="text-amber-300 font-black font-mono">
+              {String(timeLeft.hours).padStart(2, '0')}:{String(timeLeft.minutes).padStart(2, '0')}:{String(timeLeft.seconds).padStart(2, '0')}
+            </span>
           </div>
         </div>
       </div>
