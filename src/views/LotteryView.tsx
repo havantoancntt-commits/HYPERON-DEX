@@ -8,10 +8,19 @@ import {
   LotteryStats,
   LotteryPoolId,
   NoLossSavingsDeposit,
+  LotterySyndicatePool,
+  LotteryAnalytics,
 } from '../types';
 import { formatCurrency, shortenAddress } from '../lib/utils';
 import { soundManager } from '../lib/sound';
 import { motion, AnimatePresence } from 'motion/react';
+import confetti from 'canvas-confetti';
+import { Lottery3DDrum } from '../components/Lottery3DDrum';
+import { Lottery3DTicket } from '../components/Lottery3DTicket';
+import { LotteryAnalyticsModal } from '../components/LotteryAnalyticsModal';
+import { LotterySyndicateModal } from '../components/LotterySyndicateModal';
+import { LotteryPrizeBreakdownModal } from '../components/LotteryPrizeBreakdownModal';
+import { LotteryTicketScannerModal } from '../components/LotteryTicketScannerModal';
 import {
   Trophy,
   Ticket,
@@ -39,7 +48,11 @@ import {
   Layers,
   ArrowRight,
   Wallet,
-  Play
+  Play,
+  BarChart3,
+  Users,
+  Eye,
+  Search,
 } from 'lucide-react';
 
 export const LotteryView: React.FC = () => {
@@ -48,15 +61,16 @@ export const LotteryView: React.FC = () => {
 
   // Active pool tab
   const [selectedPoolId, setSelectedPoolId] = useState<LotteryPoolId>('mega-daily');
-  
+
   // Data state
   const [activeRounds, setActiveRounds] = useState<LotteryRound[]>([]);
   const [pastRounds, setPastRounds] = useState<LotteryRound[]>([]);
   const [userTickets, setUserTickets] = useState<LotteryTicket[]>([]);
   const [userSavings, setUserSavings] = useState<NoLossSavingsDeposit[]>([]);
   const [stats, setStats] = useState<LotteryStats | null>(null);
+  const [syndicates, setSyndicates] = useState<LotterySyndicatePool[]>([]);
+  const [analytics, setAnalytics] = useState<LotteryAnalytics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [inspectingRound, setInspectingRound] = useState<LotteryRound | null>(null);
 
   // Ticket Purchase State
   const [buyMode, setBuyMode] = useState<'quick' | 'manual'>('quick');
@@ -69,6 +83,14 @@ export const LotteryView: React.FC = () => {
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [isDepositingSavings, setIsDepositingSavings] = useState<boolean>(false);
   const [savingsDepositAmount, setSavingsDepositAmount] = useState<string>('100');
+
+  // 3D Drum & Modals State
+  const [is3DDrumOpen, setIs3DDrumOpen] = useState<boolean>(true);
+  const [isAnalyticsOpen, setIsAnalyticsOpen] = useState<boolean>(false);
+  const [isSyndicateOpen, setIsSyndicateOpen] = useState<boolean>(false);
+  const [isPrizeBreakdownOpen, setIsPrizeBreakdownOpen] = useState<boolean>(false);
+  const [isTicketScannerOpen, setIsTicketScannerOpen] = useState<boolean>(false);
+  const [powerPlayMultiplier, setPowerPlayMultiplier] = useState<number>(1);
 
   // Success Celebration Modal
   const [celebrationData, setCelebrationData] = useState<{
@@ -100,6 +122,8 @@ export const LotteryView: React.FC = () => {
         setUserTickets(data.userTickets || []);
         setUserSavings(data.userSavings || []);
         setStats(data.stats || null);
+        setSyndicates(data.syndicates || []);
+        setAnalytics(data.analytics || null);
       }
     } catch (err) {
       console.error('Failed to load lottery overview:', err);
@@ -167,7 +191,7 @@ export const LotteryView: React.FC = () => {
   // Pricing & Discount calculations
   const { totalCostUsd, discountPercent, effectivePricePerTicket } = useMemo(() => {
     if (!currentRound) return { totalCostUsd: 0, discountPercent: 0, effectivePricePerTicket: 0 };
-    
+
     let bulkDiscount = 0;
     if (ticketCount >= 100) bulkDiscount = 0.20;
     else if (ticketCount >= 50) bulkDiscount = 0.15;
@@ -176,15 +200,17 @@ export const LotteryView: React.FC = () => {
 
     const tokenDiscount = paymentToken.toUpperCase() === 'HYPR' ? 0.20 : 0;
     const netDiscount = Math.min(0.35, bulkDiscount + tokenDiscount);
-    const unitPrice = currentRound.ticketPriceUsd * (1 - netDiscount);
-    const total = unitPrice * ticketCount;
+    const multiplierSurcharge = powerPlayMultiplier > 1 ? (powerPlayMultiplier - 1) * 0.3 : 0;
+    const baseWithMultiplier = currentRound.ticketPriceUsd * (1 + multiplierSurcharge);
+    const unitPrice = baseWithMultiplier * (1 - netDiscount);
+    const total = unitPrice * (buyMode === 'quick' ? ticketCount : 1);
 
     return {
       totalCostUsd: total,
       discountPercent: Math.round(netDiscount * 100),
       effectivePricePerTicket: unitPrice,
     };
-  }, [currentRound, ticketCount, paymentToken]);
+  }, [currentRound, ticketCount, paymentToken, powerPlayMultiplier, buyMode]);
 
   // Buy Tickets Handler
   const handleBuyTickets = async () => {
@@ -209,6 +235,7 @@ export const LotteryView: React.FC = () => {
           tickets: ticketsToBuy,
           paymentToken,
           userAddress: address,
+          multiplier: powerPlayMultiplier,
         }),
       });
 
@@ -226,8 +253,8 @@ export const LotteryView: React.FC = () => {
       });
 
       addToast({
-        title: '🎟️ Tickets Purchased Successfully!',
-        message: `Acquired ${ticketsToBuy.length} tickets for ${currentRound.poolName}. Good luck!`,
+        title: '🎟️ Vé Số 3D Đã Mua Thành Công!',
+        message: `Đã sở hữu ${ticketsToBuy.length} vé cho ${currentRound.poolName}. Chúc may mắn!`,
         type: 'success',
       });
 
@@ -236,13 +263,43 @@ export const LotteryView: React.FC = () => {
     } catch (err: any) {
       soundManager.playAlert();
       addToast({
-        title: 'Purchase Failed',
+        title: 'Giao Dịch Thất Bại',
         message: err?.message || 'Transaction could not be executed',
         type: 'error',
       });
     } finally {
       setIsPurchasing(false);
     }
+  };
+
+  // Join Syndicate Pool Handler
+  const handleJoinSyndicate = async (syndicateId: string, shares: number) => {
+    if (!isConnected || !address) {
+      connectWallet();
+      return;
+    }
+
+    const res = await fetch('/api/lottery/syndicate/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        syndicateId,
+        sharesCount: shares,
+        userAddress: address,
+        paymentToken,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to join syndicate');
+
+    addToast({
+      title: '👥 Tham Gia Hồ Bơi Nhóm Thành Công!',
+      message: `Đã mua ${shares} suất cổ phần vé số nhóm. Chúc cả guild chiến thắng!`,
+      type: 'success',
+    });
+
+    fetchLotteryData();
   };
 
   // Deposit No-Loss Savings
@@ -254,8 +311,8 @@ export const LotteryView: React.FC = () => {
     const amt = parseFloat(savingsDepositAmount);
     if (isNaN(amt) || amt <= 0) {
       addToast({
-        title: 'Invalid Amount',
-        message: 'Please enter a valid deposit amount',
+        title: 'Số Tiền Không Hợp Lệ',
+        message: 'Vui lòng nhập số tiền gửi hợp lệ',
         type: 'warning',
       });
       return;
@@ -277,14 +334,14 @@ export const LotteryView: React.FC = () => {
 
       soundManager.playSuccess();
       addToast({
-        title: '🛡️ Yield Savings Deposited!',
-        message: `Staked $${amt} USDC. You earned ${Math.floor(amt / 10)} free lottery entries weekly!`,
+        title: '🛡️ Đã Ký Gửi Tiết Kiệm Không Mất Gốc!',
+        message: `Staked $${amt} USDC. Bạn nhận được ${Math.floor(amt / 10)} vé số miễn phí hàng tuần!`,
         type: 'success',
       });
       fetchLotteryData();
     } catch (err: any) {
       addToast({
-        title: 'Deposit Failed',
+        title: 'Ký Gửi Thất Bại',
         message: err?.message || 'Transaction failed',
         type: 'error',
       });
@@ -308,14 +365,14 @@ export const LotteryView: React.FC = () => {
 
       soundManager.playJackpot();
       addToast({
-        title: '💰 Winnings Claimed!',
-        message: `Successfully transferred $${data.totalClaimedUsd} to your wallet!`,
+        title: '💰 Đã Rút Thưởng Thành Công!',
+        message: `Đã chuyển $${data.totalClaimedUsd} USD trực tiếp về ví của bạn!`,
         type: 'success',
       });
       fetchLotteryData();
     } catch (err: any) {
       addToast({
-        title: 'Claim Failed',
+        title: 'Rút Thưởng Thất Bại',
         message: err?.message || 'Could not claim winnings',
         type: 'error',
       });
@@ -328,7 +385,7 @@ export const LotteryView: React.FC = () => {
   const handleTriggerDraw = async (roundId: number) => {
     try {
       setIsDrawing(true);
-      soundManager.playRoll();
+      soundManager.playDrumSpin();
       const res = await fetch('/api/lottery/draw', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -337,16 +394,16 @@ export const LotteryView: React.FC = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Draw failed');
 
-      soundManager.playSuccess();
+      soundManager.playJackpot();
       addToast({
-        title: '🎲 VRF Round Drawn!',
-        message: `Winning Numbers: [ ${data.closedRound.winningNumbers.join(' - ')} ]`,
+        title: '🎲 VRF 2.5 Đã Quay Thưởng Xong!',
+        message: `Các Con Số Trúng Thưởng: [ ${data.closedRound.winningNumbers.join(' - ')} ]`,
         type: 'info',
       });
       fetchLotteryData();
     } catch (err: any) {
       addToast({
-        title: 'Draw Failed',
+        title: 'Quay Thưởng Thất Bại',
         message: err?.message || 'Failed to draw',
         type: 'error',
       });
@@ -374,26 +431,64 @@ export const LotteryView: React.FC = () => {
           <div className="space-y-3.5 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px] sm:text-xs font-mono font-bold tracking-wider shadow-sm">
               <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" />
-              <span className="truncate">CHAINLINK VRF 2.5 PROVABLY FAIR MEGA LOTTERY</span>
+              <span className="truncate">CHAINLINK VRF 2.5 PROVABLY FAIR 3D MEGA LOTTERY</span>
             </div>
-            
+
             <h1 className="text-2xl sm:text-4xl md:text-5xl font-black text-white tracking-tight leading-tight font-outfit">
-              HYPERON <span className="bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-500 bg-clip-text text-transparent">MEGA JACKPOT</span>
+              HYPERON <span className="bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-500 bg-clip-text text-transparent">MEGA 3D JACKPOT</span>
             </h1>
             <p className="text-xs sm:text-sm md:text-base text-slate-300 leading-relaxed font-sans">
-              Transparent, decentralized, multi-tier Web3 lottery with guaranteed on-chain entropy. Match consecutive lucky numbers to win up to <strong className="text-amber-300">50% of the entire prize pot</strong> instantly.
+              Hệ thống xổ số blockchain 3D thế hệ mới: Lồng quay vật lý 3D chân thực, vé cào 3D Hologram, thuật toán chọn số AI lượng tử và hồ bơi vé số nhóm (Syndicates) chuẩn quốc tế.
             </p>
 
-            {/* Quick Feature Chips */}
+            {/* Quick Feature Chips & Action Triggers */}
             <div className="flex flex-wrap items-center gap-2 sm:gap-3 pt-1">
-              <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-emerald-400 font-mono bg-emerald-500/10 px-2.5 py-1 rounded-xl border border-emerald-500/25 font-semibold">
-                <ShieldCheck className="w-3.5 h-3.5 shrink-0" /> 100% Non-Custodial
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-cyan-300 font-mono bg-cyan-500/10 px-2.5 py-1 rounded-xl border border-cyan-500/25 font-semibold">
-                <Flame className="w-3.5 h-3.5 text-orange-400 shrink-0" /> 20% OFF with $HYPR (Auto-Burn)
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-purple-300 font-mono bg-purple-500/10 px-2.5 py-1 rounded-xl border border-purple-500/25 font-semibold">
-                <Percent className="w-3.5 h-3.5 shrink-0" /> Up to 20% Bulk Discount
+              <button
+                onClick={() => {
+                  soundManager.playTick();
+                  setIsAnalyticsOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-amber-300 font-mono bg-amber-500/15 hover:bg-amber-500/25 px-3 py-1.5 rounded-xl border border-amber-500/35 font-bold cursor-pointer transition-all shadow"
+              >
+                <BarChart3 className="w-3.5 h-3.5 text-amber-400" />
+                <span>Trợ Lý Chọn Số AI</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  soundManager.playTick();
+                  setIsPrizeBreakdownOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-yellow-300 font-mono bg-yellow-500/15 hover:bg-yellow-500/25 px-3 py-1.5 rounded-xl border border-yellow-500/35 font-bold cursor-pointer transition-all shadow"
+              >
+                <Award className="w-3.5 h-3.5 text-yellow-400" />
+                <span>Cơ Cấu Giải Thưởng & Xác Suất EV</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  soundManager.playTick();
+                  setIsTicketScannerOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-cyan-300 font-mono bg-cyan-500/15 hover:bg-cyan-500/25 px-3 py-1.5 rounded-xl border border-cyan-500/35 font-bold cursor-pointer transition-all shadow"
+              >
+                <Search className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Máy So Vé Số On-Chain</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  soundManager.playTick();
+                  setIsSyndicateOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-indigo-300 font-mono bg-indigo-500/15 hover:bg-indigo-500/25 px-3 py-1.5 rounded-xl border border-indigo-500/35 font-bold cursor-pointer transition-all shadow"
+              >
+                <Users className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Vé Số Nhóm (Syndicate)</span>
+              </button>
+
+              <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-emerald-400 font-mono bg-emerald-500/10 px-2.5 py-1.5 rounded-xl border border-emerald-500/25 font-semibold">
+                <ShieldCheck className="w-3.5 h-3.5 shrink-0" /> VRF 2.5 Audit
               </span>
             </div>
           </div>
@@ -402,10 +497,10 @@ export const LotteryView: React.FC = () => {
           <div className="w-full lg:w-96 shrink-0 bg-gradient-to-b from-amber-500/20 via-black/80 to-black/95 p-5 sm:p-6 rounded-3xl border border-amber-500/50 shadow-2xl backdrop-blur-xl flex flex-col items-center text-center space-y-4">
             <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-amber-400 font-mono font-bold">
               <Trophy className="w-4 h-4 text-amber-400 animate-bounce" />
-              <span>Estimated Current Prize Pot</span>
+              <span>Tổng Giải Thưởng Đang Chờ Nổ</span>
             </div>
 
-            <div className="text-3xl sm:text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-400 font-mono tracking-tight animate-gold-shimmer">
+            <div className="text-3xl sm:text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-400 font-mono tracking-tight">
               ${(currentRound?.totalPotUsd || 647890).toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </div>
 
@@ -413,23 +508,23 @@ export const LotteryView: React.FC = () => {
             <div className="w-full bg-black/70 border border-white/10 rounded-2xl p-3 flex items-center justify-around font-mono">
               <div className="flex flex-col items-center">
                 <span className="text-lg sm:text-xl font-black text-white">{String(timeLeft.hours).padStart(2, '0')}</span>
-                <span className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-semibold">Hours</span>
+                <span className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-semibold">Giờ</span>
               </div>
               <span className="text-lg sm:text-xl font-bold text-amber-400">:</span>
               <div className="flex flex-col items-center">
                 <span className="text-lg sm:text-xl font-black text-white">{String(timeLeft.minutes).padStart(2, '0')}</span>
-                <span className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-semibold">Mins</span>
+                <span className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-semibold">Phút</span>
               </div>
               <span className="text-lg sm:text-xl font-bold text-amber-400">:</span>
               <div className="flex flex-col items-center">
                 <span className="text-lg sm:text-xl font-black text-white">{String(timeLeft.seconds).padStart(2, '0')}</span>
-                <span className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-semibold">Secs</span>
+                <span className="text-[9px] sm:text-[10px] text-slate-400 uppercase font-semibold">Giây</span>
               </div>
             </div>
 
             <div className="text-[11px] text-slate-300 font-mono flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-amber-400" />
-              <span>Round #{currentRound?.id} Closes in real-time</span>
+              <span>Kỳ Quay #{currentRound?.id} Khóa sổ đếm ngược</span>
             </div>
           </div>
         </div>
@@ -438,26 +533,62 @@ export const LotteryView: React.FC = () => {
         {stats && (
           <div className="mt-6 pt-6 border-t border-white/[0.08] grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
             <div className="bg-white/[0.03] p-3 rounded-2xl border border-white/[0.06] backdrop-blur-sm">
-              <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">Total Winnings Paid</div>
+              <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">Tổng Thưởng Đã Trả</div>
               <div className="text-base sm:text-lg font-bold text-emerald-400 font-mono mt-0.5">${stats.totalDistributedUsd.toLocaleString()}</div>
             </div>
             <div className="bg-white/[0.03] p-3 rounded-2xl border border-white/[0.06] backdrop-blur-sm">
-              <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">Total Tickets Sold</div>
+              <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">Vé Đã Phát Hành</div>
               <div className="text-base sm:text-lg font-bold text-cyan-400 font-mono mt-0.5">{stats.totalTicketsBoughtAllTime.toLocaleString()}</div>
             </div>
             <div className="bg-white/[0.03] p-3 rounded-2xl border border-white/[0.06] backdrop-blur-sm">
-              <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">HYPR Burned via Pot</div>
+              <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">HYPR Đã Đốt (Burn)</div>
               <div className="text-base sm:text-lg font-bold text-amber-400 font-mono mt-0.5">${stats.totalBurnedHyprUsd.toLocaleString()}</div>
             </div>
             <div className="bg-white/[0.03] p-3 rounded-2xl border border-white/[0.06] backdrop-blur-sm">
-              <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">Record Single Jackpot</div>
+              <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">Jackpot Kỷ Lục Đơn</div>
               <div className="text-base sm:text-lg font-bold text-yellow-300 font-mono mt-0.5">${stats.largestSingleJackpotUsd.toLocaleString()}</div>
             </div>
           </div>
         )}
       </div>
 
-      {/* 2. UNCLAIMED WINNINGS BANNER (IF APPLICABLE) */}
+      {/* 2. 3D LOTTERY DRUM ARENA (CENTRAL STAGE) */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Dice5 className="w-5 h-5 text-amber-400" />
+            <h2 className="text-base sm:text-lg font-black text-white font-outfit uppercase">
+              Khán Đài Lồng Quay Xổ Số 3D Trực Tuyến
+            </h2>
+          </div>
+
+          <button
+            onClick={() => setIs3DDrumOpen(!is3DDrumOpen)}
+            className="text-xs font-mono font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+          >
+            {is3DDrumOpen ? 'Thu Gọn 3D' : 'Mở Rộng 3D Arena'}
+          </button>
+        </div>
+
+        {is3DDrumOpen && (
+          <Lottery3DDrum
+            isDrawing={isDrawing}
+            winningNumbers={currentRound?.winningNumbers}
+            onDrawComplete={(drawn) => {
+              addToast({
+                title: '✨ 3D Drum Draw Hoàn Tất!',
+                message: `Kết quả quay số: [ ${drawn.join(' - ')} ]`,
+                type: 'success',
+              });
+            }}
+            roundId={currentRound?.id}
+            poolName={currentRound?.poolName}
+            themeColor={selectedPoolId === 'hourly-lightning' ? 'cyan' : selectedPoolId === 'no-loss-savings' ? 'emerald' : 'gold'}
+          />
+        )}
+      </div>
+
+      {/* 3. UNCLAIMED WINNINGS BANNER (IF APPLICABLE) */}
       {pendingPrizeUsd > 0 && (
         <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/80 via-emerald-900/50 to-teal-950/80 border-2 border-emerald-500/60 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-pulse">
           <div className="flex items-center gap-3.5">
@@ -465,7 +596,7 @@ export const LotteryView: React.FC = () => {
               <Gift className="w-6 h-6" />
             </div>
             <div>
-              <div className="text-sm font-bold text-emerald-300">🎉 Congratulations! You Have Unclaimed Lottery Winnings!</div>
+              <div className="text-sm font-bold text-emerald-300">🎉 Chúc Mừng! Bạn Có Tiền Trúng Thưởng Chưa Rút!</div>
               <div className="text-2xl font-black text-white font-mono">
                 ${pendingPrizeUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
               </div>
@@ -475,15 +606,15 @@ export const LotteryView: React.FC = () => {
           <button
             onClick={handleClaimWinnings}
             disabled={isClaiming}
-            className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-black text-sm rounded-xl transition-all shadow-lg hover:shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-black text-sm rounded-xl transition-all shadow-lg hover:shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer font-outfit uppercase"
           >
             {isClaiming ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Coins className="w-4 h-4" />}
-            <span>Claim All Winnings Now</span>
+            <span>Rút Toàn Bộ Thưởng Ngay</span>
           </button>
         </div>
       )}
 
-      {/* 3. POOL SELECTION TABS */}
+      {/* 4. POOL SELECTION TABS */}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 border-b border-white/[0.08] pb-4">
         <button
           onClick={() => {
@@ -497,11 +628,11 @@ export const LotteryView: React.FC = () => {
           }`}
         >
           <Trophy className={`w-4 h-4 ${selectedPoolId === 'mega-daily' ? 'text-black' : 'text-amber-400'}`} />
-          <span className="font-outfit">Mega Daily Jackpot</span>
+          <span className="font-outfit">Mega 6/45 Powerball</span>
           <span className={`px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-mono font-bold ${
             selectedPoolId === 'mega-daily' ? 'bg-black/20 text-black' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
           }`}>
-            $5 / tkt
+            $5 / vé
           </span>
         </button>
 
@@ -517,11 +648,11 @@ export const LotteryView: React.FC = () => {
           }`}
         >
           <Zap className={`w-4 h-4 ${selectedPoolId === 'hourly-lightning' ? 'text-black' : 'text-cyan-400'}`} />
-          <span className="font-outfit">Hourly Lightning Rush</span>
+          <span className="font-outfit">Lightning Rush Hàng Giờ</span>
           <span className={`px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-mono font-bold ${
             selectedPoolId === 'hourly-lightning' ? 'bg-black/20 text-black' : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
           }`}>
-            $1 / tkt
+            $1 / vé
           </span>
         </button>
 
@@ -537,16 +668,16 @@ export const LotteryView: React.FC = () => {
           }`}
         >
           <ShieldCheck className={`w-4 h-4 ${selectedPoolId === 'no-loss-savings' ? 'text-black' : 'text-emerald-400'}`} />
-          <span className="font-outfit">Zero-Loss Yield Savings</span>
+          <span className="font-outfit">Tiết Kiệm 100% Không Mất Gốc</span>
           <span className={`px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-mono font-bold ${
             selectedPoolId === 'no-loss-savings' ? 'bg-black/20 text-black' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
           }`}>
-            100% Safe Principal
+            An Toàn Tuyệt Đối
           </span>
         </button>
       </div>
 
-      {/* 4. MAIN INTERACTIVE CONTENT AREA */}
+      {/* 5. MAIN INTERACTIVE CONTENT AREA */}
       {selectedPoolId !== 'no-loss-savings' ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8">
           {/* LEFT: TICKET BUYING CONSOLE (7 cols) */}
@@ -556,33 +687,35 @@ export const LotteryView: React.FC = () => {
                 <div>
                   <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 font-outfit">
                     <Ticket className="w-5 h-5 text-amber-400 shrink-0" />
-                    <span>Purchase Lottery Tickets</span>
+                    <span>Mua Vé Số Chuẩn Quốc Tế</span>
                   </h3>
-                  <p className="text-xs text-slate-400">Select numbers or generate lucky sequences in 1-click</p>
+                  <p className="text-xs text-slate-400">Chọn số thủ công, mua hàng loạt hoặc dùng Trợ Lý AI</p>
                 </div>
 
-                {/* Mode Selector */}
-                <div className="flex bg-black/60 p-1 rounded-xl border border-white/[0.08] shrink-0 self-start sm:self-auto">
-                  <button
-                    onClick={() => setBuyMode('quick')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      buyMode === 'quick'
-                        ? 'bg-amber-500 text-black shadow-md font-bold'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    Quick Pick (Bulk)
-                  </button>
-                  <button
-                    onClick={() => setBuyMode('manual')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      buyMode === 'manual'
-                        ? 'bg-amber-500 text-black shadow-md font-bold'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    Manual Custom
-                  </button>
+                {/* Mode Selector & AI triggers */}
+                <div className="flex items-center gap-2">
+                  <div className="flex bg-black/60 p-1 rounded-xl border border-white/[0.08] shrink-0">
+                    <button
+                      onClick={() => setBuyMode('quick')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        buyMode === 'quick'
+                          ? 'bg-amber-500 text-black shadow-md font-bold'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Chọn Nhanh (Bulk)
+                    </button>
+                    <button
+                      onClick={() => setBuyMode('manual')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        buyMode === 'manual'
+                          ? 'bg-amber-500 text-black shadow-md font-bold'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Tự Chọn Số
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -592,7 +725,7 @@ export const LotteryView: React.FC = () => {
                   {/* Quantity selector presets */}
                   <div>
                     <label className="text-xs font-semibold text-slate-300 mb-2 block">
-                      Choose Quantity (Higher Volume = Higher Discount):
+                      Chọn Số Lượng Vé (Mua Nhiều Giảm Giá Lên Đến 20%):
                     </label>
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                       {[
@@ -625,12 +758,12 @@ export const LotteryView: React.FC = () => {
                   {/* Generated Ticket Preview Cards */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>Generated Ticket Preview ({generatedTickets.length} tickets):</span>
+                      <span>Xem Trước Các Dãy Số ({generatedTickets.length} vé):</span>
                       <button
                         onClick={handleRerollAll}
                         className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-mono hover:underline cursor-pointer"
                       >
-                        <RefreshCw className="w-3 h-3" /> Re-roll All
+                        <RefreshCw className="w-3 h-3" /> Đổi Toàn Bộ Số
                       </button>
                     </div>
 
@@ -660,11 +793,6 @@ export const LotteryView: React.FC = () => {
                           </button>
                         </div>
                       ))}
-                      {generatedTickets.length > 15 && (
-                        <div className="text-center py-2 text-xs text-slate-500 font-mono">
-                          + {generatedTickets.length - 15} more tickets in batch
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -674,7 +802,7 @@ export const LotteryView: React.FC = () => {
               {buyMode === 'manual' && (
                 <div className="space-y-6">
                   <div className="text-center space-y-2">
-                    <span className="text-xs text-slate-400 font-mono">Dial Your 6 Lucky Digits:</span>
+                    <span className="text-xs text-slate-400 font-mono">Quay Chọn 6 Chữ Số May Mắn:</span>
                     <div className="flex items-center justify-center gap-1 sm:gap-2.5 py-2">
                       {manualTicket.map((d, dIdx) => (
                         <div key={dIdx} className="flex flex-col items-center gap-1">
@@ -712,7 +840,7 @@ export const LotteryView: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex justify-center">
+                  <div className="flex flex-wrap items-center justify-center gap-3">
                     <button
                       onClick={() => {
                         soundManager.playRoll();
@@ -720,17 +848,62 @@ export const LotteryView: React.FC = () => {
                       }}
                       className="px-4 py-2 bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 rounded-xl text-xs flex items-center gap-2 border border-white/10 cursor-pointer"
                     >
-                      <Dice5 className="w-4 h-4 text-amber-400" /> Randomize Lucky Digits
+                      <Dice5 className="w-4 h-4 text-amber-400" /> Ngẫu Nhiên Số
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        soundManager.playTick();
+                        setIsAnalyticsOpen(true);
+                      }}
+                      className="px-4 py-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 rounded-xl text-xs flex items-center gap-2 cursor-pointer font-bold"
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-400" /> Dùng Số AI & Chiêm Tinh
                     </button>
                   </div>
                 </div>
               )}
 
+              {/* POWERPLAY MULTIPLIER BOOST */}
+              <div className="space-y-2 pt-4 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-amber-300 flex items-center gap-1.5 font-mono">
+                    <Zap className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Hệ Số Nhân PowerPlay Multiplier (Nhân Giải Lên Đến 5x):</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-mono">Áp dụng các giải 1-5</span>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { mult: 1, label: '1x Thường', extra: '+0%' },
+                    { mult: 2, label: '2x Double', extra: '+30%' },
+                    { mult: 3, label: '3x Triple', extra: '+60%' },
+                    { mult: 5, label: '5x Mega Win', extra: '+120%' },
+                  ].map((p) => (
+                    <button
+                      key={p.mult}
+                      onClick={() => {
+                        soundManager.playTick();
+                        setPowerPlayMultiplier(p.mult);
+                      }}
+                      className={`p-2 rounded-xl border text-center transition-all cursor-pointer font-mono ${
+                        powerPlayMultiplier === p.mult
+                          ? 'bg-gradient-to-r from-amber-500/30 to-yellow-500/30 border-amber-500 text-amber-300 font-black shadow-md'
+                          : 'bg-white/[0.02] border-white/[0.08] text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="text-xs font-bold">{p.label}</div>
+                      <div className="text-[9px] text-slate-500">{p.extra} phí</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* PAYMENT TOKEN & PRICING SUMMARY */}
               <div className="space-y-4 pt-4 border-t border-white/[0.06]">
                 <div>
                   <label className="text-xs font-semibold text-slate-300 mb-2 block">
-                    Pay With Token:
+                    Thanh Toán Bằng Token:
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {[
@@ -763,19 +936,19 @@ export const LotteryView: React.FC = () => {
                 {/* Pricing Summary Box */}
                 <div className="bg-black/60 p-4 rounded-2xl border border-white/[0.08] space-y-2 text-xs font-mono">
                   <div className="flex justify-between text-slate-400">
-                    <span>Base Ticket Price:</span>
+                    <span>Giá Gốc / Vé:</span>
                     <span>${currentRound?.ticketPriceUsd.toFixed(2)} USD</span>
                   </div>
                   <div className="flex justify-between text-slate-400">
-                    <span>Total Discount Applied:</span>
+                    <span>Chiết Khấu Đã Áp Dụng:</span>
                     <span className="text-emerald-400 font-semibold">{discountPercent}% OFF</span>
                   </div>
                   <div className="flex justify-between text-slate-400">
-                    <span>Effective Price / Ticket:</span>
+                    <span>Giá Thực Tế / Vé:</span>
                     <span className="text-slate-200">${effectivePricePerTicket.toFixed(2)} USD</span>
                   </div>
                   <div className="flex justify-between text-sm font-bold text-white pt-2 border-t border-white/[0.08]">
-                    <span>Total Payment:</span>
+                    <span>Tổng Tiền Thanh Toán:</span>
                     <span className="text-amber-300 text-base font-bold">
                       ${(buyMode === 'quick' ? totalCostUsd : effectivePricePerTicket).toFixed(2)} USD
                     </span>
@@ -786,35 +959,35 @@ export const LotteryView: React.FC = () => {
                 <button
                   onClick={handleBuyTickets}
                   disabled={isPurchasing}
-                  className="w-full py-4 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-black font-black text-sm sm:text-base rounded-2xl transition-all shadow-xl shadow-amber-500/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 font-outfit"
+                  className="w-full py-4 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 hover:from-amber-400 hover:to-yellow-300 text-black font-black text-sm sm:text-base rounded-2xl transition-all shadow-xl shadow-amber-500/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 font-outfit uppercase tracking-wider"
                 >
                   {isPurchasing ? (
                     <>
                       <RefreshCw className="w-5 h-5 animate-spin" />
-                      <span>Broadcasting On-Chain Tx...</span>
+                      <span>Đang Gửi Giao Dịch Lên Blockchain...</span>
                     </>
                   ) : (
                     <>
                       <Ticket className="w-5 h-5" />
-                      <span>Buy {buyMode === 'quick' ? ticketCount : 1} Tickets Now</span>
+                      <span>Xác Nhận Mua {buyMode === 'quick' ? ticketCount : 1} Vé 3D</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Test Simulation Controls (For Sandbox Testing) */}
+            {/* Test Simulation Controls */}
             <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2 text-slate-400">
                 <Dice5 className="w-4 h-4 text-cyan-400 shrink-0" />
-                <span>Dev Sandbox: Test VRF Draw & evaluate winners immediately</span>
+                <span>Sandbox: Kích hoạt quay số VRF 2.5 trực tiếp trên lồng quay 3D</span>
               </div>
               <button
                 onClick={() => currentRound && handleTriggerDraw(currentRound.id)}
                 disabled={isDrawing}
                 className="px-3.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-mono font-semibold transition-all cursor-pointer shrink-0"
               >
-                {isDrawing ? 'Drawing VRF...' : 'Trigger VRF Draw'}
+                {isDrawing ? 'Đang Quay VRF...' : 'Quay Thưởng VRF 2.5'}
               </button>
             </div>
           </div>
@@ -826,11 +999,11 @@ export const LotteryView: React.FC = () => {
               <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2 font-outfit">
                   <Award className="w-4 h-4 text-amber-400" />
-                  <span>Prize Distribution Matrix</span>
+                  <span>Cơ Cấu Giải Thưởng Tích Lũy</span>
                 </h3>
                 <button
                   onClick={() => setVrfModalRound(currentRound)}
-                  className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 font-mono"
+                  className="text-[11px] text-cyan-400 hover:underline flex items-center gap-1 font-mono cursor-pointer"
                 >
                   <ShieldCheck className="w-3.5 h-3.5" /> VRF Audit
                 </button>
@@ -847,15 +1020,15 @@ export const LotteryView: React.FC = () => {
                     }`}
                   >
                     <div>
-                      <div className="text-xs">{tier.label}</div>
-                      <div className="text-[10px] text-slate-500">{tier.allocationPercent}% of Pot</div>
+                      <div className="text-xs font-sans font-bold">{tier.label}</div>
+                      <div className="text-[10px] text-slate-500">{tier.allocationPercent}% Tổng Pot</div>
                     </div>
                     <div className="text-right">
                       <div className="text-xs font-bold text-amber-400">
                         ${tier.poolAmountUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </div>
                       <div className="text-[10px] text-slate-400">
-                        {tier.winnersCount > 0 ? `${tier.winnersCount} Winner(s)` : '0 Winners yet'}
+                        {tier.winnersCount > 0 ? `${tier.winnersCount} Người Trúng` : 'Chưa có người trúng'}
                       </div>
                     </div>
                   </div>
@@ -867,7 +1040,7 @@ export const LotteryView: React.FC = () => {
             <div className="bg-[#07090E] border border-white/[0.08] rounded-3xl p-4 sm:p-6 space-y-4 shadow-xl">
               <h3 className="text-sm font-bold text-white flex items-center gap-2 font-outfit">
                 <Trophy className="w-4 h-4 text-yellow-400" />
-                <span>Recent Big Winners (Hall of Fame)</span>
+                <span>Bảng Vàng Trúng Thưởng Gần Nhất</span>
               </h3>
 
               <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1 scrollbar-thin">
@@ -880,10 +1053,10 @@ export const LotteryView: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-slate-200">{shortenAddress(win.winnerAddress)}</span>
                         <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
-                          Matched {win.matchedDigits}/6
+                          Trúng {win.matchedDigits}/6
                         </span>
                       </div>
-                      <div className="text-[10px] text-slate-500 pt-0.5">Round #{win.roundId} • {win.prizeToken}</div>
+                      <div className="text-[10px] text-slate-500 pt-0.5">Kỳ #{win.roundId} • {win.prizeToken}</div>
                     </div>
 
                     <div className="text-right">
@@ -909,31 +1082,31 @@ export const LotteryView: React.FC = () => {
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
                 <span>100% PRINCIPAL PROTECTED DEFI LOTTERY</span>
               </div>
-              <h2 className="text-2xl font-bold text-white font-outfit">DeFi Prize-Linked Savings Protocol</h2>
+              <h2 className="text-2xl font-bold text-white font-outfit">Giao Thức Tiết Kiệm Nhận Vé Số Miễn Phí</h2>
               <p className="text-xs text-slate-300">
-                Deposit USDC or ETH into Hyperon's Institutional Yield Vault. Your capital is never risked or spent. The collective staking yield funds the weekly $74,200 jackpot!
+                Gửi USDC hoặc ETH vào Vault Staking lợi suất của Hyperon. Tiền gốc của bạn luôn an toàn 100% và có thể rút bất cứ lúc nào. Lợi suất sinh ra từ Aave v3 & Compound sẽ tự động mua vé số trúng thưởng hàng tuần!
               </p>
             </div>
 
             <div className="p-4 rounded-xl bg-black/60 border border-white/[0.08] space-y-3 font-mono text-xs">
               <div className="flex justify-between">
-                <span className="text-slate-400">Total Staked in Vault:</span>
+                <span className="text-slate-400">Tổng Vốn Staked Trong Vault:</span>
                 <span className="text-emerald-400 font-bold">$1,285,000 USDC</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Underlying Staking Yield:</span>
-                <span className="text-slate-200">12.4% APY via Aave v3 & Compound</span>
+                <span className="text-slate-400">Lợi Suất Staking Cơ Bản:</span>
+                <span className="text-slate-200">12.4% APY qua Aave v3 & Compound</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Ticket Formula:</span>
-                <span className="text-amber-300">1 Free Ticket per $10 Staked Every Week</span>
+                <span className="text-slate-400">Công Thức Tặng Vé:</span>
+                <span className="text-amber-300">1 Vé Số Miễn Phí cho mỗi $10 Gửi Hàng Tuần</span>
               </div>
             </div>
 
             {/* Deposit Input */}
             <div className="space-y-4">
               <div>
-                <label className="text-xs text-slate-300 font-medium block mb-2">Deposit Amount (USDC):</label>
+                <label className="text-xs text-slate-300 font-medium block mb-2">Số Tiền Gửi (USDC):</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -949,14 +1122,14 @@ export const LotteryView: React.FC = () => {
               <button
                 onClick={handleDepositSavings}
                 disabled={isDepositingSavings}
-                className="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-black text-base rounded-2xl transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 font-outfit"
+                className="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-black font-black text-base rounded-2xl transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 font-outfit uppercase tracking-wider"
               >
                 {isDepositingSavings ? (
                   <RefreshCw className="w-5 h-5 animate-spin" />
                 ) : (
                   <ShieldCheck className="w-5 h-5" />
                 )}
-                <span>Deposit & Earn Free Weekly Entries</span>
+                <span>Ký Gửi & Nhận Vé Số Miễn Phí Hàng Tuần</span>
               </button>
             </div>
           </div>
@@ -965,7 +1138,7 @@ export const LotteryView: React.FC = () => {
           <div className="lg:col-span-5 bg-[#07090E] border border-white/[0.08] rounded-3xl p-6 space-y-6 shadow-xl">
             <h3 className="text-base font-bold text-white flex items-center gap-2 font-outfit">
               <Wallet className="w-4 h-4 text-emerald-400" />
-              <span>My Yield Savings Position</span>
+              <span>Vị Thế Tiết Kiệm Của Tôi</span>
             </h3>
 
             {userSavings.length > 0 ? (
@@ -973,12 +1146,12 @@ export const LotteryView: React.FC = () => {
                 {userSavings.map((dep) => (
                   <div key={dep.id} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.08] space-y-2 font-mono text-xs">
                     <div className="flex justify-between font-bold text-white">
-                      <span>Deposited:</span>
+                      <span>Đã Ký Gửi:</span>
                       <span className="text-emerald-400">${dep.valueUsd} {dep.stakedToken}</span>
                     </div>
                     <div className="flex justify-between text-slate-400">
-                      <span>Free Weekly Tickets:</span>
-                      <span className="text-amber-300 font-bold">{dep.ticketsEarned} Tickets</span>
+                      <span>Vé Miễn Phí Nhận Hàng Tuần:</span>
+                      <span className="text-amber-300 font-bold">{dep.ticketsEarned} Vé Số</span>
                     </div>
                   </div>
                 ))}
@@ -986,99 +1159,92 @@ export const LotteryView: React.FC = () => {
             ) : (
               <div className="text-center py-10 space-y-2 text-slate-500">
                 <ShieldCheck className="w-10 h-10 mx-auto text-slate-600" />
-                <p className="text-xs">No active savings deposits yet</p>
+                <p className="text-xs">Chưa có vị thế ký gửi tiết kiệm nào</p>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* 5. USER'S TICKETS & HISTORICAL ROUNDS SECTION */}
+      {/* 6. USER'S 3D HOLOGRAPHIC TICKETS SECTION */}
       <div className="bg-[#07090E] border border-white/[0.08] rounded-3xl p-5 sm:p-8 space-y-6 shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.06] pb-4">
           <div>
             <h3 className="text-lg font-bold text-white flex items-center gap-2 font-outfit">
               <Ticket className="w-5 h-5 text-amber-400" />
-              <span>My Active & Past Tickets ({userTickets.length})</span>
+              <span>Bộ Sưu Tập Vé Số 3D Hologram Của Tôi ({userTickets.length})</span>
             </h3>
-            <p className="text-xs text-slate-400">All purchased tickets with on-chain cryptographic proofs</p>
+            <p className="text-xs text-slate-400">Hiệu ứng nghiêng 3D Parallax • Lớp cào tráng bạc may mắn</p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={fetchLotteryData}
-              className="px-3.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 text-xs flex items-center gap-1.5 border border-white/10 cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 text-xs flex items-center gap-1.5 border border-white/10 cursor-pointer font-mono"
             >
-              <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              <RefreshCw className="w-3.5 h-3.5" /> Đồng Bộ Vé
             </button>
           </div>
         </div>
 
         {userTickets.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {userTickets.map((tkt) => (
-              <div
+              <Lottery3DTicket
                 key={tkt.id}
-                className={`p-4 rounded-2xl border transition-all ${
-                  tkt.status === 'WON'
-                    ? 'bg-emerald-500/10 border-emerald-500/40 shadow-lg shadow-emerald-500/10'
-                    : tkt.status === 'CLAIMED'
-                    ? 'bg-blue-500/10 border-blue-500/30'
-                    : 'bg-white/[0.02] border-white/[0.06]'
-                }`}
-              >
-                <div className="flex items-center justify-between text-xs font-mono pb-2 border-b border-white/[0.04]">
-                  <span className="text-slate-400">Round #{tkt.roundId}</span>
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      tkt.status === 'WON'
-                        ? 'bg-emerald-500 text-black'
-                        : tkt.status === 'CLAIMED'
-                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
-                        : 'bg-white/[0.06] text-slate-300'
-                    }`}
-                  >
-                    {tkt.status}
-                  </span>
-                </div>
-
-                {/* Ticket Digits */}
-                <div className="flex items-center justify-center gap-1 sm:gap-1.5 py-3">
-                  {tkt.numbers.map((d, dIdx) => (
-                    <span
-                      key={dIdx}
-                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg font-mono font-bold flex items-center justify-center text-xs sm:text-sm ${
-                        tkt.matchedDigitsCount && dIdx < tkt.matchedDigitsCount
-                          ? 'bg-emerald-500 text-black shadow-md'
-                          : 'bg-black/60 border border-amber-500/30 text-amber-300'
-                      }`}
-                    >
-                      {d}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 pt-2 border-t border-white/[0.04]">
-                  <span>Paid: ${tkt.purchasePriceUsd.toFixed(2)}</span>
-                  {tkt.wonPrizeUsd ? (
-                    <span className="text-emerald-400 font-bold">Won: +${tkt.wonPrizeUsd.toFixed(2)}</span>
-                  ) : (
-                    <span>{shortenAddress(tkt.txHash)}</span>
-                  )}
-                </div>
-              </div>
+                ticket={tkt}
+                winningNumbers={currentRound?.winningNumbers}
+                onClaim={handleClaimWinnings}
+              />
             ))}
           </div>
         ) : (
           <div className="text-center py-12 space-y-3">
             <Ticket className="w-12 h-12 mx-auto text-slate-600" />
-            <p className="text-sm text-slate-400 font-medium">No tickets purchased yet for your connected wallet.</p>
-            <p className="text-xs text-slate-500">Pick lucky numbers above to enter the current $647K Mega Jackpot!</p>
+            <p className="text-sm text-slate-400 font-medium">Bạn chưa sở hữu vé số nào cho địa chỉ ví này.</p>
+            <p className="text-xs text-slate-500">Hãy chọn số ở trên để tham gia tranh giải thưởng Mega Jackpot $647,000+!</p>
           </div>
         )}
       </div>
 
-      {/* 6. PROVABLY FAIR VRF INSPECTION MODAL */}
+      {/* 7. MODALS */}
+      <LotteryAnalyticsModal
+        isOpen={isAnalyticsOpen}
+        onClose={() => setIsAnalyticsOpen(false)}
+        analytics={analytics}
+        onApplyLuckyNumbers={(nums) => {
+          setBuyMode('manual');
+          setManualTicket(nums);
+          addToast({
+            title: '✨ Đã Áp Dụng Dãy Số May Mắn!',
+            message: `Tổ hợp số: [ ${nums.join(' - ')} ]`,
+            type: 'success',
+          });
+        }}
+      />
+
+      <LotterySyndicateModal
+        isOpen={isSyndicateOpen}
+        onClose={() => setIsSyndicateOpen(false)}
+        syndicates={syndicates}
+        onJoinSyndicate={handleJoinSyndicate}
+      />
+
+      <LotteryPrizeBreakdownModal
+        isOpen={isPrizeBreakdownOpen}
+        onClose={() => setIsPrizeBreakdownOpen(false)}
+        round={currentRound || null}
+      />
+
+      <LotteryTicketScannerModal
+        isOpen={isTicketScannerOpen}
+        onClose={() => setIsTicketScannerOpen(false)}
+        activeRound={currentRound || null}
+        pastRounds={pastRounds}
+        userTickets={userTickets}
+      />
+
+      {/* VRF AUDIT MODAL */}
       <AnimatePresence>
         {vrfModalRound && (
           <motion.div
@@ -1096,7 +1262,7 @@ export const LotteryView: React.FC = () => {
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
                 <div className="flex items-center gap-2 text-amber-400 font-bold font-outfit">
                   <ShieldCheck className="w-5 h-5 shrink-0" />
-                  <span>Chainlink VRF 2.5 Cryptographic Verification</span>
+                  <span>Bằng Chứng Toán Học Chainlink VRF 2.5</span>
                 </div>
                 <button
                   onClick={() => setVrfModalRound(null)}
@@ -1125,14 +1291,14 @@ export const LotteryView: React.FC = () => {
 
               <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Entropy verified on-chain. Neither miners, validators nor admins can predict or manipulate draw numbers.</span>
+                <span>Tính ngẫu nhiên đã được kiểm chứng trên on-chain. Không một validator hay miner nào có thể can thiệp hay dự đoán trước.</span>
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* 7. CELEBRATION MODAL */}
+      {/* CELEBRATION MODAL */}
       <AnimatePresence>
         {celebrationData && (
           <motion.div
@@ -1152,32 +1318,32 @@ export const LotteryView: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <h3 className="text-2xl font-black text-white font-outfit">Tickets Purchased!</h3>
+                <h3 className="text-2xl font-black text-white font-outfit uppercase">Mua Vé 3D Thành Công!</h3>
                 <p className="text-xs text-slate-300">
-                  You have successfully entered {celebrationData.count} tickets into the Mega Jackpot draw.
+                  Bạn đã ghi danh thành công {celebrationData.count} vé vào kỳ quay Mega Jackpot.
                 </p>
               </div>
 
               <div className="bg-black/60 p-4 rounded-2xl border border-white/[0.08] text-xs font-mono space-y-2">
                 <div className="flex justify-between text-slate-400">
-                  <span>Tickets Acquired:</span>
-                  <span className="text-white font-bold">{celebrationData.count} Tickets</span>
+                  <span>Số Lượng Vé:</span>
+                  <span className="text-white font-bold">{celebrationData.count} Vé Số 3D</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>Total Amount Paid:</span>
+                  <span>Tổng Chi Phí:</span>
                   <span className="text-amber-300 font-bold">${celebrationData.totalCostUsd.toFixed(2)} USD</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>Transaction Hash:</span>
+                  <span>Mã Giao Dịch (TxHash):</span>
                   <span className="text-cyan-400">{shortenAddress(celebrationData.txHash)}</span>
                 </div>
               </div>
 
               <button
                 onClick={() => setCelebrationData(null)}
-                className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-black font-black text-sm rounded-2xl transition-all cursor-pointer font-outfit"
+                className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-black font-black text-sm rounded-2xl transition-all cursor-pointer font-outfit uppercase tracking-wider"
               >
-                Done & View My Tickets
+                Xem Vé Số 3D Của Tôi
               </button>
             </motion.div>
           </motion.div>

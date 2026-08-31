@@ -127,6 +127,82 @@ class SoundEngine {
     }
   }
 
+  public playDrumSpin() {
+    if (!this.isEnabled) return;
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      for (let i = 0; i < 8; i++) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(160 + (i % 4) * 40 + Math.random() * 20, now + i * 0.04);
+        gain.gain.setValueAtTime(0.015, now + i * 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.04 + 0.03);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now + i * 0.04);
+        osc.stop(now + i * 0.04 + 0.03);
+      }
+    } catch {
+      // Audio ignore
+    }
+  }
+
+  public playBallEject() {
+    if (!this.isEnabled) return;
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      // Pneumatic 'whoosh-pop' + chime
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+      osc.frequency.exponentialRampToValueAtTime(1760, now + 0.15);
+      gain.gain.setValueAtTime(0.04, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.25);
+    } catch {
+      // Audio ignore
+    }
+  }
+
+  public playFoilScratch() {
+    if (!this.isEnabled) return;
+    try {
+      this.init();
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(900 + Math.random() * 400, now);
+      gain.gain.setValueAtTime(0.012, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.03);
+    } catch {
+      // Audio ignore
+    }
+  }
+
+  public playCoin() {
+    this.playSuccess();
+  }
+
+  public playError() {
+    this.playAlert();
+  }
+
   public playJackpot() {
     if (!this.isEnabled) return;
     try {

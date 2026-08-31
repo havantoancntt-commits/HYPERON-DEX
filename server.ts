@@ -17,6 +17,9 @@ import {
   drawLotteryRound,
   claimLotteryWinnings,
   generateRandomTicketNumbers,
+  calculateLotteryAnalytics,
+  joinSyndicatePool,
+  scanTicketAgainstRound,
 } from './server/services/lotteryEngine';
 import { DEX_ERROR_CODES, createDexError, ERROR_MESSAGES } from './src/lib/errorCodes';
 
@@ -725,6 +728,46 @@ app.post('/api/lottery/draw', (req: Request, res: Response) => {
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ error: err?.message || 'Failed to draw round' });
+  }
+});
+
+app.post('/api/lottery/syndicate/join', (req: Request, res: Response) => {
+  try {
+    const { syndicateId, sharesCount = 1, userAddress, paymentToken = 'USDC' } = req.body;
+    if (!syndicateId || !userAddress) {
+      return res.status(400).json({ error: 'Missing required parameters (syndicateId, userAddress)' });
+    }
+    const result = joinSyndicatePool({
+      syndicateId,
+      sharesCount: Number(sharesCount) || 1,
+      userAddress,
+      paymentToken,
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to join syndicate pool' });
+  }
+});
+
+app.get('/api/lottery/analytics', (req: Request, res: Response) => {
+  try {
+    const analytics = calculateLotteryAnalytics();
+    res.json(analytics);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to compute lottery analytics', details: err?.message });
+  }
+});
+
+app.post('/api/lottery/scan', (req: Request, res: Response) => {
+  try {
+    const { roundId, numbers } = req.body;
+    if (!roundId || !numbers || !Array.isArray(numbers) || numbers.length !== 6) {
+      return res.status(400).json({ error: 'Missing or invalid roundId and 6-digit ticket numbers' });
+    }
+    const result = scanTicketAgainstRound(Number(roundId), numbers);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to scan ticket' });
   }
 });
 

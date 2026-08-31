@@ -603,6 +603,8 @@ export interface RestakingStrategy {
 
 export type LotteryPoolId = 'mega-daily' | 'hourly-lightning' | 'no-loss-savings';
 
+export type LotteryRoundStatus = 'OPEN' | 'CLOSING_SOON' | 'VRF_REQUESTED' | 'DRAWING' | 'SETTLING' | 'CLOSED';
+
 export interface LotteryTicket {
   id: string;
   roundId: number;
@@ -618,22 +620,64 @@ export interface LotteryTicket {
   matchedDigitsCount?: number;
   wonPrizeUsd?: number;
   claimedAt?: number;
+  syndicateId?: string;
+  isScratchRevealed?: boolean;
+  tierQuality?: 'VIP_GOLD' | 'PLATINUM' | 'DIAMOND' | 'STANDARD';
+  multiplier?: number; // 1x, 2x, 3x, 5x, 10x PowerPlay
+}
+
+export interface LotterySyndicatePool {
+  id: string;
+  name: string;
+  creatorAddress: string;
+  poolId: LotteryPoolId;
+  roundId: number;
+  targetTickets: number;
+  currentTickets: number;
+  participantCount: number;
+  pricePerShareUsd: number;
+  status: 'RECRUITING' | 'LOCKED' | 'WON' | 'COMPLETED';
+  totalPrizeWonUsd?: number;
+  description: string;
+  bannerGradient: string;
+}
+
+export interface LotteryDigitFrequency {
+  digit: number;
+  count: number;
+  percentage: number;
+  isHot: boolean;
+  isCold: boolean;
+  lastDrawnRoundsAgo: number;
+}
+
+export interface LotteryAnalytics {
+  totalRoundsSampled: number;
+  hotDigits: number[];
+  coldDigits: number[];
+  digitFrequencies: LotteryDigitFrequency[];
+  oddEvenRatio: { odd: number; even: number };
+  averageSum: number;
+  mostCommonPairs: [number, number][];
 }
 
 export interface LotteryTierPrize {
-  matchedDigits: number; // 6 (Jackpot), 5, 4, 3, 2, 1
+  matchedDigits: number; // 6 (Jackpot), 5, 4, 3, 2, 1, 0 (Burn/Reserve)
   label: string;
   allocationPercent: number;
   poolAmountUsd: number;
   winnersCount: number;
   prizePerWinnerUsd: number;
+  oddsRatio: string;
+  oddsPercentage: number;
+  guaranteedMinUsd?: number;
 }
 
 export interface LotteryRound {
   id: number;
   poolId: LotteryPoolId;
   poolName: string;
-  status: 'OPEN' | 'DRAWING' | 'CLOSED';
+  status: LotteryRoundStatus;
   startTime: number;
   endTime: number;
   ticketPriceUsd: number;
@@ -647,7 +691,11 @@ export interface LotteryRound {
   vrfBlockNumber?: number;
   prizesByTier: LotteryTierPrize[];
   burnAmountUsd: number;
+  reserveFundUsd: number;
+  stakersDividendUsd: number;
   rolloverAmountUsd: number;
+  drawStep?: number; // 0 to 6 (for live ball-by-ball reveal)
+  lastDrawnBall?: number;
 }
 
 export interface NoLossSavingsDeposit {
@@ -673,6 +721,7 @@ export interface LotteryWinnerRecord {
   winningNumbers: number[];
   timestamp: number;
   txHash: string;
+  multiplier?: number;
 }
 
 export interface LotteryStats {
@@ -682,5 +731,9 @@ export interface LotteryStats {
   largestSingleJackpotUsd: number;
   activePotTotalUsd: number;
   recentWinners: LotteryWinnerRecord[];
+  totalRoundsCompleted: number;
+  averageJackpotWinUsd: number;
+  overallWinningProbability: number;
 }
+
 
