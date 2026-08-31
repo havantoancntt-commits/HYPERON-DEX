@@ -164,6 +164,60 @@ export interface TradeRecord {
   txHash: string;
 }
 
+export interface TechnicalIndicators {
+  symbol: string;
+  timeframe: string;
+  lastUpdated: number;
+  currentPrice: number;
+  rsi: number;
+  rsiSignal: 'OVERSOLD' | 'OVERBOUGHT' | 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  macd: {
+    macdLine: number;
+    signalLine: number;
+    histogram: number;
+    trend: 'BULLISH_CROSSOVER' | 'BEARISH_CROSSOVER' | 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  };
+  ema20: number;
+  ema50: number;
+  ema200: number;
+  sma20: number;
+  maTrend: 'STRONG_BULLISH' | 'BULLISH' | 'BEARISH' | 'STRONG_BEARISH' | 'NEUTRAL';
+  bollingerBands: {
+    upper: number;
+    middle: number;
+    lower: number;
+    bandwidth: number;
+    percentB: number;
+    status: 'SQUEEZE' | 'UPPER_BREAKOUT' | 'LOWER_BREAKOUT' | 'NORMAL';
+  };
+  atr: number;
+  atrPercent: number;
+  volatilityRegime: 'LOW' | 'NORMAL' | 'HIGH' | 'EXTREME';
+  stochRsi: {
+    k: number;
+    d: number;
+    status: 'OVERSOLD' | 'OVERBOUGHT' | 'NEUTRAL';
+  };
+  pivotPoints: {
+    pivot: number;
+    r1: number;
+    r2: number;
+    r3: number;
+    s1: number;
+    s2: number;
+    s3: number;
+  };
+  volumeMetrics: {
+    volume24hUsd: number;
+    volumeSmaRatio: number;
+    buyingPressurePercent: number;
+    orderbookImbalanceRatio: number;
+  };
+  overallScore: number;
+  overallRating: 'STRONG_BUY' | 'BUY' | 'NEUTRAL' | 'SELL' | 'STRONG_SELL';
+  summary: string;
+}
+
 export type OrderType = 'market' | 'limit' | 'stop_limit' | 'take_profit' | 'twap';
 export type OrderStatus = 'open' | 'filled' | 'partially_filled' | 'cancelled' | 'expired';
 

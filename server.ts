@@ -5,7 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import { VERIFIED_TOKENS, SUPPORTED_CHAINS, DEX_SOURCES, SAMPLE_POOLS, SAMPLE_STAKING_VAULTS } from './src/lib/constants';
 import { priceCache, getPrice, getPriceState, getUsdPrice, syncRealTimePrices } from './server/services/priceFeed';
-import { fetchLiveKlines, fetchLiveOrderBook, fetchLiveTrades } from './server/services/marketData';
+import { fetchLiveKlines, fetchLiveOrderBook, fetchLiveTrades, calculateLiveTechnicalIndicators } from './server/services/marketData';
 import { calculateSmartRouteQuote, simulateSwapTransaction } from './server/services/router';
 import { scanTokenSecurity } from './server/services/scanner';
 import { generateMarketIntelligence, generateQuantitativeSignals } from './server/services/aiIntelligence';
@@ -190,6 +190,17 @@ app.get('/api/markets/trades', async (req: Request, res: Response) => {
   res.json({ trades });
 });
 
+app.get('/api/markets/indicators', async (req: Request, res: Response) => {
+  const symbol = (req.query.symbol as string) || 'ETH';
+  const timeframe = (req.query.timeframe as string) || '15m';
+  try {
+    const indicators = await calculateLiveTechnicalIndicators(symbol, timeframe);
+    res.json(indicators);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to compute technical indicators', details: err?.message });
+  }
+});
+
 // -------------------------------------------------------------
 // 4. Smart DEX Router & Quotes Engine
 // -------------------------------------------------------------
@@ -266,7 +277,8 @@ app.post('/api/swaps/simulate', async (req: Request, res: Response) => {
 // -------------------------------------------------------------
 app.get('/api/ai/market-intelligence', async (req: Request, res: Response) => {
   try {
-    const intelligence = await generateMarketIntelligence();
+    const symbol = (req.query.symbol as string) || 'ETH';
+    const intelligence = await generateMarketIntelligence(symbol);
     res.json(intelligence);
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to generate market intelligence' });
