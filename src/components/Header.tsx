@@ -438,15 +438,15 @@ export const Header: React.FC = () => {
       {/* Global Quick Search Modal (Cmd+K) */}
       {showSearchModal && (
         <div 
-          className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-start justify-center pt-20 p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-start justify-center pt-16 sm:pt-20 p-3 sm:p-4 animate-in fade-in duration-150"
           onClick={() => setShowSearchModal(false)}
         >
           <div 
-            className="w-full max-w-xl rounded-2xl bg-[#0D111A] border border-white/15 shadow-2xl p-5 overflow-hidden"
+            className="w-full max-w-xl rounded-3xl bg-[#090C12] border border-cyan-500/30 shadow-2xl p-4 sm:p-6 overflow-hidden max-h-[85vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 pb-3 border-b border-white/[0.08]">
-              <Search className="w-4 h-4 text-cyan-400" />
+              <Search className="w-4 h-4 text-cyan-400 shrink-0" />
               <input
                 type="text"
                 autoFocus
@@ -457,13 +457,13 @@ export const Header: React.FC = () => {
               />
               <button
                 onClick={() => setShowSearchModal(false)}
-                className="text-xs text-slate-400 hover:text-white px-2 py-1 rounded-lg bg-[#171F30] font-mono cursor-pointer"
+                className="text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded-xl bg-white/[0.06] font-mono cursor-pointer shrink-0"
               >
                 ESC
               </button>
             </div>
 
-            <div className="mt-3 max-h-96 overflow-y-auto space-y-1">
+            <div className="mt-3 overflow-y-auto space-y-1 pr-1 scrollbar-thin flex-1">
               <div className="text-[10px] font-mono uppercase text-slate-400 px-2 py-1 font-bold flex items-center justify-between">
                 <span>Verified Cross-Chain Assets</span>
                 <span className="text-cyan-400">INSTANT SWAP / TRADE</span>
@@ -476,7 +476,7 @@ export const Header: React.FC = () => {
                     setActiveView('token-details');
                     setShowSearchModal(false);
                   }}
-                  className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-white/[0.05] text-left transition-all cursor-pointer group"
+                  className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-white/[0.05] text-left transition-all cursor-pointer group"
                 >
                   <div className="flex items-center gap-3">
                     <TokenLogo symbol={token.symbol} name={token.name} src={token.logoUrl} chainId={token.chainId} className="w-7 h-7" />

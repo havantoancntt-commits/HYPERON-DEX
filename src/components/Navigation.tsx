@@ -28,7 +28,9 @@ import {
   Activity,
   Rocket,
   CreditCard,
-  Landmark
+  Landmark,
+  Ticket,
+  Trophy
 } from 'lucide-react';
 
 interface NavItem {
@@ -73,6 +75,7 @@ export const Navigation: React.FC = () => {
     {
       title: 'LAUNCHPAD & DEFI',
       items: [
+        { id: 'lottery', label: 'Mega VRF Lottery', icon: Trophy, badge: '$647K Pot', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/30' },
         { id: 'launchpad', label: 'AI Fair Launchpad', icon: Rocket, badge: 'Anti-Rug', badgeColor: 'bg-pink-500/10 text-pink-400 border-pink-500/20' },
         { id: 'lending', label: 'Smart Lending & Borrows', icon: Landmark, badge: 'AI Radar', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
         { id: 'staking', label: 'Staking & Restake', icon: Lock, badge: '35% APY', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },

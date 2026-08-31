@@ -597,3 +597,90 @@ export interface RestakingStrategy {
   instantUnstakeFeePercent: number;
 }
 
+// -------------------------------------------------------------
+// On-Chain Provably Fair Lottery & Mega Jackpot Suite
+// -------------------------------------------------------------
+
+export type LotteryPoolId = 'mega-daily' | 'hourly-lightning' | 'no-loss-savings';
+
+export interface LotteryTicket {
+  id: string;
+  roundId: number;
+  poolId: LotteryPoolId;
+  numbers: number[]; // 6 numbers, each 0-9 (e.g. [4, 8, 2, 9, 1, 7])
+  purchasePriceUsd: number;
+  purchasedWithToken: string;
+  purchasedWithAmount: number;
+  timestamp: number;
+  ownerAddress: string;
+  txHash: string;
+  status: 'ACTIVE' | 'WON' | 'LOST' | 'CLAIMED';
+  matchedDigitsCount?: number;
+  wonPrizeUsd?: number;
+  claimedAt?: number;
+}
+
+export interface LotteryTierPrize {
+  matchedDigits: number; // 6 (Jackpot), 5, 4, 3, 2, 1
+  label: string;
+  allocationPercent: number;
+  poolAmountUsd: number;
+  winnersCount: number;
+  prizePerWinnerUsd: number;
+}
+
+export interface LotteryRound {
+  id: number;
+  poolId: LotteryPoolId;
+  poolName: string;
+  status: 'OPEN' | 'DRAWING' | 'CLOSED';
+  startTime: number;
+  endTime: number;
+  ticketPriceUsd: number;
+  jackpotUsd: number;
+  totalPotUsd: number;
+  totalTicketsSold: number;
+  uniqueParticipants: number;
+  winningNumbers: number[] | null; // 6 digits
+  vrfSeed?: string;
+  vrfTxHash?: string;
+  vrfBlockNumber?: number;
+  prizesByTier: LotteryTierPrize[];
+  burnAmountUsd: number;
+  rolloverAmountUsd: number;
+}
+
+export interface NoLossSavingsDeposit {
+  id: string;
+  userAddress: string;
+  stakedToken: string;
+  amount: number;
+  valueUsd: number;
+  ticketsEarned: number;
+  stakedAt: number;
+  totalRewardsClaimedUsd: number;
+}
+
+export interface LotteryWinnerRecord {
+  id: string;
+  roundId: number;
+  poolId: LotteryPoolId;
+  winnerAddress: string;
+  matchedDigits: number;
+  prizeAmountUsd: number;
+  prizeToken: string;
+  ticketNumbers: number[];
+  winningNumbers: number[];
+  timestamp: number;
+  txHash: string;
+}
+
+export interface LotteryStats {
+  totalDistributedUsd: number;
+  totalTicketsBoughtAllTime: number;
+  totalBurnedHyprUsd: number;
+  largestSingleJackpotUsd: number;
+  activePotTotalUsd: number;
+  recentWinners: LotteryWinnerRecord[];
+}
+

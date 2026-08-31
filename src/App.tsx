@@ -16,6 +16,7 @@ import { PerpetualsView } from './views/PerpetualsView';
 import { TradeTerminalView } from './views/TradeTerminalView';
 import { MarketsView } from './views/MarketsView';
 import { TokenDetailsView } from './views/TokenDetailsView';
+import { LotteryView } from './views/LotteryView';
 import { LiquidityView } from './views/LiquidityView';
 import { StakingView } from './views/StakingView';
 import { LendingView } from './views/LendingView';
@@ -66,6 +67,8 @@ const MainLayout: React.FC = () => {
         return <MarketsView />;
       case 'token-details':
         return <TokenDetailsView />;
+      case 'lottery':
+        return <LotteryView />;
       case 'liquidity':
         return <LiquidityView />;
       case 'staking':
@@ -120,8 +123,8 @@ const MainLayout: React.FC = () => {
         <Navigation />
 
         {/* Dynamic Viewport with Motion Transition */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 relative">
-          <div className="max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8 pb-32 sm:pb-12 lg:pb-12 relative scroll-smooth">
+          <div className="max-w-7xl mx-auto space-y-6">
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeView}

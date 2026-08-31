@@ -24,7 +24,9 @@ import {
   PieChart,
   LineChart,
   Target,
-  Rocket
+  Rocket,
+  Trophy,
+  Ticket
 } from 'lucide-react';
 
 export const DashboardView: React.FC = () => {
@@ -66,6 +68,39 @@ export const DashboardView: React.FC = () => {
     <div className="space-y-6 pb-12">
       {/* Ecosystem Architecture & Flow Ribbon matching user request */}
       <EcosystemFlowBanner />
+
+      {/* Mega VRF Lottery Jackpot Global Banner */}
+      <div className="p-5 rounded-3xl bg-gradient-to-r from-[#161005] via-[#100C16] to-[#080D1A] border border-amber-500/40 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 shadow-lg shadow-amber-950/50">
+            <Trophy className="w-6 h-6 animate-bounce" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-extrabold text-white font-sans">
+                Hyperon Mega On-Chain Lottery (Chainlink VRF 2.5)
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30 font-bold">
+                $647,890.00 POT
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Mua vé xổ số phi tập trung, chọn số may mắn hoặc quay tự động. Giảm 20% khi thanh toán bằng $HYPR.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveView('lottery')}
+            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 text-black text-xs font-black font-sans flex items-center gap-2 cursor-pointer shadow-lg shadow-amber-900/40 transition-all hover:scale-[1.02]"
+          >
+            <Ticket className="w-3.5 h-3.5 fill-current" />
+            <span>Mua Vé & Săn Jackpot</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
 
       {/* AI Alpha Signals High-Winrate Spotlight Banner */}
       <div className="p-5 rounded-3xl bg-gradient-to-r from-[#0C1428] via-[#091022] to-[#070A18] border border-cyan-500/30 shadow-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">

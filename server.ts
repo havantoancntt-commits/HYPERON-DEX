@@ -10,6 +10,14 @@ import { calculateSmartRouteQuote, simulateSwapTransaction } from './server/serv
 import { scanTokenSecurity } from './server/services/scanner';
 import { generateMarketIntelligence, generateQuantitativeSignals } from './server/services/aiIntelligence';
 import { getLiveBlockNumber, getLiveGasPrice, getNativeBalance } from './server/services/rpc';
+import {
+  getLotteryOverview,
+  buyLotteryTickets,
+  depositNoLossSavings,
+  drawLotteryRound,
+  claimLotteryWinnings,
+  generateRandomTicketNumbers,
+} from './server/services/lotteryEngine';
 import { DEX_ERROR_CODES, createDexError, ERROR_MESSAGES } from './src/lib/errorCodes';
 
 const app = express();
@@ -647,6 +655,81 @@ app.get('/api/admin/metrics', async (req: Request, res: Response) => {
       },
     },
   });
+});
+
+// -------------------------------------------------------------
+// 16. On-Chain Provably Fair Lottery & Mega Jackpot API
+// -------------------------------------------------------------
+app.get('/api/lottery/overview', (req: Request, res: Response) => {
+  try {
+    const userAddress = (req.query.userAddress as string) || undefined;
+    const overview = getLotteryOverview(userAddress);
+    res.json(overview);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to retrieve lottery overview', details: err?.message });
+  }
+});
+
+app.post('/api/lottery/buy', (req: Request, res: Response) => {
+  try {
+    const { roundId, poolId, tickets, paymentToken = 'USDC', userAddress } = req.body;
+    if (!roundId || !tickets || !Array.isArray(tickets) || tickets.length === 0 || !userAddress) {
+      return res.status(400).json({ error: 'Missing required parameters (roundId, tickets, userAddress)' });
+    }
+    const result = buyLotteryTickets({
+      roundId: Number(roundId),
+      poolId,
+      tickets,
+      paymentToken,
+      userAddress,
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to purchase lottery tickets' });
+  }
+});
+
+app.post('/api/lottery/deposit-savings', (req: Request, res: Response) => {
+  try {
+    const { userAddress, stakedToken = 'USDC', amount } = req.body;
+    if (!userAddress || !amount || amount <= 0) {
+      return res.status(400).json({ error: 'Invalid deposit parameters' });
+    }
+    const result = depositNoLossSavings({
+      userAddress,
+      stakedToken,
+      amount: Number(amount),
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to deposit to no-loss savings pool' });
+  }
+});
+
+app.post('/api/lottery/draw', (req: Request, res: Response) => {
+  try {
+    const { roundId } = req.body;
+    if (!roundId) {
+      return res.status(400).json({ error: 'Missing roundId' });
+    }
+    const result = drawLotteryRound(Number(roundId));
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to draw round' });
+  }
+});
+
+app.post('/api/lottery/claim', (req: Request, res: Response) => {
+  try {
+    const { userAddress } = req.body;
+    if (!userAddress) {
+      return res.status(400).json({ error: 'Missing userAddress' });
+    }
+    const result = claimLotteryWinnings(userAddress);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Failed to claim winnings' });
+  }
 });
 
 // -------------------------------------------------------------
