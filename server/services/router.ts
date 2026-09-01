@@ -161,10 +161,9 @@ export class SmartGraphRouter {
         const isToken0In = pool.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
         const q = uniV3.computeQuoteWithV3State(amountInRaw, decimalsIn, decimalsOut, pool.v3State, isToken0In);
         const qFloat = parseFloat(q.amountOutFormatted);
-        const deviation = Math.abs(qFloat - grossOutput) / (grossOutput || 1);
-        if (q.status === 'AVAILABLE' && q.amountOutRaw > 0n && deviation < 0.15 && q.priceImpactPercent < 20.0) {
+        if (q.status === 'AVAILABLE' && q.amountOutRaw > 0n && q.priceImpactPercent < 50.0) {
           candidates.push({
-            dexName: q.dexAdapterName,
+            dexName: `${pool.dexProtocol} (${pool.feeBps / 100}%)`,
             protocol: 'Uniswap v3',
             amountOutRaw: q.amountOutRaw,
             amountOutFormatted: q.amountOutFormatted,
@@ -173,15 +172,22 @@ export class SmartGraphRouter {
             feePaidRaw: q.feePaidRaw,
             gasEstimatedUnits: q.gasEstimatedUnits,
             path: [fromToken.symbol, toToken.symbol],
-            splits: [{ dexName: q.dexAdapterName, percentage: 100, fromToken: fromToken.symbol, toToken: toToken.symbol, path: [fromToken.symbol, toToken.symbol] }],
+            splits: [
+              {
+                dexName: `${pool.dexProtocol} (${pool.feeBps / 100}%)`,
+                percentage: 100,
+                fromToken: fromToken.symbol,
+                toToken: toToken.symbol,
+                path: [fromToken.symbol, toToken.symbol],
+              },
+            ],
             netOutputScore: qFloat,
           });
         }
       } else if (pool.reserves) {
         const q = uniV2.computeQuote(amountInRaw, decimalsIn, decimalsOut, pool.reserves, pool.feeBps);
         const qFloat = parseFloat(q.amountOutFormatted);
-        const deviation = Math.abs(qFloat - grossOutput) / (grossOutput || 1);
-        if (q.status === 'AVAILABLE' && q.amountOutRaw > 0n && deviation < 0.15 && q.priceImpactPercent < 20.0) {
+        if (q.status === 'AVAILABLE' && q.amountOutRaw > 0n && q.priceImpactPercent < 50.0) {
           candidates.push({
             dexName: `${pool.dexProtocol} (${pool.feeBps / 100}%)`,
             protocol: pool.dexProtocol,
@@ -192,124 +198,89 @@ export class SmartGraphRouter {
             feePaidRaw: q.feePaidRaw,
             gasEstimatedUnits: q.gasEstimatedUnits,
             path: [fromToken.symbol, toToken.symbol],
-            splits: [{ dexName: pool.dexProtocol, percentage: 100, fromToken: fromToken.symbol, toToken: toToken.symbol, path: [fromToken.symbol, toToken.symbol] }],
+            splits: [
+              {
+                dexName: `${pool.dexProtocol} (${pool.feeBps / 100}%)`,
+                percentage: 100,
+                fromToken: fromToken.symbol,
+                toToken: toToken.symbol,
+                path: [fromToken.symbol, toToken.symbol],
+              },
+            ],
             netOutputScore: qFloat,
           });
         }
       }
     }
 
-    // High-Precision Analytical Protocol Adapters (Uniswap v3, Curve, SushiSwap, Balancer)
-    // 1. Uniswap v3 Low Fee Tier (0.05% or 0.01% for Stables)
-    const feeBpsLow = isStablePair ? 1 : 5;
-    const feeFactorLow = (10000 - feeBpsLow) / 10000;
-    const netOutLow = grossOutput * feeFactorLow * (1 - baseImpactPercent / 100);
-    const netOutLowFormatted = netOutLow.toFixed(decPrecision);
-    const amountOutRawLow = parseUnits(netOutLowFormatted, decimalsOut);
+    // 2. If at least 2 distinct verified real pools exist, evaluate true Multi-DEX Split across them
+    if (candidates.length >= 2) {
+      const poolA = directPools[0];
+      const poolB = directPools[1];
 
-    candidates.push({
-      dexName: isStablePair ? 'Uniswap v3 (0.01% Stable Tier)' : 'Uniswap v3 (0.05% Tier)',
-      protocol: 'Uniswap v3',
-      amountOutRaw: amountOutRawLow,
-      amountOutFormatted: netOutLowFormatted,
-      executionPrice: numAmount > 0 ? netOutLow / numAmount : 0,
-      priceImpactPercent: baseImpactPercent,
-      feePaidRaw: (amountInRaw * BigInt(feeBpsLow)) / 10000n,
-      gasEstimatedUnits: 125000,
-      path: [fromToken.symbol, toToken.symbol],
-      splits: [{ dexName: 'Uniswap v3', percentage: 100, fromToken: fromToken.symbol, toToken: toToken.symbol, path: [fromToken.symbol, toToken.symbol] }],
-      netOutputScore: netOutLow,
-    });
+      const splitInA = (amountInRaw * 70n) / 100n;
+      const splitInB = amountInRaw - splitInA;
 
-    // 2. Curve Finance / StableSwap Pool
-    const feeBpsCurve = isStablePair ? 4 : 25;
-    const impactCurve = isStablePair ? baseImpactPercent * 0.75 : baseImpactPercent * 1.3;
-    const netOutCurve = grossOutput * ((10000 - feeBpsCurve) / 10000) * (1 - impactCurve / 100);
-    const netOutCurveFormatted = netOutCurve.toFixed(decPrecision);
-    const amountOutRawCurve = parseUnits(netOutCurveFormatted, decimalsOut);
+      let quoteA: AMMQuoteResult | null = null;
+      let quoteB: AMMQuoteResult | null = null;
 
-    candidates.push({
-      dexName: isStablePair ? 'Curve 3Pool (StableSwap)' : 'Curve Finance CryptoPool',
-      protocol: 'Curve',
-      amountOutRaw: amountOutRawCurve,
-      amountOutFormatted: netOutCurveFormatted,
-      executionPrice: numAmount > 0 ? netOutCurve / numAmount : 0,
-      priceImpactPercent: impactCurve,
-      feePaidRaw: (amountInRaw * BigInt(feeBpsCurve)) / 10000n,
-      gasEstimatedUnits: 150000,
-      path: [fromToken.symbol, toToken.symbol],
-      splits: [{ dexName: 'Curve Finance', percentage: 100, fromToken: fromToken.symbol, toToken: toToken.symbol, path: [fromToken.symbol, toToken.symbol] }],
-      netOutputScore: netOutCurve,
-    });
+      if (poolA.dexProtocol === 'Uniswap v3' && poolA.v3State) {
+        const isToken0In = poolA.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
+        quoteA = uniV3.computeQuoteWithV3State(splitInA, decimalsIn, decimalsOut, poolA.v3State, isToken0In);
+      } else if (poolA.reserves) {
+        quoteA = uniV2.computeQuote(splitInA, decimalsIn, decimalsOut, poolA.reserves, poolA.feeBps);
+      }
 
-    // 3. Uniswap v3 Standard Tier (0.30%)
-    const feeBpsMed = 30;
-    const impactMed = baseImpactPercent * 1.15;
-    const netOutMed = grossOutput * ((10000 - feeBpsMed) / 10000) * (1 - impactMed / 100);
-    const netOutMedFormatted = netOutMed.toFixed(decPrecision);
-    const amountOutRawMed = parseUnits(netOutMedFormatted, decimalsOut);
+      if (poolB.dexProtocol === 'Uniswap v3' && poolB.v3State) {
+        const isToken0In = poolB.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
+        quoteB = uniV3.computeQuoteWithV3State(splitInB, decimalsIn, decimalsOut, poolB.v3State, isToken0In);
+      } else if (poolB.reserves) {
+        quoteB = uniV2.computeQuote(splitInB, decimalsIn, decimalsOut, poolB.reserves, poolB.feeBps);
+      }
 
-    candidates.push({
-      dexName: 'Uniswap v3 (0.3% Standard Tier)',
-      protocol: 'Uniswap v3',
-      amountOutRaw: amountOutRawMed,
-      amountOutFormatted: netOutMedFormatted,
-      executionPrice: numAmount > 0 ? netOutMed / numAmount : 0,
-      priceImpactPercent: impactMed,
-      feePaidRaw: (amountInRaw * BigInt(feeBpsMed)) / 10000n,
-      gasEstimatedUnits: 130000,
-      path: [fromToken.symbol, toToken.symbol],
-      splits: [{ dexName: 'Uniswap v3 (0.3%)', percentage: 100, fromToken: fromToken.symbol, toToken: toToken.symbol, path: [fromToken.symbol, toToken.symbol] }],
-      netOutputScore: netOutMed,
-    });
+      if (quoteA && quoteB && quoteA.status === 'AVAILABLE' && quoteB.status === 'AVAILABLE') {
+        const splitOutRaw = quoteA.amountOutRaw + quoteB.amountOutRaw;
+        const splitOutFormatted = formatUnits(splitOutRaw, decimalsOut);
+        const splitOutFloat = parseFloat(splitOutFormatted);
+        const splitImpact = (quoteA.priceImpactPercent * 0.7) + (quoteB.priceImpactPercent * 0.3);
 
-    // 4. SushiSwap v3 (0.30%)
-    const impactSushi = baseImpactPercent * 1.35;
-    const netOutSushi = grossOutput * 0.9970 * (1 - impactSushi / 100);
-    const netOutSushiFormatted = netOutSushi.toFixed(decPrecision);
-    const amountOutRawSushi = parseUnits(netOutSushiFormatted, decimalsOut);
+        candidates.push({
+          dexName: `Smart Split (${poolA.dexProtocol} 70% + ${poolB.dexProtocol} 30%)`,
+          protocol: 'Hyperon Multi-DEX Split',
+          amountOutRaw: splitOutRaw,
+          amountOutFormatted: splitOutFormatted,
+          executionPrice: numAmount > 0 ? splitOutFloat / numAmount : 0,
+          priceImpactPercent: splitImpact,
+          feePaidRaw: quoteA.feePaidRaw + quoteB.feePaidRaw,
+          gasEstimatedUnits: 185000,
+          path: [fromToken.symbol, toToken.symbol],
+          splits: [
+            {
+              dexName: poolA.dexProtocol,
+              percentage: 70,
+              fromToken: fromToken.symbol,
+              toToken: toToken.symbol,
+              path: [fromToken.symbol, toToken.symbol],
+            },
+            {
+              dexName: poolB.dexProtocol,
+              percentage: 30,
+              fromToken: fromToken.symbol,
+              toToken: toToken.symbol,
+              path: [fromToken.symbol, toToken.symbol],
+            },
+          ],
+          netOutputScore: splitOutFloat,
+        });
+      }
+    }
 
-    candidates.push({
-      dexName: 'SushiSwap v3 (0.3% Tier)',
-      protocol: 'SushiSwap',
-      amountOutRaw: amountOutRawSushi,
-      amountOutFormatted: netOutSushiFormatted,
-      executionPrice: numAmount > 0 ? netOutSushi / numAmount : 0,
-      priceImpactPercent: impactSushi,
-      feePaidRaw: (amountInRaw * 30n) / 10000n,
-      gasEstimatedUnits: 135000,
-      path: [fromToken.symbol, toToken.symbol],
-      splits: [{ dexName: 'SushiSwap v3', percentage: 100, fromToken: fromToken.symbol, toToken: toToken.symbol, path: [fromToken.symbol, toToken.symbol] }],
-      netOutputScore: netOutSushi,
-    });
-
-    // 5. Intelligent Multi-DEX Split Route (e.g. 70% Uniswap v3 + 30% Curve)
-    // Splitting orders across 2 uncorrelated orderbooks slashes market impact by ~35%
-    const splitImpact = Math.max(0.005, baseImpactPercent * 0.65);
-    const splitFeeFactor = (10000 - (isStablePair ? 2 : 5)) / 10000;
-    const splitNetOut = grossOutput * splitFeeFactor * (1 - splitImpact / 100);
-    const splitNetOutFormatted = splitNetOut.toFixed(decPrecision);
-    const amountOutRawSplit = parseUnits(splitNetOutFormatted, decimalsOut);
-
-    candidates.unshift({
-      dexName: isStablePair ? 'Smart Split (Uniswap v3 70% + Curve 30%)' : 'Smart Split Route (Uniswap v3 70% + Curve 30%)',
-      protocol: 'Hyperon Multi-DEX Split',
-      amountOutRaw: amountOutRawSplit,
-      amountOutFormatted: splitNetOutFormatted,
-      executionPrice: numAmount > 0 ? splitNetOut / numAmount : 0,
-      priceImpactPercent: splitImpact,
-      feePaidRaw: (amountInRaw * 5n) / 10000n,
-      gasEstimatedUnits: 145000,
-      path: [fromToken.symbol, toToken.symbol],
-      splits: [
-        { dexName: isStablePair ? 'Uniswap v3 (0.01%)' : 'Uniswap v3 (0.05%)', percentage: 70, fromToken: fromToken.symbol, toToken: toToken.symbol, path: [fromToken.symbol, toToken.symbol] },
-        { dexName: 'Curve Finance', percentage: 30, fromToken: fromToken.symbol, toToken: toToken.symbol, path: [fromToken.symbol, toToken.symbol] },
-      ],
-      netOutputScore: splitNetOut,
-    });
-
+    // 3. ZERO-SYNTHETIC-DATA ENFORCEMENT:
+    // If no real on-chain pools exist with liquidity, strictly throw NO_LIQUIDITY error
     if (candidates.length === 0) {
-      throw new Error(`NO_LIQUIDITY: No viable route found for ${fromToken.symbol} -> ${toToken.symbol} on ${verifiedChain}`);
+      throw new Error(
+        `NO_LIQUIDITY: No verified on-chain pool with active liquidity found for ${fromTokenSymbol}/${toTokenSymbol} on ${verifiedChain}.`
+      );
     }
 
     // 5. Gas Cost Evaluation in USD & Net Output Score

@@ -271,8 +271,17 @@ app.post('/api/swaps/simulate', async (req: Request, res: Response) => {
     }
 
     const { quote, userAddress, chainId = 'ethereum' } = parsed.data;
-    const effectiveUserAddress = userAddress || '0x71C28B932F99B52EDb3C0257B4393608F79E9E42';
-    const simulation = await simulateSwapTransaction(quote, effectiveUserAddress, chainId);
+    if (!userAddress) {
+      return res.status(400).json(
+        createDexError(
+          DEX_ERROR_CODES.USER_ADDRESS_REQUIRED,
+          'User wallet address is required to execute transaction simulation',
+          ERROR_MESSAGES.USER_ADDRESS_REQUIRED
+        )
+      );
+    }
+
+    const simulation = await simulateSwapTransaction(quote, userAddress, chainId);
     res.json({ simulation });
   } catch (err: any) {
     res.status(500).json(

@@ -48,6 +48,7 @@ export const SwapView: React.FC = () => {
   const [autoSlippageActive, setAutoSlippageActive] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'routing' | 'matrix' | 'ai' | null>(null);
   const [isSwapping, setIsSwapping] = useState<boolean>(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
 
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -71,130 +72,17 @@ export const SwapView: React.FC = () => {
     return val.toFixed(dec);
   }, [getTokenDisplayDecimals]);
 
-  // Quick fallback calculation if network is slow
-  const calculateLocalQuote = useCallback((amt: number, fToken: Token, tToken: Token): SwapQuote => {
-    const fPrice = fToken.priceUsd > 0 ? fToken.priceUsd : 1;
-    const tPrice = tToken.priceUsd > 0 ? tToken.priceUsd : 1;
-    const isStable = fToken.category === 'Stablecoin' && tToken.category === 'Stablecoin';
-    const feeBps = isStable ? 4 : 5; // 0.04% for stables, 0.05% for standard
-    const tradeValueUsd = amt * fPrice;
-    
-    // Exact realistic price impact curve based on trade size & pool depth
-    const priceImpact = isStable
-      ? 0.005
-      : tradeValueUsd > 100000
-      ? 0.15
-      : tradeValueUsd > 10000
-      ? 0.04
-      : 0.01;
-
-    const grossOut = (amt * fPrice) / tPrice;
-    const feeUsd = tradeValueUsd * (feeBps / 10000);
-    const netOut = grossOut * ((10000 - feeBps) / 10000) * (1 - priceImpact / 100);
-    const minOut = netOut * (1 - (slippage || 0.5) / 100);
-    const estGasUsd = isStable ? 2.10 : 1.85;
-    const savingsUsd = Math.max(0.15, tradeValueUsd * 0.0025);
-    const savingsPercent = 0.25;
-
-    const decPrecision = getTokenDisplayDecimals(tToken);
-    const formattedNetOut = Number(netOut.toFixed(decPrecision));
-    const formattedMinOut = Number(minOut.toFixed(decPrecision));
-
-    return {
-      id: `local-quote-${Date.now()}`,
-      fromToken: fToken,
-      toToken: tToken,
-      fromAmount: amt,
-      expectedOutput: formattedNetOut,
-      priceImpactPercent: priceImpact,
-      slippagePercent: slippage || 0.5,
-      minimumReceived: formattedMinOut,
-      estimatedGasUsd: estGasUsd,
-      routingFeeUsd: Number(feeUsd.toFixed(2)),
-      executionPrice: amt > 0 ? netOut / amt : 0,
-      sources: [],
-      routeSplits: [
-        {
-          dexName: isStable ? 'Curve 3Pool (StableSwap)' : 'Uniswap v3 (0.05%)',
-          percentage: 70,
-          fromToken: fToken.symbol,
-          toToken: tToken.symbol,
-          path: [fToken.symbol, tToken.symbol],
-        },
-        {
-          dexName: isStable ? 'Uniswap v3 (0.01%)' : 'Curve Finance',
-          percentage: 30,
-          fromToken: fToken.symbol,
-          toToken: tToken.symbol,
-          path: [fToken.symbol, tToken.symbol],
-        },
-      ],
-      timestamp: Date.now(),
-      expiresInSec: 30,
-      isBestPrice: true,
-      mevProtected: true,
-      savingsUsd: Number(savingsUsd.toFixed(2)),
-      savingsPercent,
-      aiRouteInsight: `Định tuyến thông minh tối ưu hóa phân tách 70% ${isStable ? 'Curve' : 'Uniswap v3'} và 30% ${isStable ? 'Uniswap v3' : 'Curve'} để giảm thiểu tối đa trượt giá, tiết kiệm $${savingsUsd.toFixed(2)} chi phí trượt giá.`,
-      autoSlippageRecommended: isStable ? 0.05 : 0.5,
-      dexComparison: [
-        {
-          dexName: 'Hyperon Smart Router',
-          protocol: 'Split Aggregator',
-          outputAmount: formattedNetOut,
-          outputUsd: Number((netOut * tPrice).toFixed(2)),
-          diffPercent: 0,
-          diffUsd: 0,
-          estimatedGasUsd: estGasUsd,
-          netOutputUsd: Number((netOut * tPrice - estGasUsd).toFixed(2)),
-          isBest: true,
-        },
-        {
-          dexName: 'Uniswap v3 (Direct)',
-          protocol: 'Uniswap v3',
-          outputAmount: Number((netOut * 0.9982).toFixed(decPrecision)),
-          outputUsd: Number((netOut * 0.9982 * tPrice).toFixed(2)),
-          diffPercent: -0.18,
-          diffUsd: Number((netOut * -0.0018 * tPrice).toFixed(2)),
-          estimatedGasUsd: 3.5,
-          netOutputUsd: Number((netOut * 0.9982 * tPrice - 3.5).toFixed(2)),
-          isBest: false,
-        },
-        {
-          dexName: 'Curve Finance',
-          protocol: 'Curve',
-          outputAmount: Number((netOut * (isStable ? 0.9995 : 0.9965)).toFixed(decPrecision)),
-          outputUsd: Number((netOut * (isStable ? 0.9995 : 0.9965) * tPrice).toFixed(2)),
-          diffPercent: isStable ? -0.05 : -0.35,
-          diffUsd: Number((netOut * (isStable ? -0.0005 : -0.0035) * tPrice).toFixed(2)),
-          estimatedGasUsd: 4.1,
-          netOutputUsd: Number((netOut * (isStable ? 0.9995 : 0.9965) * tPrice - 4.1).toFixed(2)),
-          isBest: false,
-        },
-        {
-          dexName: 'SushiSwap v3',
-          protocol: 'SushiSwap',
-          outputAmount: Number((netOut * 0.9920).toFixed(decPrecision)),
-          outputUsd: Number((netOut * 0.9920 * tPrice).toFixed(2)),
-          diffPercent: -0.8,
-          diffUsd: Number((netOut * -0.0080 * tPrice).toFixed(2)),
-          estimatedGasUsd: 3.2,
-          netOutputUsd: Number((netOut * 0.9920 * tPrice - 3.2).toFixed(2)),
-          isBest: false,
-        },
-      ],
-    };
-  }, [slippage, getTokenDisplayDecimals]);
-
-  // Fetch real quote from server Smart Router (debounced, silent background update)
+  // Fetch real quote from server Smart Router (debounced)
   const fetchQuote = useCallback(async (amountStr: string, fTok: Token, tTok: Token, currentSlippage: number) => {
     const num = parseFloat(amountStr);
     if (isNaN(num) || num <= 0) {
       setQuote(null);
+      setQuoteError(null);
       return;
     }
 
     setIsFetchingQuote(true);
+    setQuoteError(null);
     try {
       const res = await fetch('/api/quotes', {
         method: 'POST',
@@ -208,33 +96,29 @@ export const SwapView: React.FC = () => {
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.quote) {
-          setQuote(data.quote);
-        }
+      const data = await res.json();
+      if (res.ok && data.quote) {
+        setQuote(data.quote);
+        setQuoteError(null);
       } else {
-        // Fallback gracefully to high-precision local quote
-        setQuote(calculateLocalQuote(num, fTok, tTok));
+        setQuote(null);
+        setQuoteError(data?.userMessage || data?.message || 'Không tìm thấy thanh khoản khả dụng trên mạng lưới on-chain.');
       }
-    } catch (err) {
-      setQuote(calculateLocalQuote(num, fTok, tTok));
+    } catch (err: any) {
+      setQuote(null);
+      setQuoteError(err?.message || 'Lỗi kết nối tới router on-chain.');
     } finally {
       setIsFetchingQuote(false);
     }
-  }, [calculateLocalQuote, chainId]);
+  }, [chainId]);
 
   // Trigger debounced quote updates when user changes amount or token
   useEffect(() => {
     const num = parseFloat(fromAmount);
     if (isNaN(num) || num <= 0) {
       setQuote(null);
+      setQuoteError(null);
       return;
-    }
-
-    // Set initial synchronous estimate immediately to avoid flickering
-    if (!quote || quote.fromToken.symbol !== fromSymbol || quote.toToken.symbol !== toSymbol) {
-      setQuote(calculateLocalQuote(num, fromToken, toToken));
     }
 
     if (debounceTimerRef.current) {
@@ -243,14 +127,14 @@ export const SwapView: React.FC = () => {
 
     debounceTimerRef.current = setTimeout(() => {
       fetchQuote(fromAmount, fromToken, toToken, slippage);
-    }, 280);
+    }, 300);
 
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [fromSymbol, toSymbol, fromAmount, slippage, fromToken.symbol, toToken.symbol]);
+  }, [fromSymbol, toSymbol, fromAmount, slippage, fromToken.symbol, toToken.symbol, fetchQuote]);
 
   const handleSwapTokens = () => {
     const temp = fromSymbol;
@@ -274,6 +158,16 @@ export const SwapView: React.FC = () => {
 
   const handleInitiateSwap = async () => {
     if (!quote || isSwapping || numFromAmount <= 0) return;
+
+    if (!isConnected || !address) {
+      addToast({
+        title: 'Yêu Cầu Kết Nối Ví',
+        message: 'Vui lòng kết nối ví Web3 để mô phỏng và thực thi giao dịch hoán đổi an toàn.',
+        type: 'warning',
+      });
+      return;
+    }
+
     setIsSwapping(true);
     setActiveQuote(quote);
 
@@ -283,45 +177,25 @@ export const SwapView: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quote,
-          userAddress: address || '0x71C28B932F99B52EDb3C0257B4393608F79E9E42',
+          userAddress: address,
           chainId: chainId || 'ethereum',
         }),
       });
       const data = await res.json();
-      if (data.simulation) {
+      if (res.ok && data.simulation) {
         setActiveSimulation(data.simulation);
       } else {
-        // Fallback simulation mock if network latency
-        setActiveSimulation({
-          success: true,
-          intentId: `intent-${Date.now()}`,
-          correlationId: `HYPR-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-          fromAddress: address || '0x71C28B932F99B52EDb3C0257B4393608F79E9E42',
-          toAddress: '0x1111111254fb6c44bac0bed2854e76f90643097d',
-          gasEstimated: 135000,
-          gasCostUsd: quote.estimatedGasUsd || 1.85,
-          balanceBefore: fromBalance,
-          balanceAfter: Math.max(0, fromBalance - numFromAmount),
-          allowanceRequired: false,
-          allowanceApproved: true,
-          priceImpactSafe: true,
-          priceImpactValue: quote.priceImpactPercent || 0.01,
-          slippageConfigured: slippage || 0.5,
-          smartContractRiskScore: 98,
-          warnings: [],
-          simulationLogs: [
-            `[RPC-SANDBOX] Call simulation pre-flight passed successfully`,
-            `[MEV-CHECK] Flashbots private RPC tunnel initialized with zero mempool exposure`,
-            `[ROUTING] Allocated 100% volume via Hyperon Split Router`,
-          ],
-          blockNumberSimulated: 21948200,
+        addToast({
+          title: 'Mô Phỏng Thất Bại',
+          message: data?.userMessage || data?.message || 'Giao dịch có thể bị revert trên blockchain.',
+          type: 'error',
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       addToast({
-        title: 'Mô Phỏng Giao Dịch',
-        message: 'Đang mở màn hình xác nhận giao dịch an toàn trên mạng thử nghiệm...',
-        type: 'info',
+        title: 'Lỗi Mô Phỏng Giao Dịch',
+        message: err?.message || 'Không thể kết nối đến RPC sandbox node.',
+        type: 'error',
       });
     } finally {
       setIsSwapping(false);
@@ -591,7 +465,7 @@ export const SwapView: React.FC = () => {
         </div>
 
         {/* CLEAN 1-LINE EXECUTION SUMMARY BAR */}
-        {quote && (
+        {quote ? (
           <div className="p-3 rounded-2xl bg-[#080C14] border border-white/[0.06] grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono">
             <div className="space-y-0.5">
               <span className="text-slate-500 block text-[10px]">Tối Thiểu Nhận</span>
@@ -619,7 +493,12 @@ export const SwapView: React.FC = () => {
               </span>
             </div>
           </div>
-        )}
+        ) : quoteError && !isFetchingQuote && numFromAmount > 0 ? (
+          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-mono flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
+            <span>{quoteError}</span>
+          </div>
+        ) : null}
 
         {/* SOLID, NON-FLICKERING ACTION BUTTON */}
         <div className="pt-2">
@@ -645,6 +524,14 @@ export const SwapView: React.FC = () => {
             >
               <AlertCircle className="w-4 h-4 text-rose-400" />
               <span>Số Dư {fromToken.symbol} Không Đủ</span>
+            </button>
+          ) : !quote ? (
+            <button
+              disabled
+              className="w-full py-4 bg-white/[0.04] border border-white/[0.08] text-slate-500 font-bold text-sm rounded-2xl cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <AlertCircle className="w-4 h-4 text-slate-500" />
+              <span>{isFetchingQuote ? 'Đang Tính Toán Báo Giá...' : 'Không Có Thanh Khoản On-Chain Khả Dụng'}</span>
             </button>
           ) : (
             <button

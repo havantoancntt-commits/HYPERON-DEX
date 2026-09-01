@@ -7,11 +7,13 @@
 import { UniswapV2Adapter, UniswapV3Adapter, CurveAdapter, BalancerAdapter } from '../server/services/ammEngine';
 import { parseUnits, formatUnits } from 'viem';
 import { calculateSmartRouteQuote } from '../server/services/router';
-import { scanTokenSecurity } from '../server/services/scanner';
+import { scanTokenSecurity, scanBytecodeOpcodes } from '../server/services/scanner';
 import { getPriceState, getUsdPrice } from '../server/services/priceFeed';
 import { decodeRevertReason, SimulationEngine } from '../server/services/simulationEngine';
 import { deriveWinningDigitsFromSeed, generateCryptographicTicketNumbers } from '../server/services/lotteryEngine';
 import { DEX_ERROR_CODES } from '../src/lib/errorCodes';
+import { validateAndCleanCandles } from '../server/services/marketData';
+import { poolDiscovery } from '../server/services/poolDiscovery';
 
 let totalTests = 0;
 let passedTests = 0;
@@ -146,6 +148,34 @@ async function runTests() {
   // Test 5: Smart Router & Multi-Chain Quotes
   // -------------------------------------------------------------
   console.log('\n--- 5. Smart DEX Router ---');
+  // Seed verified pool record so routing calculations are deterministically verifiable offline
+  poolDiscovery.seedPoolRecord('ethereum:ETH:USDC:uniswapv3:30', {
+    poolAddress: '0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640',
+    chainId: 'ethereum',
+    dexProtocol: 'Uniswap v3',
+    token0Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    token1Address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    token0Symbol: 'ETH',
+    token1Symbol: 'USDC',
+    token0Decimals: 18,
+    token1Decimals: 6,
+    feeBps: 30,
+    lastUpdated: Date.now(),
+    lastBlockNumber: 21000000n,
+    status: 'LIVE',
+    v3State: {
+      sqrtPriceX96: 4611686018427387904000000000n,
+      liquidity: 15000000000000000000n,
+      tick: 200000,
+      tickSpacing: 60,
+      feeTierBps: 30,
+      token0Decimals: 18,
+      token1Decimals: 6,
+      token0Symbol: 'ETH',
+      token1Symbol: 'USDC',
+    },
+  });
+
   const routeQuote = await calculateSmartRouteQuote({
     fromTokenSymbol: 'ETH',
     toTokenSymbol: 'USDC',
@@ -163,6 +193,21 @@ async function runTests() {
   );
   assert(routeQuote.sources.length > 0, 'Quote includes genuine liquidity sources');
   assert(routeQuote.estimatedGasUsd > 0, 'Gas cost is computed in USD based on live gas price');
+
+  // Test strict NO_LIQUIDITY error for unlisted / non-existent token pairs
+  let noLiqErrorCaught = false;
+  try {
+    await calculateSmartRouteQuote({
+      fromTokenSymbol: 'NON_EXISTENT_TOKEN_123',
+      toTokenSymbol: 'USDC',
+      amount: 100,
+      slippage: 0.5,
+      chainId: 'ethereum',
+    });
+  } catch (err: any) {
+    noLiqErrorCaught = err.message.includes('NO_LIQUIDITY');
+  }
+  assert(noLiqErrorCaught, 'Router strictly throws NO_LIQUIDITY for unlisted pairs (ZERO SYNTHETIC DATA)');
 
   // Invalid slippage rejection
   let slippageErrorCaught = false;
@@ -217,12 +262,44 @@ async function runTests() {
   assert(unverifiedReport.unknownFactors.length > 0, 'Unverified contract explicitly flags unknown factors');
 
   // -------------------------------------------------------------
-  // Test 9: Centralized Error Codes
+  // Test 9: Opcode Scanner Instruction Disassembly
   // -------------------------------------------------------------
-  console.log('\n--- 9. Centralized Error Codes Verification ---');
+  console.log('\n--- 9. EVM Opcode Disassembly Test ---');
+  // Bytecode with 0xff inside PUSH1 data (e.g. 60ff56 - PUSH1 0xff, JUMP)
+  const pushDataContainingFF = '0x60ff56';
+  const opcodes1 = scanBytecodeOpcodes(pushDataContainingFF);
+  assert(opcodes1.hasSelfDestruct === false, 'PUSH1 data 0xff is NOT misclassified as SELFDESTRUCT');
+
+  // Real SELFDESTRUCT opcode (0xff preceded by non-push, e.g. 5b ff - JUMPDEST, SELFDESTRUCT)
+  const realSelfDestruct = '0x5bff';
+  const opcodes2 = scanBytecodeOpcodes(realSelfDestruct);
+  assert(opcodes2.hasSelfDestruct === true, 'Real 0xff outside PUSH correctly identified as SELFDESTRUCT');
+
+  // Real DELEGATECALL (0xf4)
+  const realDelegateCall = '0x5bf4';
+  const opcodes3 = scanBytecodeOpcodes(realDelegateCall);
+  assert(opcodes3.hasDelegateCall === true, 'Real 0xf4 correctly identified as DELEGATECALL');
+
+  // -------------------------------------------------------------
+  // Test 10: Market Data Candle Invariant Validation
+  // -------------------------------------------------------------
+  console.log('\n--- 10. Market Data Candle Invariant Validation ---');
+  const validCandles = validateAndCleanCandles([
+    { time: 1700000000, open: 100, high: 110, low: 95, close: 105, volume: 1000 },
+    { time: 1700000000, open: 100, high: 90, low: 95, close: 105, volume: 1000 }, // Invalid high < open
+    { time: 1700000060, open: 105, high: 120, low: 100, close: 115, volume: 1200 },
+  ]);
+  assert(validCandles.length === 2, 'validateAndCleanCandles removes invalid candle violating invariants');
+  assert(validCandles[0].high >= validCandles[0].low, 'Clean candle satisfies high >= low');
+
+  // -------------------------------------------------------------
+  // Test 11: Centralized Error Codes
+  // -------------------------------------------------------------
+  console.log('\n--- 11. Centralized Error Codes Verification ---');
   assert(DEX_ERROR_CODES.INVALID_AMOUNT === 'INVALID_AMOUNT', 'INVALID_AMOUNT error code exists');
   assert(DEX_ERROR_CODES.NO_LIQUIDITY === 'NO_LIQUIDITY', 'NO_LIQUIDITY error code exists');
   assert(DEX_ERROR_CODES.SIMULATION_FAILED === 'SIMULATION_FAILED', 'SIMULATION_FAILED error code exists');
+  assert(DEX_ERROR_CODES.USER_ADDRESS_REQUIRED === 'USER_ADDRESS_REQUIRED', 'USER_ADDRESS_REQUIRED error code exists');
   assert(DEX_ERROR_CODES.RPC_UNAVAILABLE === 'RPC_UNAVAILABLE', 'RPC_UNAVAILABLE error code exists');
 
   // Summary

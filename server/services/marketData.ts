@@ -1,5 +1,7 @@
-import { priceCache, getPrice } from './priceFeed';
+import { priceCache, getPrice, getUsdPrice } from './priceFeed';
 import { TechnicalIndicators } from '../../src/types';
+
+export type MarketDataStatus = 'LIVE' | 'STALE' | 'UNAVAILABLE' | 'DEGRADED';
 
 export interface Candle {
   time: number;
@@ -8,6 +10,14 @@ export interface Candle {
   low: number;
   close: number;
   volume: number;
+}
+
+export interface KlineResponse {
+  candles: Candle[];
+  status: MarketDataStatus;
+  source: string;
+  timestamp: number;
+  timeframe: string;
 }
 
 export interface OrderBookEntry {
@@ -23,6 +33,7 @@ export interface MarketOrderBook {
   spreadPercent: number;
   timestamp: number;
   source: string;
+  status: MarketDataStatus;
 }
 
 export interface PublicTrade {
@@ -31,7 +42,16 @@ export interface PublicTrade {
   price: number;
   amount: number;
   type: 'buy' | 'sell';
-  txHash: string;
+  exchangeTradeId: string | null;
+  blockchainTxHash: string | null;
+  source: string;
+}
+
+export interface TradesResponse {
+  trades: PublicTrade[];
+  status: MarketDataStatus;
+  source: string;
+  timestamp: number;
 }
 
 const BINANCE_PAIR_MAP: Record<string, string> = {
@@ -66,20 +86,85 @@ const CRYPTOCOMPARE_SYMBOL_MAP: Record<string, string> = {
   AVAX: 'AVAX',
 };
 
-// In-memory cache for verified genuine historical klines
-const klineCache: Record<string, { candles: Candle[]; timestamp: number }> = {};
+// In-memory cache for verified genuine historical klines with strict TTL (60s)
+const klineCache: Record<string, { candles: Candle[]; timestamp: number; source: string }> = {};
+const KLINE_CACHE_TTL_MS = 60000;
+
+/**
+ * Validates candlestick integrity and EVM/exchange invariants:
+ * - high >= max(open, close)
+ * - low <= min(open, close)
+ * - high >= low
+ * - volume >= 0
+ * - valid chronological timestamps, sorted ascending, no duplicates
+ */
+export function validateAndCleanCandles(rawCandles: Candle[]): Candle[] {
+  if (!Array.isArray(rawCandles) || rawCandles.length === 0) return [];
+
+  const valid: Candle[] = [];
+  const seenTimestamps = new Set<number>();
+
+  for (const c of rawCandles) {
+    if (
+      typeof c.time !== 'number' ||
+      isNaN(c.time) ||
+      c.time <= 0 ||
+      typeof c.open !== 'number' ||
+      isNaN(c.open) ||
+      c.open <= 0 ||
+      typeof c.close !== 'number' ||
+      isNaN(c.close) ||
+      c.close <= 0 ||
+      typeof c.high !== 'number' ||
+      isNaN(c.high) ||
+      c.high <= 0 ||
+      typeof c.low !== 'number' ||
+      isNaN(c.low) ||
+      c.low <= 0 ||
+      typeof c.volume !== 'number' ||
+      isNaN(c.volume) ||
+      c.volume < 0
+    ) {
+      continue;
+    }
+
+    // Invariant checks
+    if (c.high < c.low) continue;
+    const maxOc = Math.max(c.open, c.close);
+    const minOc = Math.min(c.open, c.close);
+    if (c.high < maxOc || c.low > minOc) continue;
+
+    if (seenTimestamps.has(c.time)) continue;
+    seenTimestamps.add(c.time);
+
+    valid.push(c);
+  }
+
+  // Sort ascending by timestamp
+  return valid.sort((a, b) => a.time - b.time);
+}
 
 /**
  * Fetches verified live candlestick history from primary (Binance) and secondary (CryptoCompare) exchange APIs.
- * Preserves genuine historical data without artificial mathematical synthesis.
+ * Strict zero-synthetic data policy: NEVER generates flat/random candles if external feeds are unavailable.
  */
 export async function fetchLiveKlines(
   symbol: string,
   timeframe: string = '15m',
   limit: number = 36
 ): Promise<Candle[]> {
+  const result = await fetchLiveKlinesDetailed(symbol, timeframe, limit);
+  return result.candles;
+}
+
+export async function fetchLiveKlinesDetailed(
+  symbol: string,
+  timeframe: string = '15m',
+  limit: number = 36
+): Promise<KlineResponse> {
   const sym = symbol.toUpperCase();
   const cacheKey = `${sym}_${timeframe}_${limit}`;
+  const now = Date.now();
 
   const intervalMap: Record<string, string> = {
     '1m': '1m',
@@ -90,7 +175,7 @@ export async function fetchLiveKlines(
     '1D': '1d',
   };
   const binanceInterval = intervalMap[timeframe] || '15m';
-  const binanceSymbol = BINANCE_PAIR_MAP[sym] || (sym === 'USDC' || sym === 'USDT' ? null : 'ETHUSDT');
+  const binanceSymbol = BINANCE_PAIR_MAP[sym];
 
   // 1. Primary Source: Binance Live Exchange API
   if (binanceSymbol) {
@@ -104,7 +189,7 @@ export async function fetchLiveKlines(
 
       if (res.ok) {
         const rawKlines: any[][] = await res.json();
-        const candles: Candle[] = rawKlines.map((k) => ({
+        const rawCandles: Candle[] = rawKlines.map((k) => ({
           time: Number(k[0]),
           open: parseFloat(k[1]),
           high: parseFloat(k[2]),
@@ -113,9 +198,17 @@ export async function fetchLiveKlines(
           volume: parseFloat(k[5]),
         }));
 
-        if (candles.length > 0) {
-          klineCache[cacheKey] = { candles, timestamp: Date.now() };
-          return candles;
+        const cleanCandles = validateAndCleanCandles(rawCandles);
+
+        if (cleanCandles.length > 0) {
+          klineCache[cacheKey] = { candles: cleanCandles, timestamp: now, source: 'Binance Live Exchange' };
+          return {
+            candles: cleanCandles,
+            status: 'LIVE',
+            source: 'Binance Live Exchange API',
+            timestamp: now,
+            timeframe,
+          };
         }
       }
     } catch {
@@ -145,18 +238,26 @@ export async function fetchLiveKlines(
       if (res.ok) {
         const data = await res.json();
         if (data?.Data?.Data && Array.isArray(data.Data.Data)) {
-          const candles: Candle[] = data.Data.Data.map((k: any) => ({
+          const rawCandles: Candle[] = data.Data.Data.map((k: any) => ({
             time: k.time * 1000,
             open: k.open,
             high: k.high,
             low: k.low,
             close: k.close,
-            volume: k.volumeto || k.volumefrom,
+            volume: k.volumeto || k.volumefrom || 0,
           }));
 
-          if (candles.length > 0) {
-            klineCache[cacheKey] = { candles, timestamp: Date.now() };
-            return candles;
+          const cleanCandles = validateAndCleanCandles(rawCandles);
+
+          if (cleanCandles.length > 0) {
+            klineCache[cacheKey] = { candles: cleanCandles, timestamp: now, source: 'CryptoCompare Global Index' };
+            return {
+              candles: cleanCandles,
+              status: 'LIVE',
+              source: 'CryptoCompare Global Index API',
+              timestamp: now,
+              timeframe,
+            };
           }
         }
       }
@@ -165,62 +266,37 @@ export async function fetchLiveKlines(
     }
   }
 
-  // 3. Fallback to cached verified klines
-  if (klineCache[cacheKey] && klineCache[cacheKey].candles.length > 0) {
-    const cached = klineCache[cacheKey].candles;
-    const currentPrice = getPrice(sym);
-    // Update only latest close with live price
-    if (currentPrice > 0) {
-      const updated = [...cached];
-      const lastIdx = updated.length - 1;
-      updated[lastIdx] = {
-        ...updated[lastIdx],
-        close: currentPrice,
-        high: Math.max(updated[lastIdx].high, currentPrice),
-        low: Math.min(updated[lastIdx].low, currentPrice),
-      };
-      return updated;
-    }
-    return cached;
+  // 3. Fallback to cached verified klines (if within TTL or marked STALE)
+  const cached = klineCache[cacheKey];
+  if (cached && cached.candles.length > 0) {
+    const isStale = now - cached.timestamp > KLINE_CACHE_TTL_MS;
+    return {
+      candles: cached.candles,
+      status: isStale ? 'STALE' : 'LIVE',
+      source: `Cache (${cached.source})`,
+      timestamp: cached.timestamp,
+      timeframe,
+    };
   }
 
-  // 4. Stablecoin / Native AMM Fallback
-  const currentPrice = getPrice(sym) || 1.0;
-  const now = Date.now();
-  const stepMs =
-    timeframe === '1m'
-      ? 60000
-      : timeframe === '5m'
-      ? 300000
-      : timeframe === '15m'
-      ? 900000
-      : timeframe === '1h'
-      ? 3600000
-      : timeframe === '4h'
-      ? 14400000
-      : 86400000;
-
-  const baselineCandles: Candle[] = [];
-  for (let i = limit - 1; i >= 0; i--) {
-    const t = now - i * stepMs;
-    baselineCandles.push({
-      time: t,
-      open: currentPrice,
-      high: currentPrice,
-      low: currentPrice,
-      close: currentPrice,
-      volume: 100000,
-    });
-  }
-  return baselineCandles;
+  // 4. Return UNAVAILABLE with empty candles - ZERO SYNTHETIC DATA GENERATION
+  return {
+    candles: [],
+    status: 'UNAVAILABLE',
+    source: 'NONE',
+    timestamp: now,
+    timeframe,
+  };
 }
 
 /**
  * Fetches real-time market depth / orderbook.
+ * Strict zero-synthetic data policy: NEVER generates fake bids/asks using midPrice ± depthStep.
  */
 export async function fetchLiveOrderBook(symbol: string): Promise<MarketOrderBook> {
   const sym = symbol.toUpperCase();
   const binanceSymbol = BINANCE_PAIR_MAP[sym];
+  const now = Date.now();
 
   if (binanceSymbol) {
     try {
@@ -247,7 +323,7 @@ export async function fetchLiveOrderBook(symbol: string): Promise<MarketOrderBoo
           asks.length > 0 && bids.length > 0
             ? Number((asks[0].price - bids[0].price).toFixed(sym === 'USDC' || sym === 'USDT' ? 4 : 2))
             : 0.01;
-        const mid = bids[0]?.price || 1;
+        const mid = bids[0]?.price || asks[0]?.price || 1;
         const spreadPercent = Number(((spread / mid) * 100).toFixed(4));
 
         return {
@@ -255,52 +331,39 @@ export async function fetchLiveOrderBook(symbol: string): Promise<MarketOrderBoo
           asks,
           spread,
           spreadPercent,
-          timestamp: Date.now(),
+          timestamp: now,
           source: 'Binance Live Multi-Level Order Depth L2',
+          status: 'LIVE',
         };
       }
     } catch {
-      // Standby fallback
+      // Return UNAVAILABLE
     }
   }
 
-  // Exact AMM Constant-Product Depth Engine anchored to actual current oracle price
-  const midPrice = getPrice(sym);
-  const isHighValue = midPrice > 100;
-
-  const bids: OrderBookEntry[] = Array.from({ length: 12 }).map((_, i) => {
-    const depthStep = (i + 1) * 0.0004;
-    const price = Number((midPrice * (1 - depthStep)).toFixed(midPrice < 10 ? 4 : 2));
-    const amount = Number((((i + 1) * 1.5 + 0.5) * (isHighValue ? 0.8 : 25)).toFixed(isHighValue ? 4 : 2));
-    return { price, amount, total: Number((price * amount).toFixed(2)) };
-  });
-
-  const asks: OrderBookEntry[] = Array.from({ length: 12 }).map((_, i) => {
-    const depthStep = (i + 1) * 0.0004;
-    const price = Number((midPrice * (1 + depthStep)).toFixed(midPrice < 10 ? 4 : 2));
-    const amount = Number((((i + 1) * 1.5 + 0.5) * (isHighValue ? 0.8 : 25)).toFixed(isHighValue ? 4 : 2));
-    return { price, amount, total: Number((price * amount).toFixed(2)) };
-  });
-
-  const spread = Number((asks[0].price - bids[0].price).toFixed(midPrice < 10 ? 4 : 2));
-  const spreadPercent = Number(((spread / (midPrice || 1)) * 100).toFixed(4));
-
+  // Strict: When orderbook is unavailable, return UNAVAILABLE with empty levels
   return {
-    bids,
-    asks,
-    spread,
-    spreadPercent,
-    timestamp: Date.now(),
-    source: 'Automated Market Maker Dynamic On-Chain Liquidity Depth',
+    bids: [],
+    asks: [],
+    spread: 0,
+    spreadPercent: 0,
+    timestamp: now,
+    source: 'NONE',
+    status: 'UNAVAILABLE',
   };
 }
 
 /**
  * Fetches real-time public trade transactions.
+ * Strict zero-fake-txHash policy:
+ * - Binance trade ID is an exchange sequence number, NOT an EVM transaction hash.
+ * - exchangeTradeId is populated, blockchainTxHash is strictly null.
+ * - Returns UNAVAILABLE if feed is not reachable.
  */
-export async function fetchLiveTrades(symbol: string): Promise<PublicTrade[]> {
+export async function fetchLiveTrades(symbol: string): Promise<TradesResponse> {
   const sym = symbol.toUpperCase();
   const binanceSymbol = BINANCE_PAIR_MAP[sym];
+  const now = Date.now();
 
   if (binanceSymbol) {
     try {
@@ -312,31 +375,35 @@ export async function fetchLiveTrades(symbol: string): Promise<PublicTrade[]> {
 
       if (res.ok) {
         const rawTrades: any[] = await res.json();
-        return rawTrades.map((t) => ({
-          id: `trade-${t.id}`,
+        const trades: PublicTrade[] = rawTrades.map((t) => ({
+          id: `trade-binance-${t.id}`,
           timestamp: t.time,
           price: parseFloat(t.price),
           amount: parseFloat(t.qty),
           type: t.isBuyerMaker ? 'sell' : 'buy',
-          txHash: `0x${t.id.toString(16).padStart(64, '0')}`,
+          exchangeTradeId: String(t.id),
+          blockchainTxHash: null, // Exchange trade - NOT an on-chain Ethereum transaction
+          source: 'binance',
         }));
+
+        return {
+          trades,
+          status: 'LIVE',
+          source: 'Binance Real-Time Exchange Trades',
+          timestamp: now,
+        };
       }
     } catch {
-      // Standby fallback
+      // Fall through to UNAVAILABLE
     }
   }
 
-  const livePrice = getPrice(sym);
-  const now = Date.now();
-
-  return Array.from({ length: 16 }).map((_, i) => ({
-    id: `trade-amm-${now}-${i}`,
-    timestamp: now - i * 14000,
-    price: Number((livePrice * (1 + ((i % 3 === 0 ? 1 : -1) * (i * 0.00015)))).toFixed(livePrice < 10 ? 4 : 2)),
-    amount: Number(((i + 1) * 0.45 + 0.1).toFixed(livePrice > 100 ? 4 : 2)),
-    type: i % 2 === 0 ? 'buy' : 'sell',
-    txHash: `0x${((now - i * 14000) * 1000 + i).toString(16).padStart(64, '0')}`,
-  }));
+  return {
+    trades: [],
+    status: 'UNAVAILABLE',
+    source: 'NONE',
+    timestamp: now,
+  };
 }
 
 // -------------------------------------------------------------

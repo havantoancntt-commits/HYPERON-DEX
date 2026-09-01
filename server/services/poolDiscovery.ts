@@ -393,6 +393,20 @@ export class PoolDiscoveryService {
     const results = await Promise.all(promises);
     return results.filter((p): p is VerifiedPoolRecord => p !== null && p.status !== 'NO_LIQUIDITY');
   }
+
+  /**
+   * Seeds a verified pool record for testing or initial warmup.
+   */
+  seedPoolRecord(key: string, record: VerifiedPoolRecord): void {
+    poolCache.set(key, record);
+  }
+
+  /**
+   * Clears the in-memory pool discovery cache.
+   */
+  clearCache(): void {
+    poolCache.clear();
+  }
 }
 
 export const poolDiscovery = new PoolDiscoveryService();
