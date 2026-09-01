@@ -110,8 +110,8 @@ export const LotteryView: React.FC = () => {
     seconds: 0,
   });
 
-  // Fetch Lottery Overview from backend
-  const fetchLotteryData = async () => {
+  // Fetch Lottery Overview from backend with auto-retry
+  const fetchLotteryData = async (retryCount = 0) => {
     try {
       const url = address ? `/api/lottery/overview?userAddress=${address}` : '/api/lottery/overview';
       const res = await fetch(url);
@@ -126,7 +126,11 @@ export const LotteryView: React.FC = () => {
         setAnalytics(data.analytics || null);
       }
     } catch (err) {
-      console.error('Failed to load lottery overview:', err);
+      if (retryCount < 3) {
+        setTimeout(() => fetchLotteryData(retryCount + 1), 1000 * (retryCount + 1));
+      } else {
+        console.warn('[HYPERON-DEX] Lottery overview syncing in background...');
+      }
     } finally {
       setLoading(false);
     }
