@@ -57,13 +57,22 @@ function getAIClient(): GoogleGenAI | null {
 // -------------------------------------------------------------
 // Validation Schemas (Zod)
 // -------------------------------------------------------------
-const QuoteSchema = z.object({
-  fromTokenSymbol: z.string().min(1).max(20),
-  toTokenSymbol: z.string().min(1).max(20),
-  amount: z.union([z.number().positive(), z.string().regex(/^\d+(\.\d+)?$/)]),
-  slippage: z.union([z.number().min(0.01).max(50), z.string()]).optional(),
-  chainId: z.string().optional(),
-});
+const QuoteSchema = z
+  .object({
+    fromTokenSymbol: z.string().min(1).max(20).optional(),
+    fromTokenAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+    toTokenSymbol: z.string().min(1).max(20).optional(),
+    toTokenAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+    amount: z.union([z.number().positive(), z.string().regex(/^\d+(\.\d+)?$/)]),
+    slippage: z.union([z.number().min(0.01).max(50), z.string()]).optional(),
+    chainId: z.string().optional(),
+  })
+  .refine(
+    (data) =>
+      (data.fromTokenSymbol || data.fromTokenAddress) &&
+      (data.toTokenSymbol || data.toTokenAddress),
+    { message: 'Both source and destination token (symbol or address) must be provided.' }
+  );
 
 const SimulateSchema = z.object({
   quote: z.any(),
@@ -230,10 +239,21 @@ app.post('/api/quotes', async (req: Request, res: Response) => {
       );
     }
 
-    const { fromTokenSymbol, toTokenSymbol, amount, slippage = 0.5, chainId = 'ethereum' } = parsed.data;
+    const {
+      fromTokenSymbol,
+      fromTokenAddress,
+      toTokenSymbol,
+      toTokenAddress,
+      amount,
+      slippage = 0.5,
+      chainId = 'ethereum',
+    } = parsed.data;
+
     const quote = await calculateSmartRouteQuote({
       fromTokenSymbol,
+      fromTokenAddress,
       toTokenSymbol,
+      toTokenAddress,
       amount,
       slippage: typeof slippage === 'string' ? parseFloat(slippage) : slippage,
       chainId,
@@ -241,12 +261,20 @@ app.post('/api/quotes', async (req: Request, res: Response) => {
     res.json({ quote });
   } catch (err: any) {
     const msg = err?.message || 'Failed to compute swap quote';
-    const code = msg.includes('NO_LIQUIDITY')
+    const code = msg.includes('TOKEN_NOT_FOUND')
+      ? DEX_ERROR_CODES.TOKEN_NOT_FOUND
+      : msg.includes('AMBIGUOUS_TOKEN')
+      ? DEX_ERROR_CODES.AMBIGUOUS_TOKEN
+      : msg.includes('TOKEN_UNVERIFIED')
+      ? DEX_ERROR_CODES.TOKEN_UNVERIFIED
+      : msg.includes('NO_LIQUIDITY')
       ? DEX_ERROR_CODES.NO_LIQUIDITY
       : msg.includes('INVALID_SLIPPAGE')
       ? DEX_ERROR_CODES.INVALID_SLIPPAGE
       : msg.includes('INVALID_CHAIN')
       ? DEX_ERROR_CODES.INVALID_CHAIN
+      : msg.includes('INVALID_AMOUNT')
+      ? DEX_ERROR_CODES.INVALID_AMOUNT
       : DEX_ERROR_CODES.ROUTER_UNAVAILABLE;
 
     res.status(500).json(createDexError(code, msg, ERROR_MESSAGES[code] || msg));

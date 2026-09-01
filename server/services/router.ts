@@ -3,17 +3,27 @@
  * Production-grade multi-DEX routing across Uniswap V3, Uniswap V2, Curve, and Balancer.
  *
  * Rules:
- * - NO synthetic reserves or artificial $30M pool generation.
+ * - NO synthetic reserves or artificial pool generation.
  * - Discovers live on-chain pools via PoolDiscoveryService.
- * - Supports Direct Hop, Multi-Hop (TokenA -> WETH -> TokenB), and Optimal Split Routing.
- * - Evaluates Net Output: NET_OUTPUT = OutputAmount - GasCostUsd.
+ * - Canonical TokenResolver for accurate token identity (ChainId + normalized address).
+ * - NO zero-address or hardcoded USDC fallbacks.
+ * - Dynamic Split Routing Optimizer (evaluates allocations 90/10, 80/20, 70/30, 60/40, 50/50, etc. on real pools).
+ * - Real DEX price comparison (LIVE_QUOTE for real pools, UNAVAILABLE if no real pool exists; ZERO factor estimation).
  * - Strict integer basis points arithmetic for minimum received (0.01% - 50.0% slippage).
+ * - Mathematical price impact calculated directly from pool state invariants.
  */
 
 import { formatUnits, parseUnits, Address } from 'viem';
 import { getPriceState, getUsdPrice } from './priceFeed';
-import { VERIFIED_TOKENS, DEX_SOURCES } from '../../src/lib/constants';
-import { SwapQuote, TransactionSimulation, DexSource, RouteSplit, ChainId } from '../../src/types';
+import { DEX_SOURCES } from '../../src/lib/constants';
+import {
+  SwapQuote,
+  TransactionSimulation,
+  DexSource,
+  RouteSplit,
+  DexComparisonItem,
+  QuoteComparisonStatus,
+} from '../../src/types';
 import { getLiveBlockNumber, getLiveGasPrice } from './rpc';
 import {
   UniswapV2Adapter,
@@ -24,11 +34,14 @@ import {
 } from './ammEngine';
 import { getRouterConfig } from './routerRegistry';
 import { poolDiscovery, VerifiedPoolRecord } from './poolDiscovery';
+import { tokenResolver, ResolvedToken } from './tokenResolver';
 import { simulationEngine } from './simulationEngine';
 
 export interface QuoteParams {
-  fromTokenSymbol: string;
-  toTokenSymbol: string;
+  fromTokenSymbol?: string;
+  fromTokenAddress?: string;
+  toTokenSymbol?: string;
+  toTokenAddress?: string;
   amount: number | string;
   slippage?: number; // e.g. 0.5 for 0.5%
   chainId?: string;
@@ -42,6 +55,8 @@ const balancer = new BalancerAdapter();
 export interface RouteCandidate {
   dexName: string;
   protocol: string;
+  poolAddress?: string;
+  blockNumber?: number;
   amountOutRaw: bigint;
   amountOutFormatted: string;
   executionPrice: number;
@@ -58,7 +73,16 @@ export class SmartGraphRouter {
    * Calculates the optimal single-hop, multi-hop, or split swap route.
    */
   async calculateSmartRouteQuote(params: QuoteParams): Promise<SwapQuote> {
-    const { fromTokenSymbol, toTokenSymbol, amount, slippage = 0.5, chainId = 'ethereum' } = params;
+    const {
+      fromTokenSymbol,
+      fromTokenAddress,
+      toTokenSymbol,
+      toTokenAddress,
+      amount,
+      slippage = 0.5,
+      chainId = 'ethereum',
+    } = params;
+
     const rawAmountStr = typeof amount === 'number' ? amount.toString() : amount;
     const numAmount = parseFloat(rawAmountStr) || 0;
 
@@ -76,195 +100,187 @@ export class SmartGraphRouter {
     const routerConfig = getRouterConfig(chainId);
     const verifiedChain = routerConfig.chainId;
 
-    // Resolve tokens
-    const fromTokenMatch = VERIFIED_TOKENS.find(
-      (t) => t.symbol.toUpperCase() === fromTokenSymbol.toUpperCase() && (t.chainId === verifiedChain || t.chainId === 'ethereum')
-    );
-    const toTokenMatch = VERIFIED_TOKENS.find(
-      (t) => t.symbol.toUpperCase() === toTokenSymbol.toUpperCase() && (t.chainId === verifiedChain || t.chainId === 'ethereum')
-    );
-
-    const decimalsIn = fromTokenMatch?.decimals || 18;
-    const decimalsOut = toTokenMatch?.decimals || 18;
-    const amountInRaw = parseUnits(rawAmountStr, decimalsIn);
-
-    const fromPrice = getUsdPrice(fromTokenSymbol) || (fromTokenMatch?.priceUsd ?? 0);
-    const toPrice = getUsdPrice(toTokenSymbol) || (toTokenMatch?.priceUsd ?? 0);
-
-    const fromToken = fromTokenMatch || {
-      address: '0x0000000000000000000000000000000000000000',
-      symbol: fromTokenSymbol.toUpperCase(),
-      name: fromTokenSymbol.toUpperCase(),
-      decimals: decimalsIn,
+    // 1. Canonical Token Resolution - ZERO ZERO-ADDRESS/USDC FALLBACKS
+    const resolvedFrom: ResolvedToken = await tokenResolver.resolveToken({
       chainId: verifiedChain,
-      priceUsd: fromPrice,
-      change24h: 0,
-      volume24h: 0,
-      liquidityUsd: 0,
-      marketCapUsd: 0,
-      logoUrl: '',
-      isVerified: fromPrice > 0,
-      category: 'DeFi' as const,
-    };
+      address: fromTokenAddress,
+      symbol: fromTokenSymbol,
+    });
 
-    const toToken = toTokenMatch || {
-      address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-      symbol: toTokenSymbol.toUpperCase(),
-      name: toTokenSymbol.toUpperCase(),
-      decimals: decimalsOut,
+    const resolvedTo: ResolvedToken = await tokenResolver.resolveToken({
       chainId: verifiedChain,
-      priceUsd: toPrice,
-      change24h: 0,
-      volume24h: 0,
-      liquidityUsd: 0,
-      marketCapUsd: 0,
-      logoUrl: '',
-      isVerified: toPrice > 0,
-      category: 'Stablecoin' as const,
-    };
+      address: toTokenAddress,
+      symbol: toTokenSymbol,
+    });
 
-    // 1. Discover all live on-chain pools for the direct pair
-    const directPools = await poolDiscovery.discoverAllPairPools(
-      verifiedChain,
-      fromToken.symbol,
-      toToken.symbol,
-      decimalsIn,
-      decimalsOut
-    ).catch(() => []);
-
-    const candidates: RouteCandidate[] = [];
-
-    // Reference baseline gross calculation from live verified oracles
-    const grossOutput = toPrice > 0 ? (numAmount * fromPrice) / toPrice : numAmount;
-    const tradeValueUsd = numAmount * fromPrice;
-    const isStablePair = fromToken.category === 'Stablecoin' && toToken.category === 'Stablecoin';
-
-    // Model realistic price impact based on market depth & order size
-    let baseImpactPercent = 0.01;
-    if (isStablePair) {
-      baseImpactPercent = Math.min(0.05, 0.002 + (tradeValueUsd / 20000000) * 0.01);
-    } else if (tradeValueUsd > 1000000) {
-      baseImpactPercent = Math.min(3.5, 0.40 + ((tradeValueUsd - 1000000) / 10000000) * 1.5);
-    } else if (tradeValueUsd > 100000) {
-      baseImpactPercent = 0.12 + ((tradeValueUsd - 100000) / 900000) * 0.28;
-    } else if (tradeValueUsd > 10000) {
-      baseImpactPercent = 0.03 + ((tradeValueUsd - 10000) / 90000) * 0.09;
-    } else {
-      baseImpactPercent = Math.max(0.005, 0.01 + (tradeValueUsd / 10000) * 0.02);
+    if (
+      resolvedFrom.address.toLowerCase() === resolvedTo.address.toLowerCase() &&
+      resolvedFrom.chainId === resolvedTo.chainId &&
+      resolvedFrom.isNative === resolvedTo.isNative
+    ) {
+      throw new Error('INVALID_ROUTE: Source and destination tokens must be distinct.');
     }
 
-    const decPrecision = decimalsOut > 6 ? 6 : decimalsOut;
+    const fromToken = tokenResolver.toToken(resolvedFrom);
+    const toToken = tokenResolver.toToken(resolvedTo);
 
-    // Evaluate quotes on discovered on-chain pools WITH strict price-corridor validation
+    const decimalsIn = fromToken.decimals;
+    const decimalsOut = toToken.decimals;
+    const amountInRaw = parseUnits(rawAmountStr, decimalsIn);
+
+    const fromPrice = resolvedFrom.priceUsd ?? getUsdPrice(fromToken.symbol) ?? 0;
+    const toPrice = resolvedTo.priceUsd ?? getUsdPrice(toToken.symbol) ?? 0;
+
+    // 2. Discover all live on-chain pools for the direct pair
+    const directPools = await poolDiscovery
+      .discoverAllPairPools(
+        verifiedChain,
+        fromToken.symbol,
+        toToken.symbol,
+        decimalsIn,
+        decimalsOut
+      )
+      .catch(() => []);
+
+    const singlePoolCandidates: { pool: VerifiedPoolRecord; quote: AMMQuoteResult }[] = [];
+
+    // Evaluate quotes on each discovered on-chain pool using pure invariant math
     for (const pool of directPools) {
       if (pool.dexProtocol === 'Uniswap v3' && pool.v3State) {
         const isToken0In = pool.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
         const q = uniV3.computeQuoteWithV3State(amountInRaw, decimalsIn, decimalsOut, pool.v3State, isToken0In);
-        const qFloat = parseFloat(q.amountOutFormatted);
         if (q.status === 'AVAILABLE' && q.amountOutRaw > 0n && q.priceImpactPercent < 50.0) {
-          candidates.push({
-            dexName: `${pool.dexProtocol} (${pool.feeBps / 100}%)`,
-            protocol: 'Uniswap v3',
-            amountOutRaw: q.amountOutRaw,
-            amountOutFormatted: q.amountOutFormatted,
-            executionPrice: q.executionPrice,
-            priceImpactPercent: q.priceImpactPercent,
-            feePaidRaw: q.feePaidRaw,
-            gasEstimatedUnits: q.gasEstimatedUnits,
-            path: [fromToken.symbol, toToken.symbol],
-            splits: [
-              {
-                dexName: `${pool.dexProtocol} (${pool.feeBps / 100}%)`,
-                percentage: 100,
-                fromToken: fromToken.symbol,
-                toToken: toToken.symbol,
-                path: [fromToken.symbol, toToken.symbol],
-              },
-            ],
-            netOutputScore: qFloat,
-          });
+          singlePoolCandidates.push({ pool, quote: q });
         }
       } else if (pool.reserves) {
         const q = uniV2.computeQuote(amountInRaw, decimalsIn, decimalsOut, pool.reserves, pool.feeBps);
-        const qFloat = parseFloat(q.amountOutFormatted);
         if (q.status === 'AVAILABLE' && q.amountOutRaw > 0n && q.priceImpactPercent < 50.0) {
-          candidates.push({
-            dexName: `${pool.dexProtocol} (${pool.feeBps / 100}%)`,
-            protocol: pool.dexProtocol,
-            amountOutRaw: q.amountOutRaw,
-            amountOutFormatted: q.amountOutFormatted,
-            executionPrice: q.executionPrice,
-            priceImpactPercent: q.priceImpactPercent,
-            feePaidRaw: q.feePaidRaw,
-            gasEstimatedUnits: q.gasEstimatedUnits,
-            path: [fromToken.symbol, toToken.symbol],
-            splits: [
-              {
-                dexName: `${pool.dexProtocol} (${pool.feeBps / 100}%)`,
-                percentage: 100,
-                fromToken: fromToken.symbol,
-                toToken: toToken.symbol,
-                path: [fromToken.symbol, toToken.symbol],
-              },
-            ],
-            netOutputScore: qFloat,
-          });
+          singlePoolCandidates.push({ pool, quote: q });
         }
       }
     }
 
-    // 2. If at least 2 distinct verified real pools exist, evaluate true Multi-DEX Split across them
-    if (candidates.length >= 2) {
-      const poolA = directPools[0];
-      const poolB = directPools[1];
+    // 3. ZERO-SYNTHETIC-DATA ENFORCEMENT:
+    // If no real on-chain pools exist with liquidity, strictly throw NO_LIQUIDITY error
+    if (singlePoolCandidates.length === 0) {
+      throw new Error(
+        `NO_LIQUIDITY: No verified on-chain pool with active liquidity found for ${fromToken.symbol}/${toToken.symbol} on ${verifiedChain}.`
+      );
+    }
 
-      const splitInA = (amountInRaw * 70n) / 100n;
-      const splitInB = amountInRaw - splitInA;
+    const candidates: RouteCandidate[] = [];
 
-      let quoteA: AMMQuoteResult | null = null;
-      let quoteB: AMMQuoteResult | null = null;
+    // Add all valid single-pool routes
+    for (const { pool, quote } of singlePoolCandidates) {
+      candidates.push({
+        dexName: `${pool.dexProtocol} (${pool.feeBps / 100}%)`,
+        protocol: pool.dexProtocol,
+        poolAddress: pool.poolAddress,
+        blockNumber: Number(pool.lastBlockNumber || 0),
+        amountOutRaw: quote.amountOutRaw,
+        amountOutFormatted: quote.amountOutFormatted,
+        executionPrice: quote.executionPrice,
+        priceImpactPercent: quote.priceImpactPercent,
+        feePaidRaw: quote.feePaidRaw,
+        gasEstimatedUnits: quote.gasEstimatedUnits,
+        path: [fromToken.symbol, toToken.symbol],
+        splits: [
+          {
+            dexName: `${pool.dexProtocol} (${pool.feeBps / 100}%)`,
+            percentage: 100,
+            fromToken: fromToken.symbol,
+            toToken: toToken.symbol,
+            path: [fromToken.symbol, toToken.symbol],
+          },
+        ],
+        netOutputScore: parseFloat(quote.amountOutFormatted),
+      });
+    }
 
-      if (poolA.dexProtocol === 'Uniswap v3' && poolA.v3State) {
-        const isToken0In = poolA.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
-        quoteA = uniV3.computeQuoteWithV3State(splitInA, decimalsIn, decimalsOut, poolA.v3State, isToken0In);
-      } else if (poolA.reserves) {
-        quoteA = uniV2.computeQuote(splitInA, decimalsIn, decimalsOut, poolA.reserves, poolA.feeBps);
+    // 4. Split Routing Optimizer:
+    // Evaluates allocations (90/10, 80/20, 70/30, 60/40, 50/50, 40/60, 30/70, 20/80, 10/90) across top pools.
+    if (singlePoolCandidates.length >= 2) {
+      // Sort single pools descending by output
+      singlePoolCandidates.sort((a, b) =>
+        b.quote.amountOutRaw > a.quote.amountOutRaw ? 1 : b.quote.amountOutRaw < a.quote.amountOutRaw ? -1 : 0
+      );
+
+      const poolA = singlePoolCandidates[0].pool;
+      const poolB = singlePoolCandidates[1].pool;
+
+      const allocationSteps = [90, 80, 70, 60, 50, 40, 30, 20, 10];
+      let bestSplitOutRaw = 0n;
+      let bestSplitAllocation = 0;
+      let bestSplitQuoteA: AMMQuoteResult | null = null;
+      let bestSplitQuoteB: AMMQuoteResult | null = null;
+
+      for (const pctA of allocationSteps) {
+        const splitInA = (amountInRaw * BigInt(pctA)) / 100n;
+        const splitInB = amountInRaw - splitInA;
+
+        let qA: AMMQuoteResult | null = null;
+        let qB: AMMQuoteResult | null = null;
+
+        if (poolA.dexProtocol === 'Uniswap v3' && poolA.v3State) {
+          const isToken0In = poolA.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
+          qA = uniV3.computeQuoteWithV3State(splitInA, decimalsIn, decimalsOut, poolA.v3State, isToken0In);
+        } else if (poolA.reserves) {
+          qA = uniV2.computeQuote(splitInA, decimalsIn, decimalsOut, poolA.reserves, poolA.feeBps);
+        }
+
+        if (poolB.dexProtocol === 'Uniswap v3' && poolB.v3State) {
+          const isToken0In = poolB.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
+          qB = uniV3.computeQuoteWithV3State(splitInB, decimalsIn, decimalsOut, poolB.v3State, isToken0In);
+        } else if (poolB.reserves) {
+          qB = uniV2.computeQuote(splitInB, decimalsIn, decimalsOut, poolB.reserves, poolB.feeBps);
+        }
+
+        if (qA && qB && qA.status === 'AVAILABLE' && qB.status === 'AVAILABLE') {
+          const totalOut = qA.amountOutRaw + qB.amountOutRaw;
+          if (totalOut > bestSplitOutRaw) {
+            bestSplitOutRaw = totalOut;
+            bestSplitAllocation = pctA;
+            bestSplitQuoteA = qA;
+            bestSplitQuoteB = qB;
+          }
+        }
       }
 
-      if (poolB.dexProtocol === 'Uniswap v3' && poolB.v3State) {
-        const isToken0In = poolB.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
-        quoteB = uniV3.computeQuoteWithV3State(splitInB, decimalsIn, decimalsOut, poolB.v3State, isToken0In);
-      } else if (poolB.reserves) {
-        quoteB = uniV2.computeQuote(splitInB, decimalsIn, decimalsOut, poolB.reserves, poolB.feeBps);
-      }
-
-      if (quoteA && quoteB && quoteA.status === 'AVAILABLE' && quoteB.status === 'AVAILABLE') {
-        const splitOutRaw = quoteA.amountOutRaw + quoteB.amountOutRaw;
-        const splitOutFormatted = formatUnits(splitOutRaw, decimalsOut);
+      // If optimal split beats the best single pool route, add it as a route candidate
+      if (
+        bestSplitQuoteA &&
+        bestSplitQuoteB &&
+        bestSplitOutRaw > singlePoolCandidates[0].quote.amountOutRaw
+      ) {
+        const pctB = 100 - bestSplitAllocation;
+        const splitOutFormatted = formatUnits(bestSplitOutRaw, decimalsOut);
         const splitOutFloat = parseFloat(splitOutFormatted);
-        const splitImpact = (quoteA.priceImpactPercent * 0.7) + (quoteB.priceImpactPercent * 0.3);
+        const splitImpact =
+          (bestSplitQuoteA.priceImpactPercent * bestSplitAllocation +
+            bestSplitQuoteB.priceImpactPercent * pctB) /
+          100;
 
         candidates.push({
-          dexName: `Smart Split (${poolA.dexProtocol} 70% + ${poolB.dexProtocol} 30%)`,
+          dexName: `Smart Split (${poolA.dexProtocol} ${bestSplitAllocation}% + ${poolB.dexProtocol} ${pctB}%)`,
           protocol: 'Hyperon Multi-DEX Split',
-          amountOutRaw: splitOutRaw,
+          amountOutRaw: bestSplitOutRaw,
           amountOutFormatted: splitOutFormatted,
           executionPrice: numAmount > 0 ? splitOutFloat / numAmount : 0,
           priceImpactPercent: splitImpact,
-          feePaidRaw: quoteA.feePaidRaw + quoteB.feePaidRaw,
+          feePaidRaw: bestSplitQuoteA.feePaidRaw + bestSplitQuoteB.feePaidRaw,
           gasEstimatedUnits: 185000,
           path: [fromToken.symbol, toToken.symbol],
           splits: [
             {
               dexName: poolA.dexProtocol,
-              percentage: 70,
+              percentage: bestSplitAllocation,
               fromToken: fromToken.symbol,
               toToken: toToken.symbol,
               path: [fromToken.symbol, toToken.symbol],
             },
             {
               dexName: poolB.dexProtocol,
-              percentage: 30,
+              percentage: pctB,
               fromToken: fromToken.symbol,
               toToken: toToken.symbol,
               path: [fromToken.symbol, toToken.symbol],
@@ -275,14 +291,6 @@ export class SmartGraphRouter {
       }
     }
 
-    // 3. ZERO-SYNTHETIC-DATA ENFORCEMENT:
-    // If no real on-chain pools exist with liquidity, strictly throw NO_LIQUIDITY error
-    if (candidates.length === 0) {
-      throw new Error(
-        `NO_LIQUIDITY: No verified on-chain pool with active liquidity found for ${fromTokenSymbol}/${toTokenSymbol} on ${verifiedChain}.`
-      );
-    }
-
     // 5. Gas Cost Evaluation in USD & Net Output Score
     const rpcGas = await getLiveGasPrice(verifiedChain);
     const gasGwei = rpcGas.data?.gasPriceGwei || 15.0;
@@ -290,62 +298,117 @@ export class SmartGraphRouter {
     const nativePriceUsd = getUsdPrice(nativeSymbol) || 0;
 
     for (const c of candidates) {
-      const gasCostUsd = nativePriceUsd > 0 ? (c.gasEstimatedUnits * gasGwei * 1e-9) * nativePriceUsd : 0;
-      const tokenOutUsd = toPrice > 0 ? parseFloat(c.amountOutFormatted) * toPrice : parseFloat(c.amountOutFormatted);
+      const gasCostUsd =
+        nativePriceUsd > 0 ? (c.gasEstimatedUnits * gasGwei * 1e-9) * nativePriceUsd : 0;
+      const tokenOutUsd =
+        toPrice > 0 ? parseFloat(c.amountOutFormatted) * toPrice : parseFloat(c.amountOutFormatted);
       c.netOutputScore = tokenOutUsd - gasCostUsd;
     }
 
     // Sort descending by raw amount out
-    candidates.sort((a, b) => (b.amountOutRaw > a.amountOutRaw ? 1 : b.amountOutRaw < a.amountOutRaw ? -1 : 0));
+    candidates.sort((a, b) =>
+      b.amountOutRaw > a.amountOutRaw ? 1 : b.amountOutRaw < a.amountOutRaw ? -1 : 0
+    );
     const optimalRoute = candidates[0];
 
-    // Minimum received using pure integer arithmetic with slippage BPS
-    const minReceivedRaw = (optimalRoute.amountOutRaw * BigInt(10000 - slippageBps)) / 10000n;
+    // 6. Minimum received using pure integer arithmetic with slippage BPS
+    const minReceivedRaw =
+      (optimalRoute.amountOutRaw * BigInt(10000 - slippageBps)) / 10000n;
     const minReceivedFormatted = formatUnits(minReceivedRaw, decimalsOut);
 
     const gasUnits = optimalRoute.gasEstimatedUnits;
-    const gasCostNative = (gasUnits * gasGwei * 1e-9);
-    const estimatedGasUsd = nativePriceUsd > 0 ? Number((gasCostNative * nativePriceUsd).toFixed(2)) : 0;
+    const gasCostNative = gasUnits * gasGwei * 1e-9;
+    const estimatedGasUsd =
+      nativePriceUsd > 0 ? Number((gasCostNative * nativePriceUsd).toFixed(2)) : 0;
 
-    // 6. Generate DEX Price Comparison Matrix across all verified liquidity venues
+    // 7. Generate Real DEX Price Comparison Matrix (NO FAKE FACTORS)
     const bestOutputNum = parseFloat(optimalRoute.amountOutFormatted);
     const bestOutputUsd = toPrice > 0 ? bestOutputNum * toPrice : bestOutputNum;
 
-    const venuesToCompare = [
-      { name: 'Hyperon Smart Router', protocol: 'Split Aggregator', factor: 1.0, gas: estimatedGasUsd },
-      { name: 'Uniswap v3 (Direct)', protocol: 'Uniswap v3', factor: 0.9982, gas: 3.80 },
-      { name: 'Curve Finance', protocol: 'Curve', factor: fromToken.category === 'Stablecoin' && toToken.category === 'Stablecoin' ? 0.9995 : 0.9940, gas: 4.20 },
-      { name: 'SushiSwap v3', protocol: 'SushiSwap', factor: 0.9915, gas: 3.50 },
-      { name: 'Balancer v2', protocol: 'Balancer', factor: 0.9930, gas: 4.80 },
-      { name: '1inch Classic', protocol: '1inch', factor: 0.9978, gas: 5.10 },
+    // Track real quotes per standard venue
+    const venueProtocols = [
+      { name: 'Hyperon Smart Router', protocol: 'Hyperon Aggregator' },
+      { name: 'Uniswap v3 (Direct)', protocol: 'Uniswap v3' },
+      { name: 'Uniswap v2', protocol: 'Uniswap v2' },
+      { name: 'Curve Finance', protocol: 'Curve' },
+      { name: 'SushiSwap v3', protocol: 'SushiSwap' },
+      { name: 'Balancer v2', protocol: 'Balancer' },
     ];
 
-    const dexComparison = venuesToCompare.map((v) => {
-      const isBest = v.name === 'Hyperon Smart Router';
-      const outAmt = isBest ? bestOutputNum : Number((bestOutputNum * v.factor).toFixed(decimalsOut > 6 ? 6 : decimalsOut));
-      const outUsd = isBest ? bestOutputUsd : Number((bestOutputUsd * v.factor).toFixed(2));
-      const diffPercent = isBest ? 0 : Number(((v.factor - 1) * 100).toFixed(2));
-      const diffUsd = isBest ? 0 : Number((outUsd - bestOutputUsd).toFixed(2));
-      const netUsd = Number((outUsd - v.gas).toFixed(2));
+    const dexComparison: DexComparisonItem[] = [];
 
-      return {
-        dexName: v.name,
-        protocol: v.protocol,
-        outputAmount: outAmt,
-        outputUsd: outUsd,
-        diffPercent,
-        diffUsd,
-        estimatedGasUsd: v.gas,
-        netOutputUsd: netUsd,
-        isBest,
-      };
+    // Hyperon Smart Router is always the aggregated optimal execution
+    dexComparison.push({
+      dexName: 'Hyperon Smart Router',
+      protocol: optimalRoute.protocol,
+      outputAmount: bestOutputNum,
+      outputUsd: toPrice > 0 ? Number(bestOutputUsd.toFixed(2)) : bestOutputNum,
+      diffPercent: 0,
+      diffUsd: 0,
+      estimatedGasUsd,
+      netOutputUsd: Number((bestOutputUsd - estimatedGasUsd).toFixed(2)),
+      status: 'LIVE_QUOTE',
+      isBest: true,
+      poolAddress: optimalRoute.poolAddress,
+      blockNumber: optimalRoute.blockNumber,
+      priceImpactPercent: optimalRoute.priceImpactPercent,
     });
 
-    const averageSuboptimalUsd = dexComparison.filter(d => !d.isBest).reduce((acc, curr) => acc + curr.outputUsd, 0) / (dexComparison.length - 1);
+    for (let i = 1; i < venueProtocols.length; i++) {
+      const v = venueProtocols[i];
+      // Find real matching candidate for this protocol
+      const match = candidates.find((c) => c.protocol.toLowerCase().includes(v.protocol.toLowerCase()));
+
+      if (match) {
+        const outAmt = parseFloat(match.amountOutFormatted);
+        const outUsd = toPrice > 0 ? outAmt * toPrice : outAmt;
+        const diffPercent = bestOutputNum > 0 ? Number((((outAmt - bestOutputNum) / bestOutputNum) * 100).toFixed(2)) : 0;
+        const diffUsd = toPrice > 0 ? Number((outUsd - bestOutputUsd).toFixed(2)) : 0;
+        const gasCost = nativePriceUsd > 0 ? (match.gasEstimatedUnits * gasGwei * 1e-9) * nativePriceUsd : 0;
+        const netUsd = Number((outUsd - gasCost).toFixed(2));
+
+        dexComparison.push({
+          dexName: v.name,
+          protocol: v.protocol,
+          outputAmount: outAmt,
+          outputUsd: Number(outUsd.toFixed(2)),
+          diffPercent,
+          diffUsd,
+          estimatedGasUsd: Number(gasCost.toFixed(2)),
+          netOutputUsd: netUsd,
+          status: 'LIVE_QUOTE',
+          isBest: match.amountOutRaw === optimalRoute.amountOutRaw,
+          poolAddress: match.poolAddress,
+          blockNumber: match.blockNumber,
+          priceImpactPercent: match.priceImpactPercent,
+        });
+      } else {
+        // Venue has NO real liquidity for this pair: mark UNAVAILABLE (NO FACTOR ESTIMATION)
+        dexComparison.push({
+          dexName: v.name,
+          protocol: v.protocol,
+          outputAmount: null,
+          outputUsd: null,
+          diffPercent: null,
+          diffUsd: null,
+          estimatedGasUsd: null,
+          netOutputUsd: null,
+          status: 'UNAVAILABLE',
+          isBest: false,
+        });
+      }
+    }
+
+    const availableSuboptimals = dexComparison.filter((d) => !d.isBest && d.outputUsd !== null && d.status === 'LIVE_QUOTE');
+    const averageSuboptimalUsd =
+      availableSuboptimals.length > 0
+        ? availableSuboptimals.reduce((acc, curr) => acc + (curr.outputUsd ?? 0), 0) / availableSuboptimals.length
+        : bestOutputUsd;
+
     const savingsUsd = Number(Math.max(0, bestOutputUsd - averageSuboptimalUsd).toFixed(2));
     const savingsPercent = bestOutputUsd > 0 ? Number(((savingsUsd / bestOutputUsd) * 100).toFixed(2)) : 0;
 
-    // 7. Auto-Slippage Recommendation based on pair volatility & market type
+    // 8. Auto-Slippage Recommendation based on pair volatility & market type
     let autoSlippageRecommended = 0.5;
     if (fromToken.category === 'Stablecoin' && toToken.category === 'Stablecoin') {
       autoSlippageRecommended = 0.05;
@@ -358,10 +421,13 @@ export class SmartGraphRouter {
       autoSlippageRecommended = 1.5;
     }
 
-    // 8. AI Route Insights Explanation
-    const aiRouteInsight = optimalRoute.splits.length > 1
-      ? `AI Router đã tự động phân tách lệnh ${optimalRoute.splits.map(s => `${s.dexName} (${s.percentage}%)`).join(' + ')} giúp giảm tối đa trượt giá, tiết kiệm $${savingsUsd} so với hoán đổi đơn lẻ.`
-      : `AI Router chọn tuyến tối ưu nhất qua ${optimalRoute.dexName} với phí gas thấp (~$${estimatedGasUsd}) và độ trượt giá tối thiểu ${optimalRoute.priceImpactPercent.toFixed(2)}%.`;
+    // 9. AI Route Insights Explanation
+    const aiRouteInsight =
+      optimalRoute.splits.length > 1
+        ? `AI Router đã tự động phân tách lệnh ${optimalRoute.splits
+            .map((s) => `${s.dexName} (${s.percentage}%)`)
+            .join(' + ')} giúp tối ưu hóa chiều sâu thanh khoản on-chain.`
+        : `AI Router chọn tuyến trực tiếp qua ${optimalRoute.dexName} với phí gas ~$${estimatedGasUsd} và trượt giá ${optimalRoute.priceImpactPercent.toFixed(2)}%.`;
 
     const now = Date.now();
     const sources: DexSource[] = DEX_SOURCES.map((src) => {
@@ -409,7 +475,7 @@ export class SmartGraphRouter {
     chainId: string = 'ethereum'
   ): Promise<TransactionSimulation> {
     if (!userAddress || !userAddress.startsWith('0x') || userAddress.length !== 42) {
-      throw new Error('SIMULATION_REQUIRES_WALLET: Connect a valid Web3 wallet to run pre-flight simulation.');
+      throw new Error('USER_ADDRESS_REQUIRED: Connect a valid Web3 wallet to run pre-flight simulation.');
     }
     return simulationEngine.simulateSwap(quote, userAddress, chainId);
   }
@@ -417,6 +483,11 @@ export class SmartGraphRouter {
 
 export const smartRouter = new SmartGraphRouter();
 
-export const calculateSmartRouteQuote = (params: QuoteParams) => smartRouter.calculateSmartRouteQuote(params);
-export const simulateSwapTransaction = (quote: SwapQuote, userAddress?: string, chainId: string = 'ethereum') =>
-  smartRouter.simulateSwapTransaction(quote, userAddress, chainId);
+export const calculateSmartRouteQuote = (params: QuoteParams) =>
+  smartRouter.calculateSmartRouteQuote(params);
+
+export const simulateSwapTransaction = (
+  quote: SwapQuote,
+  userAddress?: string,
+  chainId: string = 'ethereum'
+) => smartRouter.simulateSwapTransaction(quote, userAddress, chainId);

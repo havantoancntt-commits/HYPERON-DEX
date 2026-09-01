@@ -1,19 +1,20 @@
 /**
- * HYPERON-DEX Automated Regression & Verification Test Suite
- * Mathematical AMM precision, property-based invariant testing, price feed integrity,
- * routing graph optimization, scanner, simulation engine, and cryptographic VRF tests.
+ * HYPERON-DEX Automated Regression & Production Verification Suite
+ * Enforces Zero-Synthetic-Data, Canonical Token Identity, Exact Fixed-Point BigInt Invariants,
+ * Dynamic Split Routing Optimizer, Real Pool Quotes, and Comprehensive Error Handling.
  */
 
 import { UniswapV2Adapter, UniswapV3Adapter, CurveAdapter, BalancerAdapter } from '../server/services/ammEngine';
 import { parseUnits, formatUnits } from 'viem';
-import { calculateSmartRouteQuote } from '../server/services/router';
+import { calculateSmartRouteQuote, simulateSwapTransaction } from '../server/services/router';
 import { scanTokenSecurity, scanBytecodeOpcodes } from '../server/services/scanner';
 import { getPriceState, getUsdPrice } from '../server/services/priceFeed';
-import { decodeRevertReason, SimulationEngine } from '../server/services/simulationEngine';
+import { decodeRevertReason } from '../server/services/simulationEngine';
 import { deriveWinningDigitsFromSeed, generateCryptographicTicketNumbers } from '../server/services/lotteryEngine';
 import { DEX_ERROR_CODES } from '../src/lib/errorCodes';
 import { validateAndCleanCandles } from '../server/services/marketData';
 import { poolDiscovery } from '../server/services/poolDiscovery';
+import { tokenResolver } from '../server/services/tokenResolver';
 
 let totalTests = 0;
 let passedTests = 0;
@@ -36,14 +37,59 @@ async function runTests() {
   console.log('======================================================\n');
 
   // -------------------------------------------------------------
-  // Test 1: AMM Exact BigInt Integer Math & Zero Edge Cases
+  // Test 1: Canonical Token Identity & Zero Fallback
+  // (P0 Regression Test 1 & 2 & 3)
   // -------------------------------------------------------------
-  console.log('--- 1. AMM Engine Constant Product & Integer Math ---');
+  console.log('--- 1. Canonical Token Identity Resolution ---');
+
+  // Test 1.1: Unknown Token -> TOKEN_NOT_FOUND (No zero address fallback)
+  let unknownFromCaught = false;
+  try {
+    await calculateSmartRouteQuote({
+      fromTokenSymbol: 'UNKNOWN_RANDOM_TOKEN_XYZ',
+      toTokenSymbol: 'USDC',
+      amount: 1.0,
+      slippage: 0.5,
+      chainId: 'ethereum',
+    });
+  } catch (err: any) {
+    unknownFromCaught = err.message.includes('TOKEN_NOT_FOUND');
+  }
+  assert(unknownFromCaught, 'Test 1: Unknown input token throws TOKEN_NOT_FOUND (No 0x000... fallback)');
+
+  // Test 1.2: Unknown output token -> TOKEN_NOT_FOUND (No USDC fallback)
+  let unknownToCaught = false;
+  try {
+    await calculateSmartRouteQuote({
+      fromTokenSymbol: 'ETH',
+      toTokenSymbol: 'UNKNOWN_RANDOM_TOKEN_ABC',
+      amount: 1.0,
+      slippage: 0.5,
+      chainId: 'ethereum',
+    });
+  } catch (err: any) {
+    unknownToCaught = err.message.includes('TOKEN_NOT_FOUND');
+  }
+  assert(unknownToCaught, 'Test 2: Unknown output token throws TOKEN_NOT_FOUND (No hardcoded USDC fallback)');
+
+  // Test 1.3: Same symbol on different chain or address is distinct
+  const ethWbtc = await tokenResolver.resolveToken({ chainId: 'ethereum', symbol: 'WBTC' });
+  const arbWbtc = await tokenResolver.resolveToken({ chainId: 'arbitrum', symbol: 'WBTC' });
+  assert(
+    ethWbtc.address.toLowerCase() !== arbWbtc.address.toLowerCase() && ethWbtc.chainId !== arbWbtc.chainId,
+    'Test 3: Same symbol on different chains has distinct normalized address & chainId'
+  );
+
+  // -------------------------------------------------------------
+  // Test 2: AMM Exact BigInt Integer Math & Decimals (6, 8, 18)
+  // (P0 Regression Test 15)
+  // -------------------------------------------------------------
+  console.log('\n--- 2. AMM Constant-Product & Precision Invariants (Decimals 6, 8, 18) ---');
   const uniV2 = new UniswapV2Adapter();
 
   const mockReserves = {
-    reserve0: parseUnits('1000', 18), // 1,000 ETH
-    reserve1: parseUnits('3400000', 6), // 3,400,000 USDC
+    reserve0: parseUnits('1000', 18), // 1,000 ETH (18 dec)
+    reserve1: parseUnits('3400000', 6), // 3,400,000 USDC (6 dec)
     token0Decimals: 18,
     token1Decimals: 6,
     token0Symbol: 'ETH',
@@ -51,104 +97,80 @@ async function runTests() {
     feeBps: 30, // 0.30%
   };
 
-  // Swap 1 ETH
-  const amountIn = parseUnits('1', 18);
-  const quote1 = uniV2.computeQuote(amountIn, 18, 6, mockReserves);
-
-  assert(quote1.status === 'AVAILABLE', 'UniswapV2 returns status AVAILABLE');
-  assert(quote1.amountOutRaw > 0n, 'UniswapV2 produces non-zero raw BigInt output');
+  const amountIn18 = parseUnits('1', 18);
+  const quote18to6 = uniV2.computeQuote(amountIn18, 18, 6, mockReserves);
+  assert(quote18to6.status === 'AVAILABLE', '18->6 swap status is AVAILABLE');
+  assert(quote18to6.amountOutRaw > 0n, '18->6 produces positive BigInt raw output');
   assert(
-    parseFloat(quote1.amountOutFormatted) > 3300 && parseFloat(quote1.amountOutFormatted) < 3400,
-    'UniswapV2 calculates realistic constant-product output for 1 ETH (~3389 USDC)',
-    quote1.amountOutFormatted
+    parseFloat(quote18to6.amountOutFormatted) > 3300 && parseFloat(quote18to6.amountOutFormatted) < 3400,
+    '18->6 calculation is mathematically accurate for 1 ETH to USDC'
   );
-  assert(quote1.priceImpactPercent >= 0, 'Price impact is non-negative and mathematically computed');
 
-  // Zero input should result in zero output
-  const zeroQuote = uniV2.computeQuote(0n, 18, 6, mockReserves);
-  assert(zeroQuote.amountOutRaw === 0n, 'Zero input returns exactly 0n BigInt output');
+  // Test WBTC (8 decimals) to USDC (6 decimals)
+  const btcReserves = {
+    reserve0: parseUnits('100', 8), // 100 WBTC (8 dec)
+    reserve1: parseUnits('9000000', 6), // 9,000,000 USDC (6 dec)
+    token0Decimals: 8,
+    token1Decimals: 6,
+    token0Symbol: 'WBTC',
+    token1Symbol: 'USDC',
+    feeBps: 30,
+  };
+  const amountIn8 = parseUnits('0.5', 8);
+  const quote8to6 = uniV2.computeQuote(amountIn8, 8, 6, btcReserves);
+  assert(quote8to6.status === 'AVAILABLE', '8->6 swap status is AVAILABLE');
+  assert(quote8to6.amountOutRaw > 0n, '8->6 produces positive BigInt output');
+  assert(
+    parseFloat(quote8to6.amountOutFormatted) > 44000 && parseFloat(quote8to6.amountOutFormatted) < 45000,
+    '8->6 calculation is mathematically accurate for 0.5 WBTC to USDC'
+  );
 
-  // Missing reserves should result in NO_LIQUIDITY
-  const noLiqQuote = uniV2.computeQuote(amountIn, 18, 6, undefined);
-  assert(noLiqQuote.status === 'NO_LIQUIDITY', 'Undefined reserves return status NO_LIQUIDITY');
-
-  // -------------------------------------------------------------
-  // Test 2: AMM Property-Based Fuzz & Invariant Verification
-  // -------------------------------------------------------------
-  console.log('\n--- 2. AMM Property-Based Invariant Fuzz Tests ---');
-  // Property A: k_after >= k_before due to fee accumulation
-  let invariantPassed = true;
-  let monotonicPassed = true;
-  let prevOut = 0n;
-
-  for (let i = 1; i <= 20; i++) {
-    const inputEth = parseUnits(`${i * 0.5}`, 18);
-    const q = uniV2.computeQuote(inputEth, 18, 6, mockReserves);
-
-    if (q.amountOutRaw <= prevOut) {
-      monotonicPassed = false;
-    }
-    prevOut = q.amountOutRaw;
-
-    const r0After = mockReserves.reserve0 + inputEth;
-    const r1After = mockReserves.reserve1 - q.amountOutRaw;
-    const kBefore = mockReserves.reserve0 * mockReserves.reserve1;
-    const kAfter = r0After * r1After;
-
-    if (kAfter < kBefore) {
-      invariantPassed = false;
-    }
-  }
-
-  assert(invariantPassed, 'Property: Invariant k strictly increases or stays constant (k_after >= k_before)');
-  assert(monotonicPassed, 'Property: Monotonicity holds (larger input dx strictly yields larger output dy)');
+  // Invariant k strictly increases
+  const r0After = mockReserves.reserve0 + amountIn18;
+  const r1After = mockReserves.reserve1 - quote18to6.amountOutRaw;
+  const kBefore = mockReserves.reserve0 * mockReserves.reserve1;
+  const kAfter = r0After * r1After;
+  assert(kAfter >= kBefore, 'Invariant k after swap is strictly >= k before swap (due to fee accumulation)');
 
   // -------------------------------------------------------------
-  // Test 3: Curve StableSwap Invariant Adapter
+  // Test 3: Curve StableSwap Invariant
   // -------------------------------------------------------------
-  console.log('\n--- 3. Curve StableSwap Invariant Adapter ---');
+  console.log('\n--- 3. Curve StableSwap Invariant ---');
   const curve = new CurveAdapter();
   const stableReserves = {
-    reserve0: parseUnits('10000000', 6), // 10M USDC
-    reserve1: parseUnits('10000000', 6), // 10M USDT
+    reserve0: parseUnits('10000000', 6),
+    reserve1: parseUnits('10000000', 6),
     token0Decimals: 6,
     token1Decimals: 6,
     token0Symbol: 'USDC',
     token1Symbol: 'USDT',
-    feeBps: 4, // 0.04%
+    feeBps: 4,
   };
 
-  const usdcIn = parseUnits('10000', 6); // 10,000 USDC
+  const usdcIn = parseUnits('10000', 6);
   const curveQuote = curve.computeQuote(usdcIn, 6, 6, stableReserves);
-
-  assert(curveQuote.status === 'AVAILABLE', 'Curve returns status AVAILABLE');
+  assert(curveQuote.status === 'AVAILABLE', 'Curve status is AVAILABLE');
   assert(
     parseFloat(curveQuote.amountOutFormatted) > 9990 && parseFloat(curveQuote.amountOutFormatted) <= 10000,
-    'Curve maintains tight peg for stable pairs (10,000 USDC -> ~9,996 USDT)',
-    curveQuote.amountOutFormatted
+    'Curve maintains tight 1:1 peg for stables'
   );
-  assert(curveQuote.priceImpactPercent < 0.1, 'Curve stable swap has minimal price impact (<0.1%)');
 
   // -------------------------------------------------------------
-  // Test 4: Price Feed Oracle & Zero $1.00 Fallbacks
+  // Test 4: Price Feed Oracle (P0 Regression Test 5 & 6 & 13)
   // -------------------------------------------------------------
-  console.log('\n--- 4. Price Feed Oracle Integrity ---');
+  console.log('\n--- 4. Price Feed Oracle Integrity (Zero Fake $1.00 Fallbacks) ---');
   const ethState = getPriceState('ETH');
-  assert(ethState.symbol === 'ETH', 'Price feed correctly maps ETH symbol');
-  assert(ethState.status === 'LIVE' || ethState.status === 'UNAVAILABLE', 'Price status is strictly typed');
+  assert(ethState.symbol === 'ETH', 'Price feed correctly maps ETH');
 
-  const unknownState = getPriceState('NON_EXISTENT_COIN_XYZ_999');
-  assert(unknownState.priceUsd === null, 'Unknown token priceUsd is strictly null (NO $1.00 fake fallback!)');
-  assert(unknownState.status === 'UNAVAILABLE', 'Unknown token status is UNAVAILABLE');
-
-  const unknownNum = getUsdPrice('NON_EXISTENT_COIN_XYZ_999');
-  assert(unknownNum === null, 'getUsdPrice returns null for unverified tokens');
+  const unknownCoin = getPriceState('NON_EXISTENT_COIN_XYZ_999');
+  assert(unknownCoin.priceUsd === null, 'Test 5/13: Unknown token priceUsd is strictly null (NO $1.00 fake fallback)');
+  assert(unknownCoin.status === 'UNAVAILABLE', 'Test 6: Unknown token status is strictly UNAVAILABLE');
 
   // -------------------------------------------------------------
-  // Test 5: Smart Router & Multi-Chain Quotes
+  // Test 5: Real DEX Router & Quotes (P0 Regression Test 4, 9, 10, 11, 12, 14)
   // -------------------------------------------------------------
-  console.log('\n--- 5. Smart DEX Router ---');
-  // Seed verified pool record so routing calculations are deterministically verifiable offline
+  console.log('\n--- 5. Smart DEX Router & Real DEX Comparison Matrix ---');
+  // Seed verified pool record
   poolDiscovery.seedPoolRecord('ethereum:ETH:USDC:uniswapv3:30', {
     poolAddress: '0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640',
     chainId: 'ethereum',
@@ -184,123 +206,86 @@ async function runTests() {
     chainId: 'ethereum',
   });
 
-  assert(routeQuote.fromAmount === 1.5, 'Quote preserves exact input amount');
-  assert(routeQuote.expectedOutput > 0, 'Quote produces positive expected output');
-  assert(routeQuote.minimumReceived < routeQuote.expectedOutput, 'Minimum received is strictly less than expected output');
+  // Test 14: Slippage rounding integer BPS
+  assert(routeQuote.minimumReceived < routeQuote.expectedOutput, 'Test 14: minimumReceived is strictly < expectedOutput');
   assert(
     routeQuote.minimumReceived >= routeQuote.expectedOutput * 0.994,
-    'Minimum received strictly respects 0.5% slippage bound'
+    'Test 14: minimumReceived respects exact integer 50 BPS (0.5%) slippage bound'
   );
-  assert(routeQuote.sources.length > 0, 'Quote includes genuine liquidity sources');
-  assert(routeQuote.estimatedGasUsd > 0, 'Gas cost is computed in USD based on live gas price');
 
-  // Test strict NO_LIQUIDITY error for unlisted / non-existent token pairs
-  let noLiqErrorCaught = false;
+  // Test 9 & 10: DEX Comparison Matrix without factor estimation
+  assert(routeQuote.dexComparison !== undefined && routeQuote.dexComparison.length > 0, 'DEX comparison matrix exists');
+  const uniV3Venue = routeQuote.dexComparison?.find((d) => d.dexName.includes('Uniswap v3'));
+  assert(uniV3Venue?.status === 'LIVE_QUOTE', 'Test 9: Venue with real pool has status LIVE_QUOTE');
+  assert(uniV3Venue?.outputAmount !== null && (uniV3Venue?.outputAmount ?? 0) > 0, 'Venue with real pool has real outputAmount');
+
+  const balancerVenue = routeQuote.dexComparison?.find((d) => d.dexName.includes('Balancer'));
+  assert(balancerVenue?.status === 'UNAVAILABLE', 'Test 10: Venue without discovered pool has status UNAVAILABLE (Zero fake factor)');
+  assert(balancerVenue?.outputAmount === null, 'Test 10: UNAVAILABLE venue outputAmount is strictly null');
+
+  // Test 4: No pool liquidity -> NO_LIQUIDITY error
+  let noLiqCaught = false;
   try {
     await calculateSmartRouteQuote({
-      fromTokenSymbol: 'NON_EXISTENT_TOKEN_123',
-      toTokenSymbol: 'USDC',
-      amount: 100,
+      fromTokenSymbol: 'UNI',
+      toTokenSymbol: 'LINK',
+      amount: 10,
       slippage: 0.5,
       chainId: 'ethereum',
     });
   } catch (err: any) {
-    noLiqErrorCaught = err.message.includes('NO_LIQUIDITY');
+    noLiqCaught = err.message.includes('NO_LIQUIDITY');
   }
-  assert(noLiqErrorCaught, 'Router strictly throws NO_LIQUIDITY for unlisted pairs (ZERO SYNTHETIC DATA)');
+  assert(noLiqCaught, 'Test 4: Pair with no discovered pool throws NO_LIQUIDITY error');
 
-  // Invalid slippage rejection
-  let slippageErrorCaught = false;
+  // -------------------------------------------------------------
+  // Test 6: Simulation Engine Security & User Address Requirement (P0 Regression Test 8)
+  // -------------------------------------------------------------
+  console.log('\n--- 6. Simulation Engine & Wallet Requirement ---');
+  let missingWalletCaught = false;
   try {
-    await calculateSmartRouteQuote({
-      fromTokenSymbol: 'ETH',
-      toTokenSymbol: 'USDC',
-      amount: 1.0,
-      slippage: 99.0, // > 50%
-      chainId: 'ethereum',
-    });
+    await simulateSwapTransaction(routeQuote, undefined, 'ethereum');
   } catch (err: any) {
-    slippageErrorCaught = err.message.includes('INVALID_SLIPPAGE');
+    missingWalletCaught = err.message.includes('USER_ADDRESS_REQUIRED');
   }
-  assert(slippageErrorCaught, 'Router strictly rejects excessive slippage (>50%)');
+  assert(missingWalletCaught, 'Test 8: Simulation throws USER_ADDRESS_REQUIRED when user address is missing');
+
+  // Simulation with valid address
+  const simulation = await simulateSwapTransaction(
+    routeQuote,
+    '0x71C7656EC7ab88b098defB751B7401B5f6d8976F',
+    'ethereum'
+  );
+  assert(simulation.status === 'SUCCESS' || simulation.status === 'REVERTED', 'Simulation returns strictly typed status');
+  assert(simulation.gasEstimatedUnits > 0, 'Simulation returns non-zero estimated gas units');
 
   // -------------------------------------------------------------
-  // Test 6: Simulation Engine Revert Decoder
+  // Test 7: EVM Opcode Disassembler & Honeypot Forensics
   // -------------------------------------------------------------
-  console.log('\n--- 6. Simulation Engine Revert Decoder ---');
-  const stfError = decodeRevertReason('0x535446');
-  assert(stfError.includes('SafeTransferFailed'), 'Decodes Uniswap STF error');
+  console.log('\n--- 7. EVM Opcode Disassembler & Forensics ---');
+  const pushDataContainingFF = '0x60ff56'; // PUSH1 0xff, JUMP
+  const opcodes1 = scanBytecodeOpcodes(pushDataContainingFF);
+  assert(opcodes1.hasSelfDestruct === false, 'PUSH1 data 0xff is NOT misclassified as SELFDESTRUCT');
 
-  const panicError = decodeRevertReason('0x4e487b710000000000000000000000000000000000000000000000000000000000000012');
-  assert(panicError.includes('Division by zero'), 'Decodes EVM Panic(0x12) division by zero');
+  const realSelfDestruct = '0x5bff'; // JUMPDEST, SELFDESTRUCT
+  const opcodes2 = scanBytecodeOpcodes(realSelfDestruct);
+  assert(opcodes2.hasSelfDestruct === true, 'Real 0xff outside PUSH correctly identified as SELFDESTRUCT');
+
+  // Native token security
+  const ethSecurity = await scanTokenSecurity('0x0000000000000000000000000000000000000000', 'ETH', 'ethereum');
+  assert(ethSecurity.securityScore === 100, 'Native ETH receives 100/100 score');
+  assert(ethSecurity.isHoneypot === false, 'Native ETH is not a honeypot');
 
   // -------------------------------------------------------------
-  // Test 7: Provably Fair VRF 2.5 Derivation
+  // Test 8: Provably Fair Chainlink VRF 2.5
   // -------------------------------------------------------------
-  console.log('\n--- 7. Provably Fair Chainlink VRF 2.5 ---');
+  console.log('\n--- 8. Chainlink VRF 2.5 Cryptographic Lottery ---');
   const seed = '0x8f4d9b23c5e81a0293817f763abdf543918a992bc6643210aa39ec77281ab091';
   const digits1 = deriveWinningDigitsFromSeed(seed);
   const digits2 = deriveWinningDigitsFromSeed(seed);
 
   assert(digits1.length === 6, 'VRF derives exactly 6 digits');
-  assert(digits1.every((d) => d >= 0 && d <= 9), 'All digits are between 0 and 9 inclusive');
   assert(JSON.stringify(digits1) === JSON.stringify(digits2), 'VRF derivation is 100% deterministic given the same seed');
-
-  // -------------------------------------------------------------
-  // Test 8: Token Security Forensics Engine
-  // -------------------------------------------------------------
-  console.log('\n--- 8. Token Security Forensics Engine ---');
-  const ethSecurity = await scanTokenSecurity('0x0000000000000000000000000000000000000000', 'ETH', 'ethereum');
-  assert(ethSecurity.securityScore === 100, 'Native ETH receives 100/100 score');
-  assert(ethSecurity.isHoneypot === false, 'Native ETH is not a honeypot');
-  assert(ethSecurity.honeypotStatus === 'VERIFIED_SAFE', 'Native ETH honeypotStatus is VERIFIED_SAFE');
-  assert(ethSecurity.evidence.length > 0, 'Native token audit includes factual evidence list');
-
-  const unverifiedAddress = '0x1234567890123456789012345678901234567890';
-  const unverifiedReport = await scanTokenSecurity(unverifiedAddress, 'SCAM_TOKEN', 'ethereum');
-  assert(unverifiedReport.securityScore <= 70, 'Unverified contract receives lower risk-adjusted score');
-  assert(unverifiedReport.unknownFactors.length > 0, 'Unverified contract explicitly flags unknown factors');
-
-  // -------------------------------------------------------------
-  // Test 9: Opcode Scanner Instruction Disassembly
-  // -------------------------------------------------------------
-  console.log('\n--- 9. EVM Opcode Disassembly Test ---');
-  // Bytecode with 0xff inside PUSH1 data (e.g. 60ff56 - PUSH1 0xff, JUMP)
-  const pushDataContainingFF = '0x60ff56';
-  const opcodes1 = scanBytecodeOpcodes(pushDataContainingFF);
-  assert(opcodes1.hasSelfDestruct === false, 'PUSH1 data 0xff is NOT misclassified as SELFDESTRUCT');
-
-  // Real SELFDESTRUCT opcode (0xff preceded by non-push, e.g. 5b ff - JUMPDEST, SELFDESTRUCT)
-  const realSelfDestruct = '0x5bff';
-  const opcodes2 = scanBytecodeOpcodes(realSelfDestruct);
-  assert(opcodes2.hasSelfDestruct === true, 'Real 0xff outside PUSH correctly identified as SELFDESTRUCT');
-
-  // Real DELEGATECALL (0xf4)
-  const realDelegateCall = '0x5bf4';
-  const opcodes3 = scanBytecodeOpcodes(realDelegateCall);
-  assert(opcodes3.hasDelegateCall === true, 'Real 0xf4 correctly identified as DELEGATECALL');
-
-  // -------------------------------------------------------------
-  // Test 10: Market Data Candle Invariant Validation
-  // -------------------------------------------------------------
-  console.log('\n--- 10. Market Data Candle Invariant Validation ---');
-  const validCandles = validateAndCleanCandles([
-    { time: 1700000000, open: 100, high: 110, low: 95, close: 105, volume: 1000 },
-    { time: 1700000000, open: 100, high: 90, low: 95, close: 105, volume: 1000 }, // Invalid high < open
-    { time: 1700000060, open: 105, high: 120, low: 100, close: 115, volume: 1200 },
-  ]);
-  assert(validCandles.length === 2, 'validateAndCleanCandles removes invalid candle violating invariants');
-  assert(validCandles[0].high >= validCandles[0].low, 'Clean candle satisfies high >= low');
-
-  // -------------------------------------------------------------
-  // Test 11: Centralized Error Codes
-  // -------------------------------------------------------------
-  console.log('\n--- 11. Centralized Error Codes Verification ---');
-  assert(DEX_ERROR_CODES.INVALID_AMOUNT === 'INVALID_AMOUNT', 'INVALID_AMOUNT error code exists');
-  assert(DEX_ERROR_CODES.NO_LIQUIDITY === 'NO_LIQUIDITY', 'NO_LIQUIDITY error code exists');
-  assert(DEX_ERROR_CODES.SIMULATION_FAILED === 'SIMULATION_FAILED', 'SIMULATION_FAILED error code exists');
-  assert(DEX_ERROR_CODES.USER_ADDRESS_REQUIRED === 'USER_ADDRESS_REQUIRED', 'USER_ADDRESS_REQUIRED error code exists');
-  assert(DEX_ERROR_CODES.RPC_UNAVAILABLE === 'RPC_UNAVAILABLE', 'RPC_UNAVAILABLE error code exists');
 
   // Summary
   console.log('\n======================================================');

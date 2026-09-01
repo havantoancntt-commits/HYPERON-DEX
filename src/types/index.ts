@@ -80,16 +80,22 @@ export interface RouteSplit {
   path: string[];
 }
 
+export type QuoteComparisonStatus = 'LIVE_QUOTE' | 'ESTIMATE' | 'STALE' | 'UNAVAILABLE' | 'ERROR';
+
 export interface DexComparisonItem {
   dexName: string;
   protocol: string;
-  outputAmount: number;
-  outputUsd: number;
-  diffPercent: number;
-  diffUsd: number;
-  estimatedGasUsd: number;
-  netOutputUsd: number;
+  outputAmount: number | null;
+  outputUsd: number | null;
+  diffPercent: number | null;
+  diffUsd: number | null;
+  estimatedGasUsd: number | null;
+  netOutputUsd: number | null;
+  status: QuoteComparisonStatus;
   isBest: boolean;
+  poolAddress?: string;
+  blockNumber?: number;
+  priceImpactPercent?: number | null;
 }
 
 export interface SwapQuote {

@@ -639,16 +639,27 @@ export const SwapView: React.FC = () => {
                   </div>
 
                   <div className="text-right">
-                    <div className="font-bold text-white">
-                      {formatTokenDisplay(item.outputAmount, toToken)} {toToken.symbol}
-                    </div>
-                    <div className="text-[10px]">
-                      {item.isBest ? (
-                        <span className="text-emerald-400 font-bold">Giá Nhận Cao Nhất</span>
-                      ) : (
-                        <span className="text-rose-400">{item.diffPercent}% ({formatCurrency(item.diffUsd)})</span>
-                      )}
-                    </div>
+                    {item.status === 'UNAVAILABLE' || item.outputAmount === null ? (
+                      <div>
+                        <div className="font-medium text-slate-500 text-xs">Không Khả Dụng</div>
+                        <div className="text-[10px] text-slate-600">Không có pool on-chain</div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="font-bold text-white">
+                          {formatTokenDisplay(item.outputAmount, toToken)} {toToken.symbol}
+                        </div>
+                        <div className="text-[10px]">
+                          {item.isBest ? (
+                            <span className="text-emerald-400 font-bold">Giá Nhận Cao Nhất</span>
+                          ) : (
+                            <span className="text-rose-400">
+                              {item.diffPercent}% ({formatCurrency(item.diffUsd ?? 0)})
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
