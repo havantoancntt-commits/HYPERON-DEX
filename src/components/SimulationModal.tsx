@@ -86,14 +86,14 @@ export const SimulationModal: React.FC = () => {
             <div>
               <span className="text-slate-400">Bạn Trả:</span>{' '}
               <span className="font-bold text-white font-mono">
-                {activeQuote.fromAmount} {activeQuote.fromToken.symbol}
+                {formatCrypto(activeQuote.fromAmount)} {activeQuote.fromToken.symbol}
               </span>
             </div>
             <div className="text-cyan-400 font-mono font-bold">→</div>
             <div>
               <span className="text-slate-400">Bạn Nhận:</span>{' '}
               <span className="font-bold text-emerald-400 font-mono">
-                {activeQuote.expectedOutput} {activeQuote.toToken.symbol}
+                {formatCrypto(activeQuote.expectedOutput)} {activeQuote.toToken.symbol}
               </span>
             </div>
           </div>
