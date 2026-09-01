@@ -5,6 +5,11 @@ import { fetchLiveKlines, calculateLiveTechnicalIndicators } from './marketData'
 import { runStrategyBacktest } from './backtestEngine';
 
 let aiClient: GoogleGenAI | null = null;
+let quotaExceededCooldownUntil = 0;
+
+// In-memory cache for market intelligence to protect API quota
+const marketIntelligenceCache: Record<string, { data: AIMarketIntelligence; cachedAt: number }> = {};
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache per symbol
 
 function getAI(): GoogleGenAI | null {
   if (!aiClient && process.env.GEMINI_API_KEY) {
@@ -22,6 +27,13 @@ function getAI(): GoogleGenAI | null {
 
 export async function generateMarketIntelligence(symbol: string = 'ETH'): Promise<AIMarketIntelligence> {
   const targetSymbol = symbol.toUpperCase();
+
+  // Return from cache if still fresh (< 5 mins)
+  const cached = marketIntelligenceCache[targetSymbol];
+  if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
   const currentPrice = getPrice(targetSymbol);
   const priceState = getPriceState(targetSymbol);
   const change24h = priceState.change24h || 0;
@@ -84,8 +96,16 @@ export async function generateMarketIntelligence(symbol: string = 'ETH'): Promis
     generatedAt: new Date().toISOString(),
   };
 
+  const now = Date.now();
+  if (now < quotaExceededCooldownUntil) {
+    // In rate limit cooldown window, serve verified quantitative synthesis directly
+    marketIntelligenceCache[targetSymbol] = { data: defaultIntelligence, cachedAt: now };
+    return defaultIntelligence;
+  }
+
   const ai = getAI();
   if (!ai) {
+    marketIntelligenceCache[targetSymbol] = { data: defaultIntelligence, cachedAt: now };
     return defaultIntelligence;
   }
 
@@ -118,7 +138,7 @@ Synthesize this factual data into a high-precision institutional market intellig
 Return ONLY valid JSON.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.7-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -126,14 +146,22 @@ Return ONLY valid JSON.`;
     });
 
     const parsed = JSON.parse(response.text || '{}');
-    return {
+    const result: AIMarketIntelligence = {
       ...defaultIntelligence,
       ...parsed,
       disclaimer: defaultIntelligence.disclaimer,
       generatedAt: new Date().toISOString(),
     };
-  } catch (err) {
-    console.warn('[AI Intelligence] Fallback to quantitative indicator synthesis:', err);
+
+    marketIntelligenceCache[targetSymbol] = { data: result, cachedAt: Date.now() };
+    return result;
+  } catch (err: any) {
+    const isRateLimit = err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('quota');
+    if (isRateLimit) {
+      quotaExceededCooldownUntil = Date.now() + 60 * 1000; // 60s cooldown
+    }
+    // Silently serve quantitative synthesis without throwing
+    marketIntelligenceCache[targetSymbol] = { data: defaultIntelligence, cachedAt: Date.now() };
     return defaultIntelligence;
   }
 }
