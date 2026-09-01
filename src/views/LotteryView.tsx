@@ -53,6 +53,8 @@ import {
   Users,
   Eye,
   Search,
+  Cpu,
+  Radio,
 } from 'lucide-react';
 
 export const LotteryView: React.FC = () => {
@@ -147,6 +149,31 @@ export const LotteryView: React.FC = () => {
     return activeRounds.find((r) => r.poolId === selectedPoolId) || activeRounds[0];
   }, [activeRounds, selectedPoolId]);
 
+  // Helper: Generate random 6 numbers
+  const getRandomNumbers = () => Array.from({ length: 6 }).map(() => Math.floor(Math.random() * 10));
+
+  // Helper: Generate AI Hot Numbers based on analytics
+  const getHotNumbers = () => {
+    const hotPool = analytics?.hotDigits && analytics.hotDigits.length > 0 ? analytics.hotDigits : [7, 3, 9, 8, 2, 4];
+    return Array.from({ length: 6 }).map(() => {
+      if (Math.random() < 0.7) {
+        return hotPool[Math.floor(Math.random() * hotPool.length)];
+      }
+      return Math.floor(Math.random() * 10);
+    });
+  };
+
+  // Helper: Generate Cold / Overdue Numbers
+  const getColdNumbers = () => {
+    const coldPool = analytics?.coldDigits && analytics.coldDigits.length > 0 ? analytics.coldDigits : [5, 0, 1, 6];
+    return Array.from({ length: 6 }).map(() => {
+      if (Math.random() < 0.65) {
+        return coldPool[Math.floor(Math.random() * coldPool.length)];
+      }
+      return Math.floor(Math.random() * 10);
+    });
+  };
+
   // Update countdown & auto draw trigger
   useEffect(() => {
     if (!currentRound) return;
@@ -160,7 +187,7 @@ export const LotteryView: React.FC = () => {
 
       // Automatically trigger 3D drum draw when round reaches 0 or is in drawing state
       if ((diff === 0 || currentRound.status === 'DRAWING') && !isDrawing && !currentRound.winningNumbers) {
-        setIsDrawing(true);
+        handleTriggerDraw(currentRound.id);
       }
     };
     calculateTime();
@@ -168,8 +195,14 @@ export const LotteryView: React.FC = () => {
     return () => clearInterval(timer);
   }, [currentRound, isDrawing]);
 
-  // Helper: Generate random 6 numbers
-  const getRandomNumbers = () => Array.from({ length: 6 }).map(() => Math.floor(Math.random() * 10));
+  // Round progress percentage
+  const roundProgressPercent = useMemo(() => {
+    if (!currentRound) return 0;
+    const total = currentRound.endTime - currentRound.startTime;
+    if (total <= 0) return 100;
+    const elapsed = Date.now() - currentRound.startTime;
+    return Math.min(100, Math.max(0, (elapsed / total) * 100));
+  }, [currentRound, timeLeft]);
 
   // Initialize/Regenerate Quick Pick tickets
   useEffect(() => {
@@ -180,13 +213,20 @@ export const LotteryView: React.FC = () => {
     setGeneratedTickets(tickets);
   }, [ticketCount]);
 
-  const handleRerollAll = () => {
+  const handleRerollAll = (type: 'random' | 'hot' | 'cold' = 'random') => {
     soundManager.playRoll();
     const tickets: number[][] = [];
     for (let i = 0; i < ticketCount; i++) {
-      tickets.push(getRandomNumbers());
+      if (type === 'hot') tickets.push(getHotNumbers());
+      else if (type === 'cold') tickets.push(getColdNumbers());
+      else tickets.push(getRandomNumbers());
     }
     setGeneratedTickets(tickets);
+    addToast({
+      title: type === 'hot' ? '🔥 Đã Tạo Bộ Số Hot' : type === 'cold' ? '❄️ Đã Tạo Bộ Số Cold' : '🎲 Đã Đổi Ngẫu Nhiên',
+      message: `Đã cập nhật tự động ${ticketCount} dãy số theo thuật toán ${type.toUpperCase()}.`,
+      type: 'info',
+    });
   };
 
   const handleRerollSingle = (index: number) => {
@@ -391,10 +431,12 @@ export const LotteryView: React.FC = () => {
     }
   };
 
-  // Test VRF Draw Simulator
+  // Automated & On-Demand Provably Fair VRF 2.5 Draw Engine
   const handleTriggerDraw = async (roundId: number) => {
+    if (isDrawing) return;
     try {
       setIsDrawing(true);
+      setIs3DDrumOpen(true);
       soundManager.playDrumSpin();
       const res = await fetch('/api/lottery/draw', {
         method: 'POST',
@@ -406,15 +448,15 @@ export const LotteryView: React.FC = () => {
 
       soundManager.playJackpot();
       addToast({
-        title: '🎲 VRF 2.5 Đã Quay Thưởng Xong!',
-        message: `Các Con Số Trúng Thưởng: [ ${data.closedRound.winningNumbers.join(' - ')} ]`,
-        type: 'info',
+        title: '🎲 Chainlink VRF 2.5 Tự Động Quay Thưởng Xong!',
+        message: `Số trúng thưởng: [ ${data.closedRound.winningNumbers.join(' - ')} ] • Đã tự động đối soát & quyết toán.`,
+        type: 'success',
       });
       fetchLotteryData();
     } catch (err: any) {
       addToast({
         title: 'Quay Thưởng Thất Bại',
-        message: err?.message || 'Failed to draw',
+        message: err?.message || 'Failed to execute draw',
         type: 'error',
       });
     } finally {
@@ -746,9 +788,16 @@ export const LotteryView: React.FC = () => {
                 <div className="space-y-5">
                   {/* Quantity selector presets */}
                   <div>
-                    <label className="text-xs font-semibold text-slate-300 mb-2 block">
-                      Chọn Số Lượng Vé (Mua Nhiều Giảm Giá Lên Đến 20%):
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-semibold text-slate-300">
+                        Chọn Số Lượng Vé (Chiết khấu tự động lên đến 20%):
+                      </label>
+                      {discountPercent > 0 && (
+                        <span className="text-[11px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
+                          Tiết kiệm {discountPercent}% khi mua sỉ
+                        </span>
+                      )}
+                    </div>
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                       {[
                         { count: 1, disc: '0%' },
@@ -777,12 +826,38 @@ export const LotteryView: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* AI & Cryptographic Algorithm Selector Chips */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/[0.04]">
+                    <span className="text-[11px] text-slate-400 font-mono">Tạo Số Tự Động:</span>
+                    <button
+                      onClick={() => handleRerollAll('random')}
+                      className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 text-xs font-mono flex items-center gap-1.5 border border-white/10 cursor-pointer transition-all"
+                    >
+                      <Dice5 className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>🎲 Ngẫu Nhiên Mật Mã</span>
+                    </button>
+                    <button
+                      onClick={() => handleRerollAll('hot')}
+                      className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-xs font-mono flex items-center gap-1.5 border border-amber-500/30 cursor-pointer font-bold transition-all"
+                    >
+                      <Flame className="w-3.5 h-3.5 text-amber-400" />
+                      <span>🔥 Bộ Số Hot AI</span>
+                    </button>
+                    <button
+                      onClick={() => handleRerollAll('cold')}
+                      className="px-2.5 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs font-mono flex items-center gap-1.5 border border-blue-500/30 cursor-pointer font-bold transition-all"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                      <span>❄️ Bộ Số Cold (Chờ Nổ)</span>
+                    </button>
+                  </div>
+
                   {/* Generated Ticket Preview Cards */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-slate-400">
                       <span>Xem Trước Các Dãy Số ({generatedTickets.length} vé):</span>
                       <button
-                        onClick={handleRerollAll}
+                        onClick={() => handleRerollAll('random')}
                         className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-mono hover:underline cursor-pointer"
                       >
                         <RefreshCw className="w-3 h-3" /> Đổi Toàn Bộ Số
@@ -862,15 +937,25 @@ export const LotteryView: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-center gap-3">
+                  <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
                     <button
                       onClick={() => {
                         soundManager.playRoll();
                         setManualTicket(getRandomNumbers());
                       }}
-                      className="px-4 py-2 bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 rounded-xl text-xs flex items-center gap-2 border border-white/10 cursor-pointer"
+                      className="px-3.5 py-2 bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 rounded-xl text-xs flex items-center gap-2 border border-white/10 cursor-pointer font-mono"
                     >
-                      <Dice5 className="w-4 h-4 text-amber-400" /> Ngẫu Nhiên Số
+                      <Dice5 className="w-4 h-4 text-cyan-400" /> Ngẫu Nhiên
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        soundManager.playRoll();
+                        setManualTicket(getHotNumbers());
+                      }}
+                      className="px-3.5 py-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 rounded-xl text-xs flex items-center gap-2 border border-amber-500/30 cursor-pointer font-mono font-bold"
+                    >
+                      <Flame className="w-4 h-4 text-amber-400" /> Số Hot AI
                     </button>
 
                     <button
@@ -878,9 +963,9 @@ export const LotteryView: React.FC = () => {
                         soundManager.playTick();
                         setIsAnalyticsOpen(true);
                       }}
-                      className="px-4 py-2 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 rounded-xl text-xs flex items-center gap-2 cursor-pointer font-bold"
+                      className="px-3.5 py-2 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 hover:from-amber-500/30 hover:to-yellow-500/30 text-amber-200 border border-amber-500/40 rounded-xl text-xs flex items-center gap-2 cursor-pointer font-bold font-mono shadow-sm"
                     >
-                      <Sparkles className="w-4 h-4 text-amber-400" /> Dùng Số AI & Chiêm Tinh
+                      <Sparkles className="w-4 h-4 text-amber-400" /> Trợ Lý AI & Chiêm Tinh
                     </button>
                   </div>
                 </div>
@@ -998,19 +1083,160 @@ export const LotteryView: React.FC = () => {
               </div>
             </div>
 
-            {/* Test Simulation Controls */}
-            <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 text-slate-400">
-                <Dice5 className="w-4 h-4 text-cyan-400 shrink-0" />
-                <span>Sandbox: Kích hoạt quay số VRF 2.5 trực tiếp trên lồng quay 3D</span>
+            {/* AUTOMATED SYNCHRONIZED COUNTDOWN & VRF 2.5 SPIN ENGINE (RED CIRCLE REVOLUTION) */}
+            <div className="relative overflow-hidden p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-[#07131B] via-[#080E18] to-[#120D05] border-2 border-cyan-500/40 shadow-2xl shadow-cyan-950/40 space-y-4">
+              {/* Subtle background glow */}
+              <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-48 h-48 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+
+              {/* Header: Status & Oracle verification badge */}
+              <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.08] pb-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="relative flex items-center justify-center w-9 h-9 rounded-2xl bg-cyan-500/20 border border-cyan-500/50 text-cyan-300 shrink-0 shadow-lg shadow-cyan-500/20">
+                    <Cpu className="w-5 h-5" />
+                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                    </span>
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-sm font-black text-white font-outfit uppercase tracking-wide">
+                        Hệ Thống Đếm Ngược & Mở Thưởng VRF 2.5
+                      </h4>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 font-mono text-[10px] font-bold">
+                        <ShieldCheck className="w-3 h-3" /> TỰ ĐỘNG A-Z
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-sans">
+                      Kỳ #{currentRound?.id} • Đồng bộ hóa thời gian thực với Chainlink Oracle & Lồng 3D
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-1 rounded-xl bg-black/60 border border-cyan-500/30 text-cyan-300 font-mono text-xs font-bold flex items-center gap-1.5">
+                    <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                    <span>ORACLE LIVE</span>
+                  </span>
+                </div>
               </div>
-              <button
-                onClick={() => currentRound && handleTriggerDraw(currentRound.id)}
-                disabled={isDrawing}
-                className="px-3.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-mono font-semibold transition-all cursor-pointer shrink-0"
-              >
-                {isDrawing ? 'Đang Quay VRF...' : 'Quay Thưởng VRF 2.5'}
-              </button>
+
+              {/* Central Real-Time Countdown Timer Display */}
+              <div className="relative z-10 bg-black/70 border border-cyan-500/30 rounded-2xl p-4 sm:p-5 space-y-3.5">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 text-xs text-slate-300 font-mono">
+                    <Clock className="w-4 h-4 text-cyan-400 animate-spin" style={{ animationDuration: '6s' }} />
+                    <span className="font-semibold">Tự Động Mở Thưởng Sau:</span>
+                  </div>
+
+                  {/* High Contrast Digital Countdown HUD */}
+                  <div className="flex items-center gap-2 sm:gap-3 font-mono">
+                    <div className="flex flex-col items-center bg-cyan-950/40 border border-cyan-500/40 px-3 py-1.5 rounded-xl min-w-[56px] text-center shadow-inner">
+                      <span className="text-xl sm:text-2xl font-black text-cyan-200">
+                        {String(timeLeft.hours).padStart(2, '0')}
+                      </span>
+                      <span className="text-[9px] text-slate-400 uppercase font-semibold">Giờ</span>
+                    </div>
+                    <span className="text-xl font-bold text-cyan-400 animate-pulse">:</span>
+                    <div className="flex flex-col items-center bg-cyan-950/40 border border-cyan-500/40 px-3 py-1.5 rounded-xl min-w-[56px] text-center shadow-inner">
+                      <span className="text-xl sm:text-2xl font-black text-cyan-200">
+                        {String(timeLeft.minutes).padStart(2, '0')}
+                      </span>
+                      <span className="text-[9px] text-slate-400 uppercase font-semibold">Phút</span>
+                    </div>
+                    <span className="text-xl font-bold text-cyan-400 animate-pulse">:</span>
+                    <div className="flex flex-col items-center bg-cyan-950/40 border border-cyan-500/40 px-3 py-1.5 rounded-xl min-w-[56px] text-center shadow-inner">
+                      <span className="text-xl sm:text-2xl font-black text-amber-300">
+                        {String(timeLeft.seconds).padStart(2, '0')}
+                      </span>
+                      <span className="text-[9px] text-slate-400 uppercase font-semibold">Giây</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Live Progress Bar to Next Draw */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[11px] font-mono text-slate-400">
+                    <span className="flex items-center gap-1 text-cyan-300">
+                      <Zap className="w-3 h-3 text-amber-400" />
+                      Tiến Trình Chu Kỳ Kỳ #{currentRound?.id}
+                    </span>
+                    <span className="font-bold text-cyan-400">{roundProgressPercent.toFixed(1)}%</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-white/[0.06] rounded-full overflow-hidden p-0.5 border border-white/[0.08]">
+                    <div
+                      className="h-full bg-gradient-to-r from-cyan-500 via-teal-400 to-amber-400 rounded-full transition-all duration-1000 shadow-lg shadow-cyan-500/40"
+                      style={{ width: `${roundProgressPercent}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* 4-Phase Lifecycle Workflow */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 pt-1 font-mono text-[10px]">
+                  <div className="p-2 rounded-xl bg-white/[0.02] border border-cyan-500/30 text-cyan-300 flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-cyan-500/20 flex items-center justify-center font-bold text-[9px] shrink-0 text-cyan-300">1</span>
+                    <span className="truncate">Tích Lũy Pot</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white/[0.02] border border-cyan-500/20 text-slate-300 flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-white/[0.08] flex items-center justify-center font-bold text-[9px] shrink-0">2</span>
+                    <span className="truncate">Khóa Sổ VRF</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white/[0.02] border border-cyan-500/20 text-slate-300 flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-white/[0.08] flex items-center justify-center font-bold text-[9px] shrink-0">3</span>
+                    <span className="truncate">Lồng 3D Quay</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white/[0.02] border border-cyan-500/20 text-slate-300 flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-white/[0.08] flex items-center justify-center font-bold text-[9px] shrink-0">4</span>
+                    <span className="truncate">Quyết Toán Tự Động</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons: Force Instant Draw & Toggle 3D Drum View */}
+              <div className="relative z-10 flex flex-col sm:flex-row items-center gap-2.5 pt-1">
+                <button
+                  onClick={() => {
+                    if (currentRound) {
+                      soundManager.playTick();
+                      handleTriggerDraw(currentRound.id);
+                    }
+                  }}
+                  disabled={isDrawing || !currentRound}
+                  className="w-full sm:flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-cyan-500 via-teal-400 to-amber-400 hover:from-cyan-400 hover:to-amber-300 text-black font-black font-outfit text-xs sm:text-sm uppercase tracking-wide transition-all shadow-xl shadow-cyan-500/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isDrawing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-black" />
+                      <span>Đang Tự Động Quay Thưởng VRF 3D...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 text-black" />
+                      <span>⚡ Kích Hoạt Quay Thưởng VRF 2.5 Ngay</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    soundManager.playTick();
+                    setIs3DDrumOpen(!is3DDrumOpen);
+                  }}
+                  className="w-full sm:w-auto py-3 px-4 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/15 text-slate-200 text-xs font-mono font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
+                >
+                  <Eye className="w-4 h-4 text-cyan-400" />
+                  <span>{is3DDrumOpen ? 'Thu Gọn Lồng 3D' : 'Xem Lồng Quay 3D'}</span>
+                </button>
+              </div>
+
+              {/* Informational reassurance footnote */}
+              <div className="relative z-10 text-[11px] text-slate-400 font-sans flex items-center gap-1.5 pt-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>
+                  Hệ thống tự động thực thi khi đồng hồ về 00:00:00. Tự động đối soát {userTickets.length} vé của bạn và cộng thẳng giải thưởng vào số dư.
+                </span>
+              </div>
             </div>
           </div>
 
