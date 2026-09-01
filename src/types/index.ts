@@ -80,6 +80,18 @@ export interface RouteSplit {
   path: string[];
 }
 
+export interface DexComparisonItem {
+  dexName: string;
+  protocol: string;
+  outputAmount: number;
+  outputUsd: number;
+  diffPercent: number;
+  diffUsd: number;
+  estimatedGasUsd: number;
+  netOutputUsd: number;
+  isBest: boolean;
+}
+
 export interface SwapQuote {
   id: string;
   fromToken: Token;
@@ -98,6 +110,11 @@ export interface SwapQuote {
   expiresInSec: number;
   isBestPrice: boolean;
   mevProtected: boolean;
+  dexComparison?: DexComparisonItem[];
+  savingsUsd?: number;
+  savingsPercent?: number;
+  aiRouteInsight?: string;
+  autoSlippageRecommended?: number;
 }
 
 export interface TransactionSimulation {

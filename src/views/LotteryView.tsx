@@ -1193,48 +1193,85 @@ export const LotteryView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Action Buttons: Force Instant Draw & Toggle 3D Drum View */}
-              <div className="relative z-10 flex flex-col sm:flex-row items-center gap-2.5 pt-1">
-                <button
-                  onClick={() => {
-                    if (currentRound) {
-                      soundManager.playTick();
-                      handleTriggerDraw(currentRound.id);
-                    }
-                  }}
-                  disabled={isDrawing || !currentRound}
-                  className="w-full sm:flex-1 py-3 px-4 rounded-2xl bg-gradient-to-r from-cyan-500 via-teal-400 to-amber-400 hover:from-cyan-400 hover:to-amber-300 text-black font-black font-outfit text-xs sm:text-sm uppercase tracking-wide transition-all shadow-xl shadow-cyan-500/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {isDrawing ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin text-black" />
-                      <span>Đang Tự Động Quay Thưởng VRF 3D...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4 text-black" />
-                      <span>⚡ Kích Hoạt Quay Thưởng VRF 2.5 Ngay</span>
-                    </>
-                  )}
-                </button>
+              {/* 100% FULLY AUTOMATED AUTONOMOUS VRF 2.5 DRAW ENGINE & INSTANT SMART SETTLEMENT (NO MANUAL BUTTON REQUIRED) */}
+              <div className="relative z-10 p-4 sm:p-4.5 rounded-2xl bg-gradient-to-r from-cyan-950/60 via-[#0A1622] to-amber-950/40 border border-cyan-500/40 shadow-xl shadow-cyan-950/30 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-500/50 text-cyan-300 shrink-0 shadow-lg shadow-cyan-500/20">
+                      {isDrawing ? (
+                        <RefreshCw className="w-5 h-5 animate-spin text-cyan-300" />
+                      ) : (
+                        <Cpu className="w-5 h-5 text-cyan-300" />
+                      )}
+                      <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+                      </span>
+                    </div>
 
-                <button
-                  onClick={() => {
-                    soundManager.playTick();
-                    setIs3DDrumOpen(!is3DDrumOpen);
-                  }}
-                  className="w-full sm:w-auto py-3 px-4 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/15 text-slate-200 text-xs font-mono font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
-                >
-                  <Eye className="w-4 h-4 text-cyan-400" />
-                  <span>{is3DDrumOpen ? 'Thu Gọn Lồng 3D' : 'Xem Lồng Quay 3D'}</span>
-                </button>
+                    <div className="space-y-0.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs sm:text-sm font-black text-white font-outfit uppercase tracking-wide flex items-center gap-1.5">
+                          <span>{isDrawing ? 'Đang Tự Động Xổ Số & Quyết Toán...' : 'Chế Độ Xổ Số Tự Động 100% (Auto-Pilot)'}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 font-mono text-[10px] font-bold">
+                          <Zap className="w-3 h-3 text-amber-400" /> THÔNG MINH A-Z
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-300 font-sans">
+                        {isDrawing
+                          ? 'Đang lấy kết quả ngẫu nhiên Chainlink VRF 2.5, quay lồng 3D và tự động thanh toán...'
+                          : 'Hệ thống tự động quay số & quyết toán ngay khi kết thúc đếm ngược mà không cần ấn nút.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => {
+                        soundManager.playTick();
+                        setIs3DDrumOpen(!is3DDrumOpen);
+                      }}
+                      className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 text-slate-200 text-xs font-mono font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Eye className="w-4 h-4 text-cyan-400" />
+                      <span>{is3DDrumOpen ? 'Thu Gọn Lồng 3D' : 'Xem Lồng 3D'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3 Intelligent Optimization Metrics */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-white/[0.08] text-[11px] font-mono">
+                  <div className="p-2 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between sm:flex-col sm:items-start gap-1">
+                    <span className="text-slate-400 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Đối Soát Tự Động:
+                    </span>
+                    <span className="text-emerald-300 font-bold">
+                      {userTickets.length > 0 ? `${userTickets.length} Vé Sẵn Sàng` : '0 Vé Đang Chờ'}
+                    </span>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between sm:flex-col sm:items-start gap-1">
+                    <span className="text-slate-400 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Tối Ưu Giải Thưởng:
+                    </span>
+                    <span className="text-amber-300 font-bold">Quyết Toán Tức Thì (Instant)</span>
+                  </div>
+
+                  <div className="p-2 rounded-xl bg-black/40 border border-white/[0.06] flex items-center justify-between sm:flex-col sm:items-start gap-1">
+                    <span className="text-slate-400 flex items-center gap-1">
+                      <Radio className="w-3.5 h-3.5 text-cyan-400" /> Bảo Mật Thuật Toán:
+                    </span>
+                    <span className="text-cyan-300 font-bold">VRF 2.5 Keccak256</span>
+                  </div>
+                </div>
               </div>
 
               {/* Informational reassurance footnote */}
-              <div className="relative z-10 text-[11px] text-slate-400 font-sans flex items-center gap-1.5 pt-1">
+              <div className="relative z-10 text-[11px] text-slate-400 font-sans flex items-center gap-1.5 pt-0.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 <span>
-                  Hệ thống tự động thực thi khi đồng hồ về 00:00:00. Tự động đối soát {userTickets.length} vé của bạn và cộng thẳng giải thưởng vào số dư.
+                  Hệ thống tự động vận hành liên tục 24/7. Giải thưởng trúng sẽ được cộng trực tiếp vào ví có thể rút bất kỳ lúc nào.
                 </span>
               </div>
             </div>

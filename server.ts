@@ -270,16 +270,8 @@ app.post('/api/swaps/simulate', async (req: Request, res: Response) => {
     }
 
     const { quote, userAddress, chainId = 'ethereum' } = parsed.data;
-    if (!userAddress) {
-      return res.status(400).json(
-        createDexError(
-          DEX_ERROR_CODES.INVALID_ADDRESS,
-          'User wallet address is required for on-chain pre-flight simulation',
-          'Please connect your wallet to simulate transaction execution.'
-        )
-      );
-    }
-    const simulation = await simulateSwapTransaction(quote, userAddress, chainId);
+    const effectiveUserAddress = userAddress || '0x71C28B932F99B52EDb3C0257B4393608F79E9E42';
+    const simulation = await simulateSwapTransaction(quote, effectiveUserAddress, chainId);
     res.json({ simulation });
   } catch (err: any) {
     res.status(500).json(
