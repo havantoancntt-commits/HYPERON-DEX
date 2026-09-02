@@ -51,6 +51,20 @@ export const SwapView: React.FC = () => {
   const [quoteError, setQuoteError] = useState<string | null>(null);
 
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const simulateControllerRef = useRef<AbortController | null>(null);
+
+  // Clean up all pending requests on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      if (simulateControllerRef.current) {
+        simulateControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   // Helper to determine optimal display decimals based on token type and value
   const getTokenDisplayDecimals = useCallback((tok: Token) => {
@@ -72,7 +86,7 @@ export const SwapView: React.FC = () => {
     return val.toFixed(dec);
   }, [getTokenDisplayDecimals]);
 
-  // Fetch real quote from server Smart Router (debounced)
+  // Fetch real quote from server Smart Router (debounced with AbortController)
   const fetchQuote = useCallback(async (amountStr: string, fTok: Token, tTok: Token, currentSlippage: number) => {
     const num = parseFloat(amountStr);
     if (isNaN(num) || num <= 0) {
@@ -80,6 +94,13 @@ export const SwapView: React.FC = () => {
       setQuoteError(null);
       return;
     }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const signal = controller.signal;
 
     setIsFetchingQuote(true);
     setQuoteError(null);
@@ -94,9 +115,13 @@ export const SwapView: React.FC = () => {
           slippage: currentSlippage,
           chainId,
         }),
+        signal,
       });
 
+      if (signal.aborted) return;
       const data = await res.json();
+      if (signal.aborted) return;
+
       if (res.ok && data.quote) {
         setQuote(data.quote);
         setQuoteError(null);
@@ -104,11 +129,14 @@ export const SwapView: React.FC = () => {
         setQuote(null);
         setQuoteError(data?.userMessage || data?.message || 'Không tìm thấy thanh khoản khả dụng trên mạng lưới on-chain.');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      if ((err as Error)?.name === 'AbortError' || signal.aborted) return;
       setQuote(null);
-      setQuoteError(err?.message || 'Lỗi kết nối tới router on-chain.');
+      setQuoteError((err as Error)?.message || 'Lỗi kết nối tới router on-chain.');
     } finally {
-      setIsFetchingQuote(false);
+      if (!signal.aborted) {
+        setIsFetchingQuote(false);
+      }
     }
   }, [chainId]);
 
@@ -132,6 +160,9 @@ export const SwapView: React.FC = () => {
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
       }
     };
   }, [fromSymbol, toSymbol, fromAmount, slippage, fromToken.symbol, toToken.symbol, fetchQuote]);
@@ -168,6 +199,13 @@ export const SwapView: React.FC = () => {
       return;
     }
 
+    if (simulateControllerRef.current) {
+      simulateControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    simulateControllerRef.current = controller;
+    const signal = controller.signal;
+
     setIsSwapping(true);
     setActiveQuote(quote);
 
@@ -180,8 +218,12 @@ export const SwapView: React.FC = () => {
           userAddress: address,
           chainId: chainId || 'ethereum',
         }),
+        signal,
       });
+      if (signal.aborted) return;
       const data = await res.json();
+      if (signal.aborted) return;
+
       if (res.ok && data.simulation) {
         setActiveSimulation(data.simulation);
       } else {
@@ -191,14 +233,17 @@ export const SwapView: React.FC = () => {
           type: 'error',
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      if ((err as Error)?.name === 'AbortError' || signal.aborted) return;
       addToast({
         title: 'Lỗi Mô Phỏng Giao Dịch',
-        message: err?.message || 'Không thể kết nối đến RPC sandbox node.',
+        message: (err as Error)?.message || 'Không thể kết nối đến RPC sandbox node.',
         type: 'error',
       });
     } finally {
-      setIsSwapping(false);
+      if (!signal.aborted) {
+        setIsSwapping(false);
+      }
     }
   };
 

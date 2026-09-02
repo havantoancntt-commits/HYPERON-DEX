@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
 import { VERIFIED_TOKENS } from '../lib/constants';
@@ -111,13 +111,18 @@ export const TradeTerminalView: React.FC = () => {
     }
   ]);
 
+  const prevSymbolRef = useRef<string>('');
+
   // Synchronize limit price input when active token changes
   useEffect(() => {
-    setLimitPrice(activePair.priceUsd.toString());
-    setStopPrice((activePair.priceUsd * 0.95).toFixed(activePair.priceUsd < 10 ? 4 : 2));
-    setTakeProfit((activePair.priceUsd * 1.08).toFixed(activePair.priceUsd < 10 ? 4 : 2));
-    setStopLoss((activePair.priceUsd * 0.96).toFixed(activePair.priceUsd < 10 ? 4 : 2));
-  }, [activeSymbol]);
+    if (prevSymbolRef.current !== activeSymbol && activePair.priceUsd > 0) {
+      prevSymbolRef.current = activeSymbol;
+      setLimitPrice(activePair.priceUsd.toString());
+      setStopPrice((activePair.priceUsd * 0.95).toFixed(activePair.priceUsd < 10 ? 4 : 2));
+      setTakeProfit((activePair.priceUsd * 1.08).toFixed(activePair.priceUsd < 10 ? 4 : 2));
+      setStopLoss((activePair.priceUsd * 0.96).toFixed(activePair.priceUsd < 10 ? 4 : 2));
+    }
+  }, [activeSymbol, activePair.priceUsd]);
 
   // Update positions with live mark price
   useEffect(() => {
@@ -142,58 +147,86 @@ export const TradeTerminalView: React.FC = () => {
 
   // Fetch real-time OHLCV candles
   useEffect(() => {
+    let activeController = new AbortController();
+
     const fetchCandles = async () => {
+      activeController.abort();
+      activeController = new AbortController();
+      const signal = activeController.signal;
+
       try {
-        const res = await fetch(`/api/prices/history?symbol=${activeSymbol}&timeframe=${timeframe}&count=34`);
+        const res = await fetch(`/api/prices/history?symbol=${activeSymbol}&timeframe=${timeframe}&count=34`, {
+          signal,
+        });
+        if (signal.aborted) return;
         if (res.ok) {
           const data = await res.json();
+          if (signal.aborted) return;
           if (data.candles) {
             setCandles(data.candles);
           }
         }
-      } catch (err) {
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError' || signal.aborted) return;
         console.warn('Failed to fetch candlestick history:', err);
       }
     };
 
     fetchCandles();
     const interval = setInterval(fetchCandles, 3500);
-    return () => clearInterval(interval);
+    return () => {
+      activeController.abort();
+      clearInterval(interval);
+    };
   }, [activeSymbol, timeframe]);
 
   // Fetch live orderbook & trades from backend
   useEffect(() => {
+    let activeController = new AbortController();
+
     const fetchMarketData = async () => {
+      activeController.abort();
+      activeController = new AbortController();
+      const signal = activeController.signal;
+
       try {
         const [obRes, tradesRes] = await Promise.all([
-          fetch(`/api/markets/orderbook?symbol=${activeSymbol}`),
-          fetch(`/api/markets/trades?symbol=${activeSymbol}`),
+          fetch(`/api/markets/orderbook?symbol=${activeSymbol}`, { signal }),
+          fetch(`/api/markets/trades?symbol=${activeSymbol}`, { signal }),
         ]);
+        if (signal.aborted) return;
+
         if (obRes.ok) {
           const obData = await obRes.json();
-          if (obData && Array.isArray(obData.bids) && Array.isArray(obData.asks)) {
+          if (!signal.aborted && obData && Array.isArray(obData.bids) && Array.isArray(obData.asks)) {
             setOrderBook(obData);
           }
         }
         if (tradesRes.ok) {
           const tradesData = await tradesRes.json();
-          const tradesList = Array.isArray(tradesData)
-            ? tradesData
-            : Array.isArray(tradesData?.trades)
-            ? tradesData.trades
-            : Array.isArray(tradesData?.trades?.trades)
-            ? tradesData.trades.trades
-            : [];
-          setRecentTrades(tradesList);
+          if (!signal.aborted) {
+            const tradesList = Array.isArray(tradesData)
+              ? tradesData
+              : Array.isArray(tradesData?.trades)
+              ? tradesData.trades
+              : Array.isArray(tradesData?.trades?.trades)
+              ? tradesData.trades.trades
+              : [];
+            setRecentTrades(tradesList);
+          }
         }
-      } catch (err) {
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError' || signal.aborted) return;
         console.warn('Failed to fetch market terminal data:', err);
       }
     };
 
     fetchMarketData();
     const interval = setInterval(fetchMarketData, 3000);
-    return () => clearInterval(interval);
+    return () => {
+      activeController.abort();
+      clearInterval(interval);
+    };
   }, [activeSymbol]);
 
   const handlePlaceOrder = async () => {

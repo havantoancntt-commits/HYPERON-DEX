@@ -1,10 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useExchange } from '../context/ExchangeContext';
 import { useWallet } from '../context/WalletContext';
 import { AITradingSignal } from '../types';
 import { formatCurrency, formatPercent } from '../lib/utils';
 import { TokenLogo } from '../components/CryptoIcon';
 import { EcosystemFlowBanner } from '../components/EcosystemFlowBanner';
+
+interface AIMetaInfo {
+  totalSignals?: number;
+  averageWinRate: number;
+  profitFactor: number;
+  methodology: string;
+  verifiedModel: string;
+  timestamp?: number;
+}
 import {
   Sparkles,
   Zap,
@@ -42,7 +51,7 @@ export const AISignalsView: React.FC = () => {
   const { isConnected, connectWallet } = useWallet();
 
   const [signals, setSignals] = useState<AITradingSignal[]>([]);
-  const [metaInfo, setMetaInfo] = useState<any>({
+  const [metaInfo, setMetaInfo] = useState<AIMetaInfo>({
     averageWinRate: 68.5,
     profitFactor: 2.58,
     methodology: 'Historical Backtest (0.1% Slippage + 0.3% DEX Fee deduction)',
@@ -56,30 +65,52 @@ export const AISignalsView: React.FC = () => {
   const [selectedSignalModal, setSelectedSignalModal] = useState<AITradingSignal | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  // Fetch Signals from Server
-  const fetchSignals = async () => {
+  // Fetch Signals from Server with AbortController support
+  const fetchSignals = useCallback(async (signal?: AbortSignal) => {
     try {
       setLoading(true);
-      const res = await fetch('/api/ai/signals');
+      const res = await fetch('/api/ai/signals', { signal });
+      if (signal?.aborted) return;
       if (res.ok) {
         const data = await res.json();
+        if (signal?.aborted) return;
         setSignals(data.signals || []);
         if (data.meta) {
           setMetaInfo(data.meta);
         }
       }
-    } catch (err) {
+    } catch (err: unknown) {
+      if ((err as Error)?.name === 'AbortError' || signal?.aborted) return;
       console.error('Error fetching signals:', err);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  };
+  }, []);
+
+  // Use a ref to hold the latest function reference to prevent stale closures in setInterval
+  const fetchSignalsRef = useRef(fetchSignals);
+  useEffect(() => {
+    fetchSignalsRef.current = fetchSignals;
+  }, [fetchSignals]);
 
   useEffect(() => {
-    fetchSignals();
-    const interval = setInterval(fetchSignals, 20000);
-    return () => clearInterval(interval);
+    let activeController = new AbortController();
+
+    fetchSignalsRef.current(activeController.signal);
+
+    const interval = setInterval(() => {
+      activeController.abort();
+      activeController = new AbortController();
+      fetchSignalsRef.current(activeController.signal);
+    }, 20000);
+
+    return () => {
+      activeController.abort();
+      clearInterval(interval);
+    };
   }, []);
 
   const handleManualRefresh = () => {

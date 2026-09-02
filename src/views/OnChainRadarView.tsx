@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useExchange } from '../context/ExchangeContext';
 import { OnChainWhaleTransaction } from '../types';
 import { formatCurrency } from '../lib/utils';
@@ -29,25 +29,47 @@ export const OnChainRadarView: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [filterSentiment, setFilterSentiment] = useState<string>('ALL');
 
-  const fetchWhaleData = async () => {
+  const fetchWhaleData = useCallback(async (signal?: AbortSignal) => {
     try {
       setLoading(true);
-      const res = await fetch('/api/onchain/whales');
+      const res = await fetch('/api/onchain/whales', { signal });
+      if (signal?.aborted) return;
       if (res.ok) {
         const data = await res.json();
+        if (signal?.aborted) return;
         setTransactions(data.transactions || []);
       }
-    } catch (err) {
+    } catch (err: unknown) {
+      if ((err as Error)?.name === 'AbortError' || signal?.aborted) return;
       console.error('Error fetching whale data:', err);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
-  };
+  }, []);
+
+  // Use a ref to store latest callback to prevent stale closures in setInterval
+  const fetchWhaleDataRef = useRef(fetchWhaleData);
+  useEffect(() => {
+    fetchWhaleDataRef.current = fetchWhaleData;
+  }, [fetchWhaleData]);
 
   useEffect(() => {
-    fetchWhaleData();
-    const interval = setInterval(fetchWhaleData, 20000);
-    return () => clearInterval(interval);
+    let activeController = new AbortController();
+
+    fetchWhaleDataRef.current(activeController.signal);
+
+    const interval = setInterval(() => {
+      activeController.abort();
+      activeController = new AbortController();
+      fetchWhaleDataRef.current(activeController.signal);
+    }, 20000);
+
+    return () => {
+      activeController.abort();
+      clearInterval(interval);
+    };
   }, []);
 
   const filteredTxs = transactions.filter((tx) => {
