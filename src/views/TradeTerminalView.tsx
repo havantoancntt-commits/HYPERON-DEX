@@ -169,10 +169,23 @@ export const TradeTerminalView: React.FC = () => {
           fetch(`/api/markets/orderbook?symbol=${activeSymbol}`),
           fetch(`/api/markets/trades?symbol=${activeSymbol}`),
         ]);
-        const obData = await obRes.json();
-        const tradesData = await tradesRes.json();
-        setOrderBook(obData);
-        setRecentTrades(tradesData.trades || []);
+        if (obRes.ok) {
+          const obData = await obRes.json();
+          if (obData && Array.isArray(obData.bids) && Array.isArray(obData.asks)) {
+            setOrderBook(obData);
+          }
+        }
+        if (tradesRes.ok) {
+          const tradesData = await tradesRes.json();
+          const tradesList = Array.isArray(tradesData)
+            ? tradesData
+            : Array.isArray(tradesData?.trades)
+            ? tradesData.trades
+            : Array.isArray(tradesData?.trades?.trades)
+            ? tradesData.trades.trades
+            : [];
+          setRecentTrades(tradesList);
+        }
       } catch (err) {
         console.warn('Failed to fetch market terminal data:', err);
       }
@@ -522,7 +535,7 @@ export const TradeTerminalView: React.FC = () => {
 
           {/* Asks (Sells - Red) */}
           <div className="space-y-1 py-1">
-            {orderBook?.asks.slice(0, 5).reverse().map((ask, i) => (
+            {(orderBook?.asks || []).slice(0, 5).reverse().map((ask, i) => (
               <div key={i} className="flex justify-between text-[11px] relative py-0.5">
                 <span className="text-rose-400 font-bold">${ask.price.toFixed(activePair.priceUsd < 10 ? 4 : 2)}</span>
                 <span className="text-slate-300 font-medium">{ask.amount.toFixed(activePair.priceUsd > 100 ? 3 : 1)}</span>
@@ -542,7 +555,7 @@ export const TradeTerminalView: React.FC = () => {
 
           {/* Bids (Buys - Green) */}
           <div className="space-y-1 py-1">
-            {orderBook?.bids.slice(0, 5).map((bid, i) => (
+            {(orderBook?.bids || []).slice(0, 5).map((bid, i) => (
               <div key={i} className="flex justify-between text-[11px] relative py-0.5">
                 <span className="text-emerald-400 font-bold">${bid.price.toFixed(activePair.priceUsd < 10 ? 4 : 2)}</span>
                 <span className="text-slate-300 font-medium">{bid.amount.toFixed(activePair.priceUsd > 100 ? 3 : 1)}</span>
@@ -562,7 +575,7 @@ export const TradeTerminalView: React.FC = () => {
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> FEED LIVE
               </span>
             </div>
-            {recentTrades.slice(0, 4).map((tr) => (
+            {(Array.isArray(recentTrades) ? recentTrades : []).slice(0, 4).map((tr) => (
               <div key={tr.id} className="flex items-center justify-between text-[10px]">
                 <span className={`font-bold ${tr.type === 'buy' ? 'text-emerald-400' : 'text-rose-400'}`}>
                   ${tr.price.toFixed(activePair.priceUsd < 10 ? 4 : 2)}

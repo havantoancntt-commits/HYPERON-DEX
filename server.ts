@@ -207,8 +207,8 @@ app.get('/api/markets/orderbook', async (req: Request, res: Response) => {
 
 app.get('/api/markets/trades', async (req: Request, res: Response) => {
   const symbol = (req.query.symbol as string) || 'ETH';
-  const trades = await fetchLiveTrades(symbol);
-  res.json({ trades });
+  const tradesResponse = await fetchLiveTrades(symbol);
+  res.json(tradesResponse);
 });
 
 app.get('/api/markets/indicators', async (req: Request, res: Response) => {
