@@ -64,8 +64,16 @@ export interface AMMQuoteResult {
   feePaidFormatted: string;
   gasEstimatedUnits: number;
   dexAdapterName: string;
-  status: 'AVAILABLE' | 'NO_LIQUIDITY' | 'UNSUPPORTED_POOL' | 'UNAVAILABLE';
+  status: 'AVAILABLE' | 'NO_LIQUIDITY' | 'UNSUPPORTED_POOL' | 'UNAVAILABLE' | 'INSUFFICIENT_DATA';
 }
+
+export const AMM_GAS_CONFIG = {
+  UNISWAP_V2_GAS: 110_000,
+  UNISWAP_V3_GAS: 135_000,
+  CURVE_GAS: 145_000,
+  BALANCER_GAS: 155_000,
+  SPLIT_EXECUTION_GAS: 185_000,
+} as const;
 
 export interface IDexAdapter {
   name: string;
@@ -145,7 +153,7 @@ export class UniswapV2Adapter implements IDexAdapter {
       priceImpactPercent,
       feePaidRaw,
       feePaidFormatted: formatUnits(feePaidRaw, decimalsIn),
-      gasEstimatedUnits: 110000,
+      gasEstimatedUnits: AMM_GAS_CONFIG.UNISWAP_V2_GAS,
       dexAdapterName: this.name,
       status: 'AVAILABLE',
     };
@@ -163,7 +171,7 @@ export class UniswapV2Adapter implements IDexAdapter {
       priceImpactPercent: 0,
       feePaidRaw: 0n,
       feePaidFormatted: '0.0',
-      gasEstimatedUnits: 110000,
+      gasEstimatedUnits: AMM_GAS_CONFIG.UNISWAP_V2_GAS,
       dexAdapterName: this.name,
       status: 'NO_LIQUIDITY',
     };
@@ -206,7 +214,7 @@ export class UniswapV3Adapter implements IDexAdapter {
         priceImpactPercent: 0,
         feePaidRaw: 0n,
         feePaidFormatted: '0.0',
-        gasEstimatedUnits: 130000,
+        gasEstimatedUnits: AMM_GAS_CONFIG.UNISWAP_V3_GAS,
         dexAdapterName: `${this.name} (${(poolState?.feeTierBps ?? 5) / 100}%)`,
         status: 'NO_LIQUIDITY',
       };
@@ -284,68 +292,40 @@ export class UniswapV3Adapter implements IDexAdapter {
       priceImpactPercent,
       feePaidRaw,
       feePaidFormatted: formatUnits(feePaidRaw, decimalsIn),
-      gasEstimatedUnits: 135000,
+      gasEstimatedUnits: AMM_GAS_CONFIG.UNISWAP_V3_GAS,
       dexAdapterName: `${this.name} (${(poolState.feeTierBps || 5) / 100}%)`,
       status: 'AVAILABLE',
     };
   }
 
   /**
-   * Derive V3 state from pool reserves and tick for backward-compatible interface
+   * Backward-compatible interface.
+   * STRICT COMPLIANCE: Concentrated liquidity CANNOT be derived from standard V2 reserves.
+   * Uniswap V3 uses position-based tick ranges and active liquidity L.
+   * If V3PoolState (sqrtPriceX96 & liquidity) is missing, return INSUFFICIENT_DATA / UNAVAILABLE.
    */
   computeQuote(
     amountInRaw: bigint,
     decimalsIn: number,
     decimalsOut: number,
-    reserves?: PoolReserves,
+    _reserves?: PoolReserves,
     feeTierBps: number = 5
   ): AMMQuoteResult {
-    if (!reserves || reserves.reserve0 <= 0n || reserves.reserve1 <= 0n || amountInRaw <= 0n) {
-      return {
-        amountInRaw,
-        amountOutRaw: 0n,
-        amountInFormatted: formatUnits(amountInRaw, decimalsIn),
-        amountOutFormatted: '0.0',
-        spotPriceBefore: 0,
-        executionPrice: 0,
-        priceImpactBps: 0,
-        priceImpactPercent: 0,
-        feePaidRaw: 0n,
-        feePaidFormatted: '0.0',
-        gasEstimatedUnits: 135000,
-        dexAdapterName: `${this.name} (${feeTierBps / 100}%)`,
-        status: 'NO_LIQUIDITY',
-      };
-    }
-
-    // Exact geometric mean sqrtPriceX96 = sqrt(reserve1 / reserve0) * 2^96
-    // Using integer integer square root
-    const r0 = reserves.reserve0;
-    const r1 = reserves.reserve1;
-    const scaleFactorIn = 10n ** BigInt(decimalsIn);
-    const scaleFactorOut = 10n ** BigInt(decimalsOut);
-
-    // normalized ratio = (r1 / scaleFactorOut) / (r0 / scaleFactorIn)
-    // ratioScaled = (r1 * scaleFactorIn * Q96 * Q96) / (r0 * scaleFactorOut)
-    const ratioScaled = (r1 * scaleFactorIn * Q96 * Q96) / (r0 * scaleFactorOut);
-    const sqrtPriceX96 = sqrtBigInt(ratioScaled);
-
-    // Exact liquidity L = sqrt(reserve0 * reserve1)
-    const liquidity = sqrtBigInt(r0 * r1);
-
-    const v3State: V3PoolState = {
-      sqrtPriceX96: sqrtPriceX96 > 0n ? sqrtPriceX96 : Q96,
-      liquidity: liquidity > 0n ? liquidity : 1000n * ONE_ETHER,
-      tick: 0,
-      tickSpacing: feeTierBps === 5 ? 10 : feeTierBps === 30 ? 60 : 200,
-      feeTierBps,
-      token0Decimals: decimalsIn,
-      token1Decimals: decimalsOut,
-      token0Symbol: reserves.token0Symbol,
-      token1Symbol: reserves.token1Symbol,
+    return {
+      amountInRaw,
+      amountOutRaw: 0n,
+      amountInFormatted: formatUnits(amountInRaw, decimalsIn),
+      amountOutFormatted: '0.0',
+      spotPriceBefore: 0,
+      executionPrice: 0,
+      priceImpactBps: 0,
+      priceImpactPercent: 0,
+      feePaidRaw: 0n,
+      feePaidFormatted: '0.0',
+      gasEstimatedUnits: 0,
+      dexAdapterName: `${this.name} (${feeTierBps / 100}%)`,
+      status: 'INSUFFICIENT_DATA',
     };
-
-    return this.computeQuoteWithV3State(amountInRaw, decimalsIn, decimalsOut, v3State, true);
   }
 }
 
@@ -512,7 +492,7 @@ export class CurveAdapter implements IDexAdapter {
         priceImpactPercent: 0,
         feePaidRaw: 0n,
         feePaidFormatted: '0.0',
-        gasEstimatedUnits: 160000,
+        gasEstimatedUnits: AMM_GAS_CONFIG.CURVE_GAS,
         dexAdapterName: this.name,
         status: 'NO_LIQUIDITY',
       };
@@ -547,7 +527,7 @@ export class CurveAdapter implements IDexAdapter {
       priceImpactPercent: Number(priceImpactPercent.toFixed(4)),
       feePaidRaw,
       feePaidFormatted: formatUnits(feePaidRaw, decimalsIn),
-      gasEstimatedUnits: 160000,
+      gasEstimatedUnits: AMM_GAS_CONFIG.CURVE_GAS,
       dexAdapterName: this.name,
       status: 'AVAILABLE',
     };
@@ -666,7 +646,7 @@ export class BalancerAdapter implements IDexAdapter {
       priceImpactPercent,
       feePaidRaw,
       feePaidFormatted: formatUnits(feePaidRaw, decimalsIn),
-      gasEstimatedUnits: 175000,
+      gasEstimatedUnits: AMM_GAS_CONFIG.BALANCER_GAS,
       dexAdapterName: `${this.name} ${weightIn}/${weightOut}`,
       status: 'AVAILABLE',
     };

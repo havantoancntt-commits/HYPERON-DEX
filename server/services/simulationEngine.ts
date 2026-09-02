@@ -149,27 +149,94 @@ export function decodeRevertReason(revertData: string | undefined | null): strin
   }
 }
 
+export interface SimulationOptions {
+  deadline?: bigint | number;
+  fee?: number;
+  routerAddress?: Address;
+}
+
+export function extractFeeTier(quote: SwapQuote, options?: SimulationOptions): number {
+  if (options?.fee !== undefined) return options.fee;
+  if ((quote as any).feeTierBps !== undefined) {
+    return (quote as any).feeTierBps * 100;
+  }
+  if ((quote as any).feeTier !== undefined) {
+    return (quote as any).feeTier;
+  }
+  const splitDexName = quote.routeSplits?.[0]?.dexName || '';
+  const match = splitDexName.match(/(\d+(?:\.\d+)?)%/);
+  if (match) {
+    const pct = parseFloat(match[1]);
+    return Math.round(pct * 10000);
+  }
+  const primarySource = quote.sources?.find((s) => s.sharePercent > 0) || quote.sources?.[0];
+  if (primarySource?.poolFeePercent !== undefined) {
+    return Math.round(primarySource.poolFeePercent * 10000);
+  }
+  return 3000;
+}
+
+export function resolveSimulationRouter(
+  quote: SwapQuote,
+  routerConfig: ReturnType<typeof getRouterConfig>,
+  options?: SimulationOptions
+): {
+  routerAddress: Address;
+  protocol: 'v3' | 'v2';
+  fee: number;
+} {
+  if (options?.routerAddress) {
+    return {
+      routerAddress: options.routerAddress,
+      protocol: 'v3',
+      fee: extractFeeTier(quote, options),
+    };
+  }
+
+  const protocolHint = (
+    (quote as any).protocol ||
+    quote.routeSplits?.[0]?.dexName ||
+    ''
+  ).toLowerCase();
+
+  const fee = extractFeeTier(quote, options);
+
+  if (protocolHint.includes('v2') || protocolHint.includes('sushiswap')) {
+    const v2Router = (routerConfig.uniswapV2Router ||
+      routerConfig.universalRouter ||
+      '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D') as Address;
+    return { routerAddress: v2Router, protocol: 'v2', fee };
+  }
+
+  const v3Router = (routerConfig.uniswapV3Router ||
+    routerConfig.universalRouter ||
+    '0xE592427A0AEce92De3Edee1F18E0157C05861564') as Address;
+  return { routerAddress: v3Router, protocol: 'v3', fee };
+}
+
 export class SimulationEngine {
   /**
    * Executes genuine on-chain simulation via viem client.call() with decoded revert reasons.
    */
   async simulateSwap(
     quote: SwapQuote,
-    userAddress: string,
-    chainId: string = 'ethereum'
+    userAddress?: string,
+    chainId: string = 'ethereum',
+    options?: SimulationOptions
   ): Promise<TransactionSimulation> {
     if (!userAddress || !userAddress.startsWith('0x') || userAddress.length !== 42) {
-      throw new Error('INVALID_CALLER_ADDRESS: A valid EVM wallet address is required for simulation.');
+      throw new Error('USER_ADDRESS_REQUIRED: A valid EVM wallet address is required for simulation.');
     }
 
     const routerConfig = getRouterConfig(chainId);
     const verifiedChain = routerConfig.chainId;
     const { client } = getChainClient(verifiedChain);
 
-    const routerSpender = (routerConfig.uniswapV3Router ||
-      routerConfig.universalRouter ||
-      routerConfig.uniswapV2Router ||
-      '0xE592427A0AEce92De3Edee1F18E0157C05861564') as Address;
+    const { routerAddress: routerSpender, protocol, fee } = resolveSimulationRouter(
+      quote,
+      routerConfig,
+      options
+    );
 
     const rpcBlock = await getLiveBlockNumber(verifiedChain);
     const currentBlock = rpcBlock.data ? Number(rpcBlock.data) : 0;
@@ -226,30 +293,48 @@ export class SimulationEngine {
       }
     }
 
-    // 3. Construct real calldata for eth_call
+    // 3. Construct real calldata for eth_call dynamically
     let calldata: Hex = '0x';
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200); // 20 minutes
+    const deadline = options?.deadline
+      ? BigInt(options.deadline)
+      : BigInt(Math.floor(Date.now() / 1000) + 1200);
 
     try {
       const tokenInAddr = (isNativeIn ? routerConfig.wrappedNativeAddress : quote.fromToken.address) as Address;
       const tokenOutAddr = (quote.toToken.symbol === nativeSymbol ? routerConfig.wrappedNativeAddress : quote.toToken.address) as Address;
 
-      calldata = encodeFunctionData({
-        abi: UNISWAP_V3_ROUTER_ABI,
-        functionName: 'exactInputSingle',
-        args: [
-          {
-            tokenIn: tokenInAddr,
-            tokenOut: tokenOutAddr,
-            fee: 500, // 0.05%
-            recipient: userAddress as Address,
-            deadline,
-            amountIn: amountInRaw,
-            amountOutMinimum: amountOutMinRaw,
-            sqrtPriceLimitX96: 0n,
-          },
-        ],
-      });
+      if (protocol === 'v2') {
+        if (isNativeIn) {
+          calldata = encodeFunctionData({
+            abi: UNISWAP_V2_ROUTER_ABI,
+            functionName: 'swapExactETHForTokens',
+            args: [amountOutMinRaw, [tokenInAddr, tokenOutAddr], userAddress as Address, deadline],
+          });
+        } else {
+          calldata = encodeFunctionData({
+            abi: UNISWAP_V2_ROUTER_ABI,
+            functionName: 'swapExactTokensForTokens',
+            args: [amountInRaw, amountOutMinRaw, [tokenInAddr, tokenOutAddr], userAddress as Address, deadline],
+          });
+        }
+      } else {
+        calldata = encodeFunctionData({
+          abi: UNISWAP_V3_ROUTER_ABI,
+          functionName: 'exactInputSingle',
+          args: [
+            {
+              tokenIn: tokenInAddr,
+              tokenOut: tokenOutAddr,
+              fee,
+              recipient: userAddress as Address,
+              deadline,
+              amountIn: amountInRaw,
+              amountOutMinimum: amountOutMinRaw,
+              sqrtPriceLimitX96: 0n,
+            },
+          ],
+        });
+      }
     } catch {
       calldata = '0x';
     }
@@ -313,11 +398,18 @@ export class SimulationEngine {
 
     const gasCostUsd = nativePriceUsd > 0 ? Number(((gasEstimated * gasGwei * 1e-9) * nativePriceUsd).toFixed(2)) : 0;
     const overallSuccess = ethCallSuccess && hasSufficientBalance && isAllowanceApproved;
+    const status = ethCallSuccess
+      ? 'SUCCESS'
+      : hasSufficientBalance && isAllowanceApproved
+      ? 'REVERTED'
+      : 'FAILED';
 
     const simulationLogs = [
       `[SIMULATION] Network: ${verifiedChain.toUpperCase()} (Block #${currentBlock})`,
-      `[ROUTER] Target Contract: ${routerSpender}`,
+      `[ROUTER] Target Contract: ${routerSpender} (${protocol.toUpperCase()})`,
       `[ACCOUNT] Sender: ${userAddress}`,
+      `[FEE TIER] ${fee} (${(fee / 10000).toFixed(2)}%)`,
+      `[DEADLINE] Epoch: ${deadline.toString()}`,
       `[BALANCE CHECK] On-Chain Balance: ${balanceFormatted} ${quote.fromToken.symbol} (${hasSufficientBalance ? 'PASS' : 'FAIL'})`,
       `[ALLOWANCE CHECK] Approved: ${isAllowanceApproved ? 'YES' : 'NO'} (Current: ${allowanceFormatted})`,
       `[ETH_CALL] Calldata: ${calldata.substring(0, 20)}... (${calldata.length} bytes)`,
@@ -328,11 +420,13 @@ export class SimulationEngine {
 
     return {
       success: overallSuccess,
+      status,
       intentId: `INTENT-${Date.now()}`,
       correlationId: `CORR-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
       fromAddress: userAddress,
       toAddress: routerSpender,
       gasEstimated,
+      gasEstimatedUnits: gasEstimated,
       gasCostUsd,
       balanceBefore: parseFloat(balanceFormatted) || 0,
       balanceAfter: Math.max(0, (parseFloat(balanceFormatted) || 0) - quote.fromAmount),

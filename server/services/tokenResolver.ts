@@ -224,31 +224,6 @@ export class CanonicalTokenResolver {
         );
       }
 
-      // If not on target chain, check if ethereum has unique match
-      if (chainId !== 'ethereum') {
-        const ethMatches = VERIFIED_TOKENS.filter(
-          (t) => t.symbol.toUpperCase() === symUpper && t.chainId === 'ethereum'
-        );
-        if (ethMatches.length === 1) {
-          const token = ethMatches[0];
-          const livePrice = getUsdPrice(token.symbol) ?? token.priceUsd ?? null;
-          return {
-            chainId: 'ethereum',
-            address: token.address ? getAddress(token.address) : '0x0000000000000000000000000000000000000000',
-            symbol: token.symbol,
-            name: token.name,
-            decimals: token.decimals,
-            source: 'REGISTRY',
-            verified: true,
-            timestamp: now,
-            priceUsd: livePrice,
-            category: token.category,
-            isNative: token.isNative,
-            logoUrl: token.logoUrl,
-          };
-        }
-      }
-
       throw new Error(`TOKEN_NOT_FOUND: No verified token found with symbol "${rawSymbol}" on ${chainId}.`);
     }
 

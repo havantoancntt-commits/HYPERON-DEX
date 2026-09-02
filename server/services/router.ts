@@ -52,10 +52,57 @@ const uniV3 = new UniswapV3Adapter();
 const curve = new CurveAdapter();
 const balancer = new BalancerAdapter();
 
+export const ROUTER_GAS_CONFIG = {
+  UNISWAP_V2_BASE_GAS: 110_000,
+  UNISWAP_V3_BASE_GAS: 135_000,
+  CURVE_BASE_GAS: 145_000,
+  BALANCER_BASE_GAS: 155_000,
+  SPLIT_EXECUTION_GAS: 185_000,
+} as const;
+
+/**
+ * Converts gas consumption units to tokenOut raw units (BigInt) using integer arithmetic.
+ */
+export function calculateGasCostInTokenOutRaw(
+  gasUnits: number,
+  gasGwei: number,
+  nativePriceUsd: number,
+  tokenOutPriceUsd: number,
+  decimalsOut: number,
+  isNativeOut: boolean = false
+): bigint {
+  if (gasUnits <= 0 || gasGwei <= 0) return 0n;
+
+  // 1 Gwei = 10^9 Wei. We scale gasGwei to 4 decimal places to prevent float rounding.
+  const gasGweiScaled = BigInt(Math.max(1, Math.round(gasGwei * 1e4)));
+  const gasWei = BigInt(gasUnits) * gasGweiScaled * 10n ** 5n; // (units * gwei * 1e4 * 1e9) / 1e4 = units * gwei * 1e9
+
+  if (isNativeOut) {
+    if (decimalsOut === 18) return gasWei;
+    if (decimalsOut > 18) return gasWei * (10n ** BigInt(decimalsOut - 18));
+    return gasWei / (10n ** BigInt(18 - decimalsOut));
+  }
+
+  if (nativePriceUsd > 0 && tokenOutPriceUsd > 0) {
+    const nativePriceScaled = BigInt(Math.round(nativePriceUsd * 1e6));
+    const tokenOutPriceScaled = BigInt(Math.round(tokenOutPriceUsd * 1e6));
+    const scaleFactorOut = 10n ** BigInt(decimalsOut);
+
+    const numerator = gasWei * nativePriceScaled * scaleFactorOut;
+    const denominator = tokenOutPriceScaled * (10n ** 18n);
+    if (denominator > 0n) {
+      return numerator / denominator;
+    }
+  }
+
+  return 0n;
+}
+
 export interface RouteCandidate {
   dexName: string;
   protocol: string;
   poolAddress?: string;
+  feeTierBps?: number;
   blockNumber?: number;
   amountOutRaw: bigint;
   amountOutFormatted: string;
@@ -66,6 +113,7 @@ export interface RouteCandidate {
   path: string[];
   splits: RouteSplit[];
   netOutputScore: number;
+  netProfitRaw?: bigint;
 }
 
 export class SmartGraphRouter {
@@ -170,12 +218,31 @@ export class SmartGraphRouter {
 
     const candidates: RouteCandidate[] = [];
 
+    // 4. Fetch live gas price to perform gas-aware route optimization
+    const rpcGas = await getLiveGasPrice(verifiedChain);
+    const gasGwei = rpcGas.data?.gasPriceGwei || 15.0;
+    const nativeSymbol = routerConfig.nativeSymbol;
+    const nativePriceUsd = getUsdPrice(nativeSymbol) || 0;
+    const isNativeOut = toToken.symbol === nativeSymbol;
+
     // Add all valid single-pool routes
     for (const { pool, quote } of singlePoolCandidates) {
+      const gasCostTokenRaw = calculateGasCostInTokenOutRaw(
+        quote.gasEstimatedUnits,
+        gasGwei,
+        nativePriceUsd,
+        toPrice,
+        decimalsOut,
+        isNativeOut
+      );
+      const netProfitRaw =
+        quote.amountOutRaw > gasCostTokenRaw ? quote.amountOutRaw - gasCostTokenRaw : 0n;
+
       candidates.push({
         dexName: `${pool.dexProtocol} (${pool.feeBps / 100}%)`,
         protocol: pool.dexProtocol,
         poolAddress: pool.poolAddress,
+        feeTierBps: pool.feeBps,
         blockNumber: Number(pool.lastBlockNumber || 0),
         amountOutRaw: quote.amountOutRaw,
         amountOutFormatted: quote.amountOutFormatted,
@@ -193,11 +260,12 @@ export class SmartGraphRouter {
             path: [fromToken.symbol, toToken.symbol],
           },
         ],
+        netProfitRaw,
         netOutputScore: parseFloat(quote.amountOutFormatted),
       });
     }
 
-    // 4. Split Routing Optimizer:
+    // 5. Gas-Aware Split Routing Optimizer:
     // Evaluates allocations (90/10, 80/20, 70/30, 60/40, 50/50, 40/60, 30/70, 20/80, 10/90) across top pools.
     if (singlePoolCandidates.length >= 2) {
       // Sort single pools descending by output
@@ -246,11 +314,43 @@ export class SmartGraphRouter {
         }
       }
 
-      // If optimal split beats the best single pool route, add it as a route candidate
+      // Gas-Aware Routing Comparison:
+      // Compare netProfit = amountOutRaw - gasCostInToken
+      const singleBestCandidate = singlePoolCandidates[0];
+      const singleGasUnits = singleBestCandidate.quote.gasEstimatedUnits;
+      const singleGasCostInTokenRaw = calculateGasCostInTokenOutRaw(
+        singleGasUnits,
+        gasGwei,
+        nativePriceUsd,
+        toPrice,
+        decimalsOut,
+        isNativeOut
+      );
+      const singleNetProfitRaw =
+        singleBestCandidate.quote.amountOutRaw > singleGasCostInTokenRaw
+          ? singleBestCandidate.quote.amountOutRaw - singleGasCostInTokenRaw
+          : 0n;
+
+      const splitGasUnits = ROUTER_GAS_CONFIG.SPLIT_EXECUTION_GAS;
+      const splitGasCostInTokenRaw = calculateGasCostInTokenOutRaw(
+        splitGasUnits,
+        gasGwei,
+        nativePriceUsd,
+        toPrice,
+        decimalsOut,
+        isNativeOut
+      );
+      const splitNetProfitRaw =
+        bestSplitOutRaw > splitGasCostInTokenRaw
+          ? bestSplitOutRaw - splitGasCostInTokenRaw
+          : 0n;
+
+      // Only add split route if its NET profit (output minus gas cost) is strictly higher than single pool route
       if (
         bestSplitQuoteA &&
         bestSplitQuoteB &&
-        bestSplitOutRaw > singlePoolCandidates[0].quote.amountOutRaw
+        bestSplitOutRaw > 0n &&
+        splitNetProfitRaw > singleNetProfitRaw
       ) {
         const pctB = 100 - bestSplitAllocation;
         const splitOutFormatted = formatUnits(bestSplitOutRaw, decimalsOut);
@@ -268,7 +368,7 @@ export class SmartGraphRouter {
           executionPrice: numAmount > 0 ? splitOutFloat / numAmount : 0,
           priceImpactPercent: splitImpact,
           feePaidRaw: bestSplitQuoteA.feePaidRaw + bestSplitQuoteB.feePaidRaw,
-          gasEstimatedUnits: 185000,
+          gasEstimatedUnits: splitGasUnits,
           path: [fromToken.symbol, toToken.symbol],
           splits: [
             {
@@ -286,17 +386,13 @@ export class SmartGraphRouter {
               path: [fromToken.symbol, toToken.symbol],
             },
           ],
+          netProfitRaw: splitNetProfitRaw,
           netOutputScore: splitOutFloat,
         });
       }
     }
 
-    // 5. Gas Cost Evaluation in USD & Net Output Score
-    const rpcGas = await getLiveGasPrice(verifiedChain);
-    const gasGwei = rpcGas.data?.gasPriceGwei || 15.0;
-    const nativeSymbol = routerConfig.nativeSymbol;
-    const nativePriceUsd = getUsdPrice(nativeSymbol) || 0;
-
+    // 6. Gas Cost Evaluation in USD & Net Economic Output Score
     for (const c of candidates) {
       const gasCostUsd =
         nativePriceUsd > 0 ? (c.gasEstimatedUnits * gasGwei * 1e-9) * nativePriceUsd : 0;
@@ -305,9 +401,9 @@ export class SmartGraphRouter {
       c.netOutputScore = tokenOutUsd - gasCostUsd;
     }
 
-    // Sort descending by raw amount out
+    // Sort descending by net economic output score (net profit after gas)
     candidates.sort((a, b) =>
-      b.amountOutRaw > a.amountOutRaw ? 1 : b.amountOutRaw < a.amountOutRaw ? -1 : 0
+      b.netOutputScore > a.netOutputScore ? 1 : b.netOutputScore < a.netOutputScore ? -1 : 0
     );
     const optimalRoute = candidates[0];
 
@@ -463,6 +559,9 @@ export class SmartGraphRouter {
       savingsPercent,
       aiRouteInsight,
       autoSlippageRecommended,
+      poolAddress: optimalRoute.poolAddress,
+      protocol: optimalRoute.protocol,
+      feeTierBps: optimalRoute.feeTierBps,
     };
   }
 
@@ -472,12 +571,13 @@ export class SmartGraphRouter {
   async simulateSwapTransaction(
     quote: SwapQuote,
     userAddress?: string,
-    chainId: string = 'ethereum'
+    chainId: string = 'ethereum',
+    options?: any
   ): Promise<TransactionSimulation> {
     if (!userAddress || !userAddress.startsWith('0x') || userAddress.length !== 42) {
       throw new Error('USER_ADDRESS_REQUIRED: Connect a valid Web3 wallet to run pre-flight simulation.');
     }
-    return simulationEngine.simulateSwap(quote, userAddress, chainId);
+    return simulationEngine.simulateSwap(quote, userAddress, chainId, options);
   }
 }
 
@@ -489,5 +589,6 @@ export const calculateSmartRouteQuote = (params: QuoteParams) =>
 export const simulateSwapTransaction = (
   quote: SwapQuote,
   userAddress?: string,
-  chainId: string = 'ethereum'
-) => smartRouter.simulateSwapTransaction(quote, userAddress, chainId);
+  chainId: string = 'ethereum',
+  options?: any
+) => smartRouter.simulateSwapTransaction(quote, userAddress, chainId, options);

@@ -121,15 +121,22 @@ export interface SwapQuote {
   savingsPercent?: number;
   aiRouteInsight?: string;
   autoSlippageRecommended?: number;
+  poolAddress?: string;
+  protocol?: string;
+  feeTierBps?: number;
 }
+
+export type SimulationStatus = 'SUCCESS' | 'REVERTED' | 'FAILED' | 'RPC_ERROR';
 
 export interface TransactionSimulation {
   success: boolean;
+  status: SimulationStatus;
   intentId: string;
   correlationId: string;
   fromAddress: string;
   toAddress: string;
   gasEstimated: number;
+  gasEstimatedUnits: number;
   gasCostUsd: number;
   balanceBefore: number;
   balanceAfter: number;
