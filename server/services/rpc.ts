@@ -70,14 +70,22 @@ export const CHAIN_CLIENTS: Record<ChainId, PublicClient> = {
   }) as PublicClient,
 };
 
+export class InvalidChainError extends Error {
+  readonly code = 'INVALID_CHAIN';
+  constructor(chainId: string) {
+    super(`INVALID_CHAIN: '${chainId}' is not supported. Supported chains: ${Object.keys(CHAIN_CLIENTS).join(', ')}`);
+    this.name = 'InvalidChainError';
+  }
+}
+
 /**
  * Validates chainId and retrieves specific PublicClient.
- * Throws explicit error if chain is invalid. No silent fallback to Ethereum!
+ * Throws explicit InvalidChainError if chain is invalid. No silent fallback to Ethereum!
  */
 export function getChainClient(chainId: string): { client: PublicClient; validatedChain: ChainId } {
   const norm = (chainId || '').toLowerCase() as ChainId;
   if (!CHAIN_CLIENTS[norm]) {
-    throw new Error(`INVALID_CHAIN: '${chainId}' is not supported. Supported chains: ${Object.keys(CHAIN_CLIENTS).join(', ')}`);
+    throw new InvalidChainError(chainId);
   }
   return { client: CHAIN_CLIENTS[norm], validatedChain: norm };
 }
@@ -157,16 +165,17 @@ export async function getLiveBlockNumber(chainId: string = 'ethereum'): Promise<
       status: 'SUCCESS',
     };
   } catch (err: any) {
+    const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
     const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
     return {
       data: null,
       chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
-      provider: 'RPC Fallback Provider',
+      provider: isInvalidChain ? 'Chain Validator' : 'RPC Fallback Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
-      status: 'RPC_UNAVAILABLE',
-      error: err?.message || 'Failed to connect to RPC node',
+      status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
+      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to connect to RPC node'),
     };
   }
 }
@@ -196,16 +205,17 @@ export async function getLiveGasPrice(chainId: string = 'ethereum'): Promise<Rpc
       status: 'SUCCESS',
     };
   } catch (err: any) {
+    const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
     const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
     return {
       data: null,
       chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
-      provider: 'RPC Provider',
+      provider: isInvalidChain ? 'Chain Validator' : 'RPC Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
-      status: 'RPC_UNAVAILABLE',
-      error: err?.message || 'Failed to read gas price from RPC',
+      status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
+      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to read gas price from RPC'),
     };
   }
 }
@@ -242,16 +252,17 @@ export async function getContractBytecode(address: string, chainId: string = 'et
       status: 'SUCCESS',
     };
   } catch (err: any) {
+    const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
     const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
     return {
       data: null,
       chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
-      provider: 'eth_getCode Provider',
+      provider: isInvalidChain ? 'Chain Validator' : 'eth_getCode Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
-      status: 'RPC_UNAVAILABLE',
-      error: err?.message || 'Failed to read contract bytecode',
+      status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
+      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to read contract bytecode'),
     };
   }
 }
@@ -289,16 +300,17 @@ export async function getNativeBalance(address: string, chainId: string = 'ether
       status: 'SUCCESS',
     };
   } catch (err: any) {
+    const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
     const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
     return {
       data: null,
       chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
-      provider: 'eth_getBalance Provider',
+      provider: isInvalidChain ? 'Chain Validator' : 'eth_getBalance Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
-      status: 'RPC_UNAVAILABLE',
-      error: err?.message || 'Failed to get native balance',
+      status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
+      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to get native balance'),
     };
   }
 }
@@ -337,16 +349,17 @@ export async function getERC20Balance(
       status: 'SUCCESS',
     };
   } catch (err: any) {
+    const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
     const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
     return {
       data: null,
       chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
-      provider: 'ERC20 balanceOf Provider',
+      provider: isInvalidChain ? 'Chain Validator' : 'ERC20 balanceOf Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
-      status: 'RPC_UNAVAILABLE',
-      error: err?.message || 'Failed to read token balance',
+      status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
+      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to read token balance'),
     };
   }
 }
@@ -405,16 +418,17 @@ export async function getERC20Allowance(
       status: 'SUCCESS',
     };
   } catch (err: any) {
+    const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
     const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
     return {
       data: null,
       chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
-      provider: 'ERC20 allowance Provider',
+      provider: isInvalidChain ? 'Chain Validator' : 'ERC20 allowance Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
-      status: 'RPC_UNAVAILABLE',
-      error: err?.message || 'Failed to read token allowance',
+      status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
+      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to read token allowance'),
     };
   }
 }

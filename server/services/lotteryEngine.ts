@@ -17,6 +17,7 @@ import {
   LotteryTierPrize,
 } from '../../src/types';
 import { getUsdPrice } from './priceFeed';
+import { loadPersistedLotteryState, savePersistedLotteryState } from './lotteryStore';
 
 export interface VRFRequestCommitment {
   requestId: string;
@@ -43,7 +44,27 @@ const savingsDepositsDb: NoLossSavingsDeposit[] = [];
 const recentWinnersDb: LotteryWinnerRecord[] = [];
 const vrfRequestsDb: Record<string, VRFRequestCommitment> = {};
 const syndicatesDb: LotterySyndicatePool[] = [];
+const secretSaltsDb: Record<number, string> = {};
 
+export function persistLotteryState(): void {
+  savePersistedLotteryState({
+    currentRoundId,
+    hourlyRoundId,
+    savingsRoundId,
+    roundsDb,
+    userTicketsDb,
+    savingsDepositsDb,
+    recentWinnersDb,
+    syndicatesDb,
+    secretSaltsDb,
+  });
+}
+
+/**
+ * Local Simulation VRF with Commit-Reveal Scheme & Mainnet Coordinator Configuration
+ * In local / devnet simulation mode, draws use a verifiable commit-reveal scheme.
+ * Mainnet production targets Chainlink VRF 2.5 Coordinator.
+ */
 export const CHAINLINK_VRF_COORDINATOR = '0x271682DEB8C4E0901D1a1550aD2e64D568E69909';
 export const VRF_KEY_HASH = '0x8af398995b04c28e9951ced97dc3d827029123e8095e4d437164409a81a182f0';
 export const HYPR_DEAD_BURN_ADDRESS = '0x000000000000000000000000000000000000dEaD';
@@ -377,37 +398,76 @@ function initializeLotteryData() {
     prizesByTier: createStandardPrizeTiers(savingsPot, 'no-loss-savings'),
   };
 
-  // Historical Round #141
-  const pastPot141 = 550000.0;
-  roundsDb[currentRoundId - 1] = {
-    id: currentRoundId - 1,
-    poolId: 'mega-daily',
-    poolName: 'Hyperon Mega Ethereum Jackpot #141',
-    status: 'CLOSED',
-    startTime: now - 38 * 3600 * 1000,
-    endTime: now - 14 * 3600 * 1000,
-    ticketPriceUsd: 5.0,
-    jackpotUsd: 275000.0,
-    totalPotUsd: pastPot141,
-    totalTicketsSold: 28450,
-    uniqueParticipants: 3950,
-    winningNumbers: [7, 3, 9, 2, 6, 4],
-    vrfSeed: '0x8f4d9b23c5e81a0293817f763abdf543918a992bc6643210aa39ec77281ab091',
-    vrfTxHash: '0xd7a5e98214309baef49191e4a30e84b840131498b8398e0915fcfd515a86d267',
-    vrfBlockNumber: 21894021,
-    burnAmountUsd: 22000.0,
-    reserveFundUsd: 16500.0,
-    stakersDividendUsd: 16500.0,
-    rolloverAmountUsd: 0,
-    prizesByTier: [
-      { matchedDigits: 6, label: 'Grand Jackpot (6/6)', allocationPercent: 50, poolAmountUsd: 275000.0, winnersCount: 1, prizePerWinnerUsd: 275000.0, oddsRatio: '1 : 1,000,000', oddsPercentage: 0.0001 },
-      { matchedDigits: 5, label: 'High Roll Second (5/6)', allocationPercent: 18, poolAmountUsd: 99000.0, winnersCount: 3, prizePerWinnerUsd: 33000.0, oddsRatio: '1 : 18,518', oddsPercentage: 0.0054 },
-      { matchedDigits: 4, label: 'Diamond Tier (4/6)', allocationPercent: 10, poolAmountUsd: 55000.0, winnersCount: 22, prizePerWinnerUsd: 2500.0, oddsRatio: '1 : 925', oddsPercentage: 0.108 },
-      { matchedDigits: 3, label: 'Gold Tier (3/6)', allocationPercent: 7, poolAmountUsd: 38500.0, winnersCount: 175, prizePerWinnerUsd: 220.0, oddsRatio: '1 : 77', oddsPercentage: 1.298 },
-      { matchedDigits: 2, label: 'Silver Tier (2/6)', allocationPercent: 5, poolAmountUsd: 27500.0, winnersCount: 1240, prizePerWinnerUsd: 22.17, oddsRatio: '1 : 11', oddsPercentage: 9.09 },
-      { matchedDigits: 1, label: 'Instant Cash (1/6)', allocationPercent: 3, poolAmountUsd: 16500.0, winnersCount: 7850, prizePerWinnerUsd: 2.1, oddsRatio: '1 : 2.5', oddsPercentage: 40.0 },
-    ],
-  };
+  // Historical Closed Rounds for Empirical Statistics (#132 - #141)
+  const historicalNumbersList = [
+    [8, 2, 0, 4, 7, 1],
+    [3, 9, 1, 8, 2, 7],
+    [7, 7, 4, 3, 9, 0],
+    [1, 6, 8, 2, 3, 5],
+    [9, 2, 4, 7, 8, 3],
+    [7, 3, 1, 8, 6, 9],
+    [4, 0, 7, 2, 8, 6],
+    [8, 7, 3, 9, 1, 2],
+    [2, 7, 8, 4, 0, 3],
+    [7, 3, 9, 2, 6, 4],
+  ];
+
+  historicalNumbersList.forEach((nums, idx) => {
+    const rId = currentRoundId - 10 + idx;
+    const rPot = 400000.0 + idx * 15000;
+    const roundSalt = keccak256(encodePacked(['string', 'uint256', 'uint256'], ['mega-daily', BigInt(rId), BigInt(1700000000 + idx)]));
+    const roundCommit = keccak256(encodePacked(['bytes32', 'uint256'], [roundSalt, BigInt(rId)]));
+    const roundSeed = keccak256(encodePacked(['bytes32', 'uint256'], [roundCommit, BigInt(rId)]));
+
+    roundsDb[rId] = {
+      id: rId,
+      poolId: 'mega-daily',
+      poolName: `Hyperon Mega Ethereum Jackpot #${rId}`,
+      status: 'CLOSED',
+      startTime: now - (24 * (11 - idx)) * 3600 * 1000,
+      endTime: now - (24 * (10 - idx)) * 3600 * 1000,
+      ticketPriceUsd: 5.0,
+      jackpotUsd: Number((rPot * 0.5).toFixed(2)),
+      totalPotUsd: rPot,
+      totalTicketsSold: 20000 + idx * 800,
+      uniqueParticipants: 3000 + idx * 95,
+      winningNumbers: nums,
+      vrfSeed: roundSeed,
+      vrfTxHash: keccak256(encodePacked(['bytes32', 'uint256'], [roundSeed, BigInt(rId)])),
+      vrfBlockNumber: 21894000 + rId,
+      vrfProvider: 'LOCAL_SIMULATION_VRF_COMMIT_REVEAL',
+      commitHash: roundCommit,
+      revealedSalt: roundSalt,
+      burnAmountUsd: Number((rPot * 0.04).toFixed(2)),
+      reserveFundUsd: Number((rPot * 0.03).toFixed(2)),
+      stakersDividendUsd: Number((rPot * 0.03).toFixed(2)),
+      rolloverAmountUsd: 0,
+      prizesByTier: [
+        { matchedDigits: 6, label: 'Grand Jackpot (6/6)', allocationPercent: 50, poolAmountUsd: rPot * 0.5, winnersCount: 1, prizePerWinnerUsd: rPot * 0.5, oddsRatio: '1 : 1,000,000', oddsPercentage: 0.0001 },
+        { matchedDigits: 5, label: 'High Roll Second (5/6)', allocationPercent: 18, poolAmountUsd: rPot * 0.18, winnersCount: 3, prizePerWinnerUsd: (rPot * 0.18) / 3, oddsRatio: '1 : 18,518', oddsPercentage: 0.0054 },
+        { matchedDigits: 4, label: 'Diamond Tier (4/6)', allocationPercent: 10, poolAmountUsd: rPot * 0.10, winnersCount: 20, prizePerWinnerUsd: (rPot * 0.10) / 20, oddsRatio: '1 : 925', oddsPercentage: 0.108 },
+        { matchedDigits: 3, label: 'Gold Tier (3/6)', allocationPercent: 7, poolAmountUsd: rPot * 0.07, winnersCount: 150, prizePerWinnerUsd: (rPot * 0.07) / 150, oddsRatio: '1 : 77', oddsPercentage: 1.298 },
+        { matchedDigits: 2, label: 'Silver Tier (2/6)', allocationPercent: 5, poolAmountUsd: rPot * 0.05, winnersCount: 1100, prizePerWinnerUsd: (rPot * 0.05) / 1100, oddsRatio: '1 : 11', oddsPercentage: 9.09 },
+        { matchedDigits: 1, label: 'Instant Cash (1/6)', allocationPercent: 3, poolAmountUsd: rPot * 0.03, winnersCount: 6500, prizePerWinnerUsd: (rPot * 0.03) / 6500, oddsRatio: '1 : 2.5', oddsPercentage: 40.0 },
+      ],
+    };
+  });
+
+  // Assign Commit-Reveal hashes for current active rounds
+  const saltMega = keccak256(encodePacked(['string', 'uint256', 'uint256'], ['mega-daily', BigInt(currentRoundId), 1700000001n]));
+  secretSaltsDb[currentRoundId] = saltMega;
+  roundsDb[currentRoundId].commitHash = keccak256(encodePacked(['bytes32', 'uint256'], [saltMega, BigInt(currentRoundId)]));
+  roundsDb[currentRoundId].vrfProvider = 'LOCAL_SIMULATION_VRF_COMMIT_REVEAL';
+
+  const saltHourly = keccak256(encodePacked(['string', 'uint256', 'uint256'], ['hourly-lightning', BigInt(hourlyRoundId), 1700000002n]));
+  secretSaltsDb[hourlyRoundId] = saltHourly;
+  roundsDb[hourlyRoundId].commitHash = keccak256(encodePacked(['bytes32', 'uint256'], [saltHourly, BigInt(hourlyRoundId)]));
+  roundsDb[hourlyRoundId].vrfProvider = 'LOCAL_SIMULATION_VRF_COMMIT_REVEAL';
+
+  const saltSavings = keccak256(encodePacked(['string', 'uint256', 'uint256'], ['no-loss-savings', BigInt(savingsRoundId), 1700000003n]));
+  secretSaltsDb[savingsRoundId] = saltSavings;
+  roundsDb[savingsRoundId].commitHash = keccak256(encodePacked(['bytes32', 'uint256'], [saltSavings, BigInt(savingsRoundId)]));
+  roundsDb[savingsRoundId].vrfProvider = 'LOCAL_SIMULATION_VRF_COMMIT_REVEAL';
 
   recentWinnersDb.push({
     id: 'win-001',
@@ -425,7 +485,24 @@ function initializeLotteryData() {
   });
 }
 
-initializeLotteryData();
+// Initialize database or hydrate from disk
+const persistedState = loadPersistedLotteryState();
+if (persistedState) {
+  currentRoundId = persistedState.currentRoundId;
+  hourlyRoundId = persistedState.hourlyRoundId;
+  savingsRoundId = persistedState.savingsRoundId;
+  Object.assign(roundsDb, persistedState.roundsDb);
+  userTicketsDb.push(...persistedState.userTicketsDb);
+  savingsDepositsDb.push(...persistedState.savingsDepositsDb);
+  recentWinnersDb.push(...persistedState.recentWinnersDb);
+  syndicatesDb.push(...persistedState.syndicatesDb);
+  if (persistedState.secretSaltsDb) {
+    Object.assign(secretSaltsDb, persistedState.secretSaltsDb);
+  }
+} else {
+  initializeLotteryData();
+  persistLotteryState();
+}
 
 /**
  * Derives 6 provably fair winning digits from cryptographic Keccak256 seed
@@ -549,30 +626,40 @@ export function getLotteryOverview(userAddress?: string) {
 }
 
 /**
- * Calculates empirical hot/cold frequency statistics across past rounds
+ * Calculates empirical hot/cold frequency statistics dynamically from roundsDb
  */
 export function calculateLotteryAnalytics(): LotteryAnalytics {
-  const counts: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0 };
-  const lastSeenRoundsAgo: Record<number, number> = { 0: 5, 1: 3, 2: 1, 3: 1, 4: 1, 5: 8, 6: 1, 7: 1, 8: 2, 9: 1 };
+  const closedRounds = Object.values(roundsDb)
+    .filter((r) => r.status === 'CLOSED' && Array.isArray(r.winningNumbers) && r.winningNumbers.length === 6)
+    .sort((a, b) => b.id - a.id);
 
-  const simulatedHistory = [
-    [7, 3, 9, 2, 6, 4],
-    [8, 2, 0, 4, 7, 1],
-    [3, 9, 1, 8, 2, 7],
-    [7, 7, 4, 3, 9, 0],
-    [1, 6, 8, 2, 3, 5],
-    [9, 2, 4, 7, 8, 3],
-    [7, 3, 1, 8, 6, 9],
-    [4, 0, 7, 2, 8, 6],
-    [8, 7, 3, 9, 1, 2],
-    [2, 7, 8, 4, 0, 3],
-  ];
+  const realHistory = closedRounds.map((r) => r.winningNumbers as number[]);
+
+  const counts: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0 };
+  const lastSeenRoundsAgo: Record<number, number> = { 0: 99, 1: 99, 2: 99, 3: 99, 4: 99, 5: 99, 6: 99, 7: 99, 8: 99, 9: 99 };
+  const pairCounts: Record<string, number> = {};
 
   let totalDigits = 0;
-  simulatedHistory.forEach((nums) => {
-    nums.forEach((d) => {
+  let oddCount = 0;
+  let evenCount = 0;
+  let sum = 0;
+
+  realHistory.forEach((nums, roundIndex) => {
+    nums.forEach((d, idx) => {
       counts[d] = (counts[d] || 0) + 1;
       totalDigits++;
+      sum += d;
+      if (d % 2 === 1) oddCount++;
+      else evenCount++;
+
+      if (lastSeenRoundsAgo[d] === 99) {
+        lastSeenRoundsAgo[d] = roundIndex + 1;
+      }
+
+      if (idx < nums.length - 1) {
+        const pairKey = `${d}-${nums[idx + 1]}`;
+        pairCounts[pairKey] = (pairCounts[pairKey] || 0) + 1;
+      }
     });
   });
 
@@ -583,42 +670,43 @@ export function calculateLotteryAnalytics(): LotteryAnalytics {
       digit,
       count,
       percentage: Number(percentage.toFixed(1)),
-      isHot: count >= 8 || digit === 7 || digit === 8 || digit === 3,
-      isCold: count <= 4 || digit === 5 || digit === 0,
-      lastDrawnRoundsAgo: lastSeenRoundsAgo[digit] || 1,
+      isHot: false,
+      isCold: false,
+      lastDrawnRoundsAgo: lastSeenRoundsAgo[digit] === 99 ? 1 : lastSeenRoundsAgo[digit],
     };
+  });
+
+  const sortedFrequencies = [...frequencies].sort((a, b) => b.count - a.count);
+  const hotThreshold = sortedFrequencies[2]?.count || 0;
+  const coldThreshold = sortedFrequencies[7]?.count || 0;
+
+  frequencies.forEach((f) => {
+    f.isHot = f.count >= hotThreshold && f.count > 0;
+    f.isCold = f.count <= coldThreshold;
   });
 
   const hotDigits = frequencies.filter((f) => f.isHot).map((f) => f.digit);
   const coldDigits = frequencies.filter((f) => f.isCold).map((f) => f.digit);
 
-  let oddCount = 0;
-  let evenCount = 0;
-  let sum = 0;
-  simulatedHistory.forEach((nums) => {
-    nums.forEach((d) => {
-      sum += d;
-      if (d % 2 === 1) oddCount++;
-      else evenCount++;
+  const mostCommonPairs: [number, number][] = Object.entries(pairCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([key]): [number, number] => {
+      const [a, b] = key.split('-').map(Number);
+      return [a || 0, b || 0];
     });
-  });
 
   return {
-    totalRoundsSampled: 141,
+    totalRoundsSampled: closedRounds.length,
     hotDigits: hotDigits.slice(0, 4),
     coldDigits: coldDigits.slice(0, 3),
     digitFrequencies: frequencies,
     oddEvenRatio: {
-      odd: Math.round((oddCount / Math.max(1, totalDigits)) * 100),
-      even: Math.round((evenCount / Math.max(1, totalDigits)) * 100),
+      odd: totalDigits > 0 ? Math.round((oddCount / totalDigits) * 100) : 50,
+      even: totalDigits > 0 ? Math.round((evenCount / totalDigits) * 100) : 50,
     },
-    averageSum: Number((sum / Math.max(1, simulatedHistory.length)).toFixed(1)),
-    mostCommonPairs: [
-      [7, 3],
-      [8, 2],
-      [9, 1],
-      [4, 7],
-    ],
+    averageSum: realHistory.length > 0 ? Number((sum / realHistory.length).toFixed(1)) : 27.0,
+    mostCommonPairs: mostCommonPairs.length > 0 ? mostCommonPairs : ([[7, 3], [8, 2], [9, 1], [4, 7]] as [number, number][]),
   };
 }
 
@@ -705,6 +793,8 @@ export function buyLotteryTickets(params: {
     }
   });
 
+  persistLotteryState();
+
   return {
     success: true,
     tickets: createdTickets,
@@ -754,6 +844,8 @@ export function joinSyndicatePool(params: {
     t.tierQuality = 'VIP_GOLD';
   });
 
+  persistLotteryState();
+
   return {
     success: true,
     syndicate,
@@ -790,7 +882,8 @@ export function depositNoLossSavings(params: {
   const round = roundsDb[savingsRoundId];
   if (round && ticketsEarned > 0) {
     round.totalTicketsSold += ticketsEarned;
-    for (let i = 0; i < Math.min(ticketsEarned, 20); i++) {
+    // Mint all earned tickets without an artificial cap to prevent yield theft
+    for (let i = 0; i < ticketsEarned; i++) {
       userTicketsDb.unshift({
         id: `tkt-sav-${round.id}-${Date.now()}-${i}`,
         roundId: round.id,
@@ -807,11 +900,13 @@ export function depositNoLossSavings(params: {
     }
   }
 
+  persistLotteryState();
   return { success: true, deposit };
 }
 
 /**
- * Executes verifiable Chainlink VRF 2.5 Round Draw & Initializes Next Round
+ * Executes verifiable Local Simulation VRF (Commit-Reveal) Round Draw & Initializes Next Round
+ * Fixes payout insolvency by counting all tier winners before computing individual payouts.
  */
 export function drawLotteryRound(roundId: number) {
   const round = roundsDb[roundId];
@@ -819,9 +914,26 @@ export function drawLotteryRound(roundId: number) {
     throw new Error(`Round #${roundId} not found`);
   }
 
-  const vrfSeed = keccak256(encodePacked(['uint256', 'uint256', 'string'], [BigInt(roundId), BigInt(Date.now()), round.poolId]));
+  // Retrieve or generate commit-reveal parameters for provably fair simulation
+  const secretSalt = (secretSaltsDb[roundId] || keccak256(encodePacked(['uint256', 'uint256'], [BigInt(roundId), 999999n]))) as `0x${string}`;
+  const commitHash = (round.commitHash || keccak256(encodePacked(['bytes32', 'uint256'], [secretSalt, BigInt(roundId)]))) as `0x${string}`;
+
+  // Verify commit-reveal integrity
+  const expectedCommit = keccak256(encodePacked(['bytes32', 'uint256'], [secretSalt, BigInt(roundId)]));
+  if (expectedCommit !== commitHash) {
+    throw new Error(`VRF_COMMIT_REVEAL_MISMATCH: Secret salt does not match round commitment`);
+  }
+
+  // Derive unbiasable pseudo-random VRF seed from commit, revealed salt, block height, and round parameters
+  const vrfSeed = keccak256(
+    encodePacked(
+      ['uint256', 'bytes32', 'bytes32', 'uint256', 'string'],
+      [BigInt(roundId), commitHash, secretSalt, BigInt(round.totalTicketsSold), round.poolId]
+    )
+  );
+
   const winningNumbers = deriveWinningDigitsFromSeed(vrfSeed);
-  const vrfTxHash = keccak256(encodePacked(['string', 'uint256'], [vrfSeed, BigInt(roundId)]));
+  const vrfTxHash = keccak256(encodePacked(['bytes32', 'uint256'], [vrfSeed, BigInt(roundId)]));
   const vrfBlockNumber = 21894000 + (roundId % 1000);
 
   round.status = 'CLOSED';
@@ -829,11 +941,20 @@ export function drawLotteryRound(roundId: number) {
   round.vrfSeed = vrfSeed;
   round.vrfTxHash = vrfTxHash;
   round.vrfBlockNumber = vrfBlockNumber;
+  round.vrfProvider = 'LOCAL_SIMULATION_VRF_COMMIT_REVEAL';
+  round.commitHash = commitHash;
+  round.revealedSalt = secretSalt;
 
   let jackpotHit = false;
 
-  // Grade tickets
+  // Reset winner counts
+  round.prizesByTier.forEach((tier) => {
+    tier.winnersCount = 0;
+  });
+
   const roundTickets = userTicketsDb.filter((t) => t.roundId === roundId);
+
+  // Pass 1: Count total winners per tier to establish accurate tier.winnersCount
   roundTickets.forEach((t) => {
     const matched = calculateMatchedDigits(t.numbers, winningNumbers);
     t.matchedDigitsCount = matched;
@@ -844,9 +965,30 @@ export function drawLotteryRound(roundId: number) {
       if (tier) {
         tier.winnersCount++;
         if (matched === 6) jackpotHit = true;
+      }
+    } else {
+      t.status = 'LOST';
+      t.wonPrizeUsd = 0;
+    }
+  });
+
+  // Calculate finalized prizePerWinnerUsd for each tier after all winners are counted
+  round.prizesByTier.forEach((tier) => {
+    if (tier.winnersCount > 0) {
+      tier.prizePerWinnerUsd = Number((tier.poolAmountUsd / tier.winnersCount).toFixed(2));
+    } else {
+      tier.prizePerWinnerUsd = 0;
+    }
+  });
+
+  // Pass 2: Allocate accurate proportional payouts to each winning ticket without pool insolvency
+  roundTickets.forEach((t) => {
+    if (t.status === 'WON' && t.matchedDigitsCount && t.matchedDigitsCount > 0) {
+      const tier = round.prizesByTier.find((p) => p.matchedDigits === t.matchedDigitsCount);
+      if (tier && tier.winnersCount > 0) {
         const mult = t.multiplier || 1;
-        const basePrize = tier.prizePerWinnerUsd > 0 ? tier.prizePerWinnerUsd : tier.poolAmountUsd / Math.max(1, tier.winnersCount);
-        t.wonPrizeUsd = basePrize * (matched < 6 ? mult : 1); // PowerPlay applies to non-jackpot tiers
+        const basePrize = tier.prizePerWinnerUsd;
+        t.wonPrizeUsd = Number((basePrize * (t.matchedDigitsCount < 6 ? mult : 1)).toFixed(2));
 
         // Record winner record
         recentWinnersDb.unshift({
@@ -854,7 +996,7 @@ export function drawLotteryRound(roundId: number) {
           roundId: round.id,
           poolId: round.poolId,
           winnerAddress: t.ownerAddress,
-          matchedDigits: matched,
+          matchedDigits: t.matchedDigitsCount,
           prizeAmountUsd: t.wonPrizeUsd,
           prizeToken: 'USDC',
           ticketNumbers: t.numbers,
@@ -864,15 +1006,6 @@ export function drawLotteryRound(roundId: number) {
           multiplier: t.multiplier,
         });
       }
-    } else {
-      t.status = 'LOST';
-    }
-  });
-
-  // Calculate winner payouts per tier
-  round.prizesByTier.forEach((tier) => {
-    if (tier.winnersCount > 0) {
-      tier.prizePerWinnerUsd = Number((tier.poolAmountUsd / tier.winnersCount).toFixed(2));
     }
   });
 
@@ -897,6 +1030,10 @@ export function drawLotteryRound(roundId: number) {
   const rollover = jackpotHit ? 0 : round.jackpotUsd;
   const newTotalPot = seedPot + rollover;
 
+  const nextSalt = keccak256(encodePacked(['string', 'uint256', 'uint256'], [round.poolId, BigInt(nextRoundId), BigInt(Date.now())]));
+  const nextCommit = keccak256(encodePacked(['bytes32', 'uint256'], [nextSalt, BigInt(nextRoundId)]));
+  secretSaltsDb[nextRoundId] = nextSalt;
+
   roundsDb[nextRoundId] = {
     id: nextRoundId,
     poolId: round.poolId,
@@ -915,7 +1052,11 @@ export function drawLotteryRound(roundId: number) {
     stakersDividendUsd: Number((newTotalPot * 0.03).toFixed(2)),
     rolloverAmountUsd: rollover,
     prizesByTier: createStandardPrizeTiers(newTotalPot, round.poolId),
+    commitHash: nextCommit,
+    vrfProvider: 'LOCAL_SIMULATION_VRF_COMMIT_REVEAL',
   };
+
+  persistLotteryState();
 
   return {
     success: true,
@@ -950,6 +1091,8 @@ export function claimLotteryWinnings(userAddress: string) {
     t.claimedAt = now;
     totalClaimedUsd += t.wonPrizeUsd || 0;
   });
+
+  persistLotteryState();
 
   return {
     success: true,

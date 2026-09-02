@@ -535,7 +535,7 @@ export const TradeTerminalView: React.FC = () => {
 
           {/* Asks (Sells - Red) */}
           <div className="space-y-1 py-1">
-            {(orderBook?.asks || []).slice(0, 5).reverse().map((ask, i) => (
+            {(Array.isArray(orderBook?.asks) ? orderBook.asks : []).slice(0, 5).reverse().map((ask, i) => (
               <div key={i} className="flex justify-between text-[11px] relative py-0.5">
                 <span className="text-rose-400 font-bold">${ask.price.toFixed(activePair.priceUsd < 10 ? 4 : 2)}</span>
                 <span className="text-slate-300 font-medium">{ask.amount.toFixed(activePair.priceUsd > 100 ? 3 : 1)}</span>
@@ -555,7 +555,7 @@ export const TradeTerminalView: React.FC = () => {
 
           {/* Bids (Buys - Green) */}
           <div className="space-y-1 py-1">
-            {(orderBook?.bids || []).slice(0, 5).map((bid, i) => (
+            {(Array.isArray(orderBook?.bids) ? orderBook.bids : []).slice(0, 5).map((bid, i) => (
               <div key={i} className="flex justify-between text-[11px] relative py-0.5">
                 <span className="text-emerald-400 font-bold">${bid.price.toFixed(activePair.priceUsd < 10 ? 4 : 2)}</span>
                 <span className="text-slate-300 font-medium">{bid.amount.toFixed(activePair.priceUsd > 100 ? 3 : 1)}</span>

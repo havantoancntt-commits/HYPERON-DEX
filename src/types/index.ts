@@ -719,6 +719,9 @@ export interface LotteryRound {
   vrfSeed?: string;
   vrfTxHash?: string;
   vrfBlockNumber?: number;
+  vrfProvider?: 'CHAINLINK_VRF_V2_5' | 'LOCAL_SIMULATION_VRF_COMMIT_REVEAL';
+  commitHash?: string;
+  revealedSalt?: string;
   prizesByTier: LotteryTierPrize[];
   burnAmountUsd: number;
   reserveFundUsd: number;
