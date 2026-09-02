@@ -14,8 +14,9 @@
  */
 
 import { formatUnits, parseUnits, Address } from 'viem';
-import { getPriceState, getUsdPrice } from './priceFeed';
+import { getUsdPrice } from './priceFeed';
 import { DEX_SOURCES } from '../../src/lib/constants';
+import { DEX_ERROR_CODES, DexError } from '../../src/lib/errorCodes';
 import {
   SwapQuote,
   TransactionSimulation,
@@ -135,13 +136,13 @@ export class SmartGraphRouter {
     const numAmount = parseFloat(rawAmountStr) || 0;
 
     if (numAmount <= 0) {
-      throw new Error('INVALID_AMOUNT: Input amount must be strictly greater than zero.');
+      throw new DexError(DEX_ERROR_CODES.INVALID_AMOUNT, 'INVALID_AMOUNT: Input amount must be strictly greater than zero.');
     }
 
     // Strict slippage validation: 0.01% <= slippage <= 50.0%
     const slippageFloat = typeof slippage === 'string' ? parseFloat(slippage) : slippage;
     if (isNaN(slippageFloat) || slippageFloat < 0.01 || slippageFloat > 50.0) {
-      throw new Error('INVALID_SLIPPAGE: Slippage tolerance must be between 0.01% and 50.0%.');
+      throw new DexError(DEX_ERROR_CODES.INVALID_SLIPPAGE, 'INVALID_SLIPPAGE: Slippage tolerance must be between 0.01% and 50.0%.');
     }
     const slippageBps = Math.round(slippageFloat * 100);
 
@@ -166,7 +167,7 @@ export class SmartGraphRouter {
       resolvedFrom.chainId === resolvedTo.chainId &&
       resolvedFrom.isNative === resolvedTo.isNative
     ) {
-      throw new Error('INVALID_ROUTE: Source and destination tokens must be distinct.');
+      throw new DexError(DEX_ERROR_CODES.INVALID_ROUTE, 'INVALID_ROUTE: Source and destination tokens must be distinct.');
     }
 
     const fromToken = tokenResolver.toToken(resolvedFrom);
@@ -208,17 +209,116 @@ export class SmartGraphRouter {
       }
     }
 
-    // 3. ZERO-SYNTHETIC-DATA ENFORCEMENT:
-    // If no real on-chain pools exist with liquidity, strictly throw NO_LIQUIDITY error
-    if (singlePoolCandidates.length === 0) {
-      throw new Error(
-        `NO_LIQUIDITY: No verified on-chain pool with active liquidity found for ${fromToken.symbol}/${toToken.symbol} on ${verifiedChain}.`
+    // 3. Multi-Hop Pathfinding Engine (Token A -> Base Intermediate Token -> Token B)
+    // Resolves liquidity routes when direct pools are unavailable or fragmented
+    const multiHopCandidates: RouteCandidate[] = [];
+    const baseIntermediateSymbols = ['USDC', 'USDT', 'WETH', routerConfig.nativeSymbol, 'WBTC'];
+    const visitedMids = new Set<string>();
+
+    for (const midSym of baseIntermediateSymbols) {
+      if (
+        !midSym ||
+        midSym.toUpperCase() === fromToken.symbol.toUpperCase() ||
+        midSym.toUpperCase() === toToken.symbol.toUpperCase() ||
+        visitedMids.has(midSym.toUpperCase())
+      ) {
+        continue;
+      }
+      visitedMids.add(midSym.toUpperCase());
+
+      try {
+        const resolvedMid = await tokenResolver
+          .resolveToken({ chainId: verifiedChain, symbol: midSym })
+          .catch(() => null);
+        if (!resolvedMid) continue;
+
+        const midDecimals = resolvedMid.decimals;
+        const hop1Pools = await poolDiscovery
+          .discoverAllPairPools(verifiedChain, fromToken.symbol, resolvedMid.symbol, decimalsIn, midDecimals)
+          .catch(() => []);
+        if (hop1Pools.length === 0) continue;
+
+        const hop2Pools = await poolDiscovery
+          .discoverAllPairPools(verifiedChain, resolvedMid.symbol, toToken.symbol, midDecimals, decimalsOut)
+          .catch(() => []);
+        if (hop2Pools.length === 0) continue;
+
+        for (const p1 of hop1Pools) {
+          let q1: AMMQuoteResult | null = null;
+          if (p1.dexProtocol === 'Uniswap v3' && p1.v3State) {
+            const isToken0In = p1.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
+            q1 = uniV3.computeQuoteWithV3State(amountInRaw, decimalsIn, midDecimals, p1.v3State, isToken0In);
+          } else if (p1.reserves) {
+            q1 = uniV2.computeQuote(amountInRaw, decimalsIn, midDecimals, p1.reserves, p1.feeBps);
+          }
+
+          if (!q1 || q1.status !== 'AVAILABLE' || q1.amountOutRaw <= 0n || q1.priceImpactPercent >= 50.0) {
+            continue;
+          }
+
+          for (const p2 of hop2Pools) {
+            let q2: AMMQuoteResult | null = null;
+            if (p2.dexProtocol === 'Uniswap v3' && p2.v3State) {
+              const isToken0In = p2.token0Symbol.toUpperCase() === resolvedMid.symbol.toUpperCase();
+              q2 = uniV3.computeQuoteWithV3State(q1.amountOutRaw, midDecimals, decimalsOut, p2.v3State, isToken0In);
+            } else if (p2.reserves) {
+              q2 = uniV2.computeQuote(q1.amountOutRaw, midDecimals, decimalsOut, p2.reserves, p2.feeBps);
+            }
+
+            if (!q2 || q2.status !== 'AVAILABLE' || q2.amountOutRaw <= 0n || q2.priceImpactPercent >= 50.0) {
+              continue;
+            }
+
+            const hopOutFormatted = q2.amountOutFormatted;
+            const hopOutFloat = parseFloat(hopOutFormatted);
+            const combinedImpact = Number(
+              (100 * (1 - (1 - q1.priceImpactPercent / 100) * (1 - q2.priceImpactPercent / 100))).toFixed(2)
+            );
+            const combinedGasUnits = q1.gasEstimatedUnits + q2.gasEstimatedUnits + 45000;
+
+            multiHopCandidates.push({
+              dexName: `${p1.dexProtocol} -> ${p2.dexProtocol} (via ${resolvedMid.symbol})`,
+              protocol: `${p1.dexProtocol} + ${p2.dexProtocol}`,
+              poolAddress: `${p1.poolAddress}`,
+              feeTierBps: p1.feeBps + p2.feeBps,
+              blockNumber: Math.max(Number(p1.lastBlockNumber || 0), Number(p2.lastBlockNumber || 0)),
+              amountOutRaw: q2.amountOutRaw,
+              amountOutFormatted: hopOutFormatted,
+              executionPrice: numAmount > 0 ? hopOutFloat / numAmount : 0,
+              priceImpactPercent: combinedImpact,
+              feePaidRaw: q1.feePaidRaw + q2.feePaidRaw,
+              gasEstimatedUnits: combinedGasUnits,
+              path: [fromToken.symbol, resolvedMid.symbol, toToken.symbol],
+              splits: [
+                {
+                  dexName: `${p1.dexProtocol} -> ${p2.dexProtocol}`,
+                  percentage: 100,
+                  fromToken: fromToken.symbol,
+                  toToken: toToken.symbol,
+                  path: [fromToken.symbol, resolvedMid.symbol, toToken.symbol],
+                },
+              ],
+              netProfitRaw: q2.amountOutRaw,
+              netOutputScore: hopOutFloat,
+            });
+          }
+        }
+      } catch {
+        // Continue discovering remaining hops
+      }
+    }
+
+    // 4. Zero-synthetic fallback check: Must have at least one valid direct or multi-hop path
+    if (singlePoolCandidates.length === 0 && multiHopCandidates.length === 0) {
+      throw new DexError(
+        DEX_ERROR_CODES.NO_LIQUIDITY,
+        `NO_LIQUIDITY: No verified on-chain pool with active liquidity found for ${fromToken.symbol}/${toToken.symbol} on ${verifiedChain} (direct or multi-hop).`
       );
     }
 
     const candidates: RouteCandidate[] = [];
 
-    // 4. Fetch live gas price to perform gas-aware route optimization
+    // 5. Fetch live gas price to perform gas-aware route optimization
     const rpcGas = await getLiveGasPrice(verifiedChain);
     const gasGwei = rpcGas.data?.gasPriceGwei || 15.0;
     const nativeSymbol = routerConfig.nativeSymbol;

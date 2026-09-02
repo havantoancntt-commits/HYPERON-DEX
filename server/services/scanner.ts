@@ -88,10 +88,11 @@ export async function scanTokenSecurity(
   symbol: string = 'TOKEN',
   chainId: ChainId = 'ethereum'
 ): Promise<ComprehensiveSecurityAudit> {
-  const normalizedAddr = tokenAddress ? tokenAddress.toLowerCase().trim() : '';
+  let normalizedAddr = tokenAddress ? tokenAddress.toLowerCase().trim() : '';
+  const cleanSymbol = (symbol || '').toUpperCase().trim();
 
-  // Strict identity match: normalized address + chainId
-  const verifiedMatch = normalizedAddr
+  // 1. Strict identity match: normalized address + chainId
+  let verifiedMatch = normalizedAddr
     ? VERIFIED_TOKENS.find(
         (t) =>
           t.address &&
@@ -100,6 +101,19 @@ export async function scanTokenSecurity(
       )
     : undefined;
 
+  // 2. Intelligent fallback: match by symbol + chainId if address not provided or missing
+  if (!verifiedMatch && cleanSymbol && cleanSymbol !== 'TOKEN') {
+    verifiedMatch = VERIFIED_TOKENS.find(
+      (t) =>
+        t.symbol.toUpperCase() === cleanSymbol &&
+        (t.chainId === chainId || (chainId === 'ethereum' && !t.chainId))
+    );
+    if (verifiedMatch && verifiedMatch.address && !tokenAddress) {
+      tokenAddress = verifiedMatch.address;
+      normalizedAddr = verifiedMatch.address.toLowerCase().trim();
+    }
+  }
+
   const evidence: string[] = [];
   const unknownFactors: string[] = [];
   const suspiciousPermissions: string[] = [];
@@ -107,20 +121,20 @@ export async function scanTokenSecurity(
   let isContractExists = false;
   let bytecode: string | undefined = undefined;
   let metadata = {
-    name: symbol,
-    symbol: symbol,
-    decimals: 18,
+    name: verifiedMatch?.name || symbol,
+    symbol: verifiedMatch?.symbol || symbol,
+    decimals: verifiedMatch?.decimals || 18,
     totalSupplyFormatted: '0',
     isContract: false,
-    isValid: false,
+    isValid: !!verifiedMatch,
   };
 
   const isNative =
-    !tokenAddress ||
+    (!tokenAddress && (!cleanSymbol || cleanSymbol === 'ETH' || cleanSymbol === 'BNB' || cleanSymbol === 'POL')) ||
     tokenAddress === '0x0000000000000000000000000000000000000000' ||
-    (symbol.toUpperCase() === 'ETH' && chainId === 'ethereum') ||
-    (symbol.toUpperCase() === 'BNB' && chainId === 'bsc') ||
-    (symbol.toUpperCase() === 'POL' && chainId === 'polygon');
+    (cleanSymbol === 'ETH' && chainId === 'ethereum') ||
+    (cleanSymbol === 'BNB' && chainId === 'bsc') ||
+    (cleanSymbol === 'POL' && chainId === 'polygon');
 
   if (isNative) {
     return {

@@ -38,6 +38,19 @@ export const DEX_ERROR_CODES = {
 
 export type DexErrorCode = (typeof DEX_ERROR_CODES)[keyof typeof DEX_ERROR_CODES];
 
+export class DexError extends Error {
+  public readonly code: DexErrorCode;
+  public readonly details?: unknown;
+
+  constructor(code: DexErrorCode, message?: string, details?: unknown) {
+    super(message || ERROR_MESSAGES[code] || code);
+    this.name = 'DexError';
+    this.code = code;
+    this.details = details;
+    Object.setPrototypeOf(this, DexError.prototype);
+  }
+}
+
 export interface DexErrorResponse {
   code: DexErrorCode;
   message: string;

@@ -553,18 +553,103 @@ setInterval(() => {
   isProcessingTick = true;
   try {
     const now = Date.now();
+    // 1. Process active rounds countdown and automated draws
     Object.values(roundsDb).forEach((round) => {
-      if (round.status === 'OPEN') {
+      if (round.status === 'OPEN' || round.status === 'CLOSING_SOON') {
         const timeRemaining = round.endTime - now;
         if (timeRemaining <= 0) {
-          // Automatic round draw execution
+          // Automatic round draw execution with rollover
           console.log(`[LOTTERY SCHEDULER] Auto-drawing round #${round.id} for pool ${round.poolId}`);
-          drawLotteryRound(round.id);
-        } else if (timeRemaining <= 30000) {
+          try {
+            drawLotteryRound(round.id);
+          } catch (drawErr) {
+            console.error(`[LOTTERY SCHEDULER] Failed to draw round #${round.id}:`, drawErr);
+          }
+        } else if (timeRemaining <= 30000 && round.status === 'OPEN') {
           round.status = 'CLOSING_SOON';
         }
       }
     });
+
+    // 2. Self-healing Rollover Watchdog: Ensure every pool has an active OPEN round
+    const activePoolConfigs: {
+      id: LotteryPoolId;
+      getPtr: () => number;
+      setPtr: (id: number) => void;
+      namePrefix: string;
+      durationMs: number;
+      seedPot: number;
+      ticketPrice: number;
+    }[] = [
+      {
+        id: 'mega-daily',
+        getPtr: () => currentRoundId,
+        setPtr: (id) => { currentRoundId = id; },
+        namePrefix: 'Hyperon Mega Ethereum Jackpot',
+        durationMs: 24 * 3600 * 1000,
+        seedPot: 250000,
+        ticketPrice: 5.0,
+      },
+      {
+        id: 'hourly-lightning',
+        getPtr: () => hourlyRoundId,
+        setPtr: (id) => { hourlyRoundId = id; },
+        namePrefix: 'Hourly Lightning Pot',
+        durationMs: 3600 * 1000,
+        seedPot: 15000,
+        ticketPrice: 1.0,
+      },
+      {
+        id: 'no-loss-savings',
+        getPtr: () => savingsRoundId,
+        setPtr: (id) => { savingsRoundId = id; },
+        namePrefix: 'DeFi No-Loss Yield Harvest',
+        durationMs: 7 * 86400 * 1000,
+        seedPot: 50000,
+        ticketPrice: 0,
+      },
+    ];
+
+    for (const poolCfg of activePoolConfigs) {
+      const activeRound = roundsDb[poolCfg.getPtr()];
+      if (!activeRound || activeRound.status === 'CLOSED') {
+        const poolRoundIds = Object.keys(roundsDb)
+          .map(Number)
+          .filter((k) => roundsDb[k]?.poolId === poolCfg.id);
+        const maxId = poolRoundIds.length > 0 ? Math.max(...poolRoundIds, poolCfg.getPtr()) : poolCfg.getPtr();
+        const newRoundId = maxId + 1;
+
+        const salt = keccak256(encodePacked(['string', 'uint256', 'uint256'], [poolCfg.id, BigInt(newRoundId), BigInt(Date.now())]));
+        const commit = keccak256(encodePacked(['bytes32', 'uint256'], [salt, BigInt(newRoundId)]));
+        secretSaltsDb[newRoundId] = salt;
+
+        roundsDb[newRoundId] = {
+          id: newRoundId,
+          poolId: poolCfg.id,
+          poolName: `${poolCfg.namePrefix} #${newRoundId}`,
+          status: 'OPEN',
+          startTime: now,
+          endTime: now + poolCfg.durationMs,
+          ticketPriceUsd: poolCfg.ticketPrice,
+          jackpotUsd: Number((poolCfg.seedPot * 0.5).toFixed(2)),
+          totalPotUsd: poolCfg.seedPot,
+          totalTicketsSold: 0,
+          uniqueParticipants: 0,
+          winningNumbers: null,
+          burnAmountUsd: Number((poolCfg.seedPot * 0.04).toFixed(2)),
+          reserveFundUsd: Number((poolCfg.seedPot * 0.03).toFixed(2)),
+          stakersDividendUsd: Number((poolCfg.seedPot * 0.03).toFixed(2)),
+          rolloverAmountUsd: 0,
+          prizesByTier: createStandardPrizeTiers(poolCfg.seedPot, poolCfg.id),
+          commitHash: commit,
+          vrfProvider: 'LOCAL_SIMULATION_VRF_COMMIT_REVEAL',
+        };
+
+        poolCfg.setPtr(newRoundId);
+        persistLotteryState();
+        console.log(`[LOTTERY WATCHDOG] Initialized continuous rollover round #${newRoundId} for pool ${poolCfg.id}`);
+      }
+    }
   } catch (err) {
     console.error('[LOTTERY SCHEDULER ERROR]', err);
   } finally {
@@ -914,6 +999,18 @@ export function drawLotteryRound(roundId: number) {
     throw new Error(`Round #${roundId} not found`);
   }
 
+  if (round.status === 'CLOSED') {
+    return {
+      success: true,
+      roundId,
+      winningNumbers: round.winningNumbers || [],
+      vrfSeed: round.vrfSeed || '0x0',
+      vrfTxHash: round.vrfTxHash || '0x0',
+      vrfBlockNumber: round.vrfBlockNumber || 0,
+      closedRound: round,
+    };
+  }
+
   // Retrieve or generate commit-reveal parameters for provably fair simulation
   const secretSalt = (secretSaltsDb[roundId] || keccak256(encodePacked(['uint256', 'uint256'], [BigInt(roundId), 999999n]))) as `0x${string}`;
   const commitHash = (round.commitHash || keccak256(encodePacked(['bytes32', 'uint256'], [secretSalt, BigInt(roundId)]))) as `0x${string}`;
@@ -1010,7 +1107,11 @@ export function drawLotteryRound(roundId: number) {
   });
 
   // Initialize Next Round Automatically with Rollover
-  let nextRoundId = roundId + 1;
+  const poolRoundIds = Object.keys(roundsDb)
+    .map(Number)
+    .filter((k) => roundsDb[k]?.poolId === round.poolId);
+  const maxPoolId = poolRoundIds.length > 0 ? Math.max(...poolRoundIds, roundId) : roundId;
+  const nextRoundId = maxPoolId + 1;
   const now = Date.now();
   let nextDuration = 24 * 3600 * 1000;
   let seedPot = 250000;
