@@ -138,7 +138,7 @@ Synthesize this factual data into a high-precision institutional market intellig
 Return ONLY valid JSON.`;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.7-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -156,6 +156,7 @@ Return ONLY valid JSON.`;
     marketIntelligenceCache[targetSymbol] = { data: result, cachedAt: Date.now() };
     return result;
   } catch (err: any) {
+    console.error('[HYPERON-DEX AI] Generation failed:', err.message || err);
     const isRateLimit = err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('quota');
     if (isRateLimit) {
       quotaExceededCooldownUntil = Date.now() + 60 * 1000; // 60s cooldown

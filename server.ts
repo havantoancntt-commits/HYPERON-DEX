@@ -140,7 +140,7 @@ app.get('/api/health', async (req: Request, res: Response) => {
       smartRouter: 'operational (BigInt Constant-Product + Curve Invariant)',
       priceOracle: 'operational (Binance/DEX Multi-Source)',
       riskScanner: 'operational (Viem RPC Bytecode Analysis)',
-      aiEngine: process.env.GEMINI_API_KEY ? 'active (Gemini 3.7 Flash)' : 'standby_quantitative',
+      aiEngine: process.env.GEMINI_API_KEY ? 'active (Gemini 2.5 Flash)' : 'standby_quantitative',
       mempoolScanner: 'operational (Flashbots Private RPC Relay)',
     },
   });
@@ -520,7 +520,7 @@ Return strictly valid JSON:
 }`;
 
         const response = await ai.models.generateContent({
-          model: 'gemini-3.7-flash',
+          model: 'gemini-2.5-flash',
           contents: prompt,
           config: { responseMimeType: 'application/json' },
         });
@@ -530,6 +530,7 @@ Return strictly valid JSON:
           return res.json(parsedJson);
         }
       } catch (err: any) {
+        console.error('[HYPERON-DEX AI] Generation failed:', err.message || err);
         const isRateLimit = err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('quota');
         if (isRateLimit) {
           copilotQuotaCooldownUntil = Date.now() + 60 * 1000;
@@ -562,7 +563,7 @@ app.get('/api/ai/signals', async (req: Request, res: Response) => {
         averageWinRate: 68.5,
         profitFactor: 2.58,
         methodology: 'Historical Backtest (0.1% Slippage + 0.3% DEX Fee deduction)',
-        verifiedModel: 'HYPERON-DEX Multi-Indicator Confluence + Gemini 3.7 Flash',
+        verifiedModel: 'HYPERON-DEX Multi-Indicator Confluence + Gemini 2.5 Flash',
         timestamp: Date.now(),
       },
     });

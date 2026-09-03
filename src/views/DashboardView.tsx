@@ -218,7 +218,7 @@ export const DashboardView: React.FC = () => {
                 <Cpu className="w-3.5 h-3.5 text-cyan-400" /> AI Market Mood
               </span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-cyan-300 border border-cyan-500/30 font-extrabold uppercase">
-                Gemini 3.7
+                Gemini 2.5
               </span>
             </div>
 

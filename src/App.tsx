@@ -39,7 +39,7 @@ import { AdminConsoleView } from './views/AdminConsoleView';
 import { SettingsView } from './views/SettingsView';
 
 const MainLayout: React.FC = () => {
-  const { activeView } = useExchange();
+  const { activeView, selectedPair } = useExchange();
 
   useEffect(() => {
     soundManager.playTick();
@@ -127,7 +127,7 @@ const MainLayout: React.FC = () => {
           <div className="max-w-7xl mx-auto space-y-6">
             <AnimatePresence mode="wait">
               <motion.div
-                key={activeView}
+                key={`${activeView}-${selectedPair.base?.symbol}-${selectedPair.quote?.symbol}`}
                 initial={{ opacity: 0, y: 10, scale: 0.995 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.995 }}

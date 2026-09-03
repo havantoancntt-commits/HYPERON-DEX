@@ -36,6 +36,7 @@ export const SwapView: React.FC = () => {
 
   const fromToken = getLiveToken(fromSymbol);
   const toToken = getLiveToken(toSymbol);
+  const isUnverifiedToken = fromToken.isVerified === false || toToken.isVerified === false;
 
   const [fromAmount, setFromAmount] = useState<string>('1.0');
   const [quote, setQuote] = useState<SwapQuote | null>(null);
@@ -88,6 +89,12 @@ export const SwapView: React.FC = () => {
 
   // Fetch real quote from server Smart Router (debounced with AbortController)
   const fetchQuote = useCallback(async (amountStr: string, fTok: Token, tTok: Token, currentSlippage: number) => {
+    if (fTok.isVerified === false || tTok.isVerified === false) {
+      setQuote(null);
+      setQuoteError('Unverified Token Detected - Trading Disabled');
+      return;
+    }
+
     const num = parseFloat(amountStr);
     if (isNaN(num) || num <= 0) {
       setQuote(null);
@@ -188,6 +195,15 @@ export const SwapView: React.FC = () => {
   };
 
   const handleInitiateSwap = async () => {
+    if (fromToken.isVerified === false || toToken.isVerified === false) {
+      addToast({
+        title: 'Trading Disabled',
+        message: 'Unverified Token Detected - Trading Disabled',
+        type: 'error',
+      });
+      return;
+    }
+
     if (!quote || isSwapping || numFromAmount <= 0) return;
 
     if (!isConnected || !address) {
@@ -538,12 +554,30 @@ export const SwapView: React.FC = () => {
               </span>
             </div>
           </div>
-        ) : quoteError && !isFetchingQuote && numFromAmount > 0 ? (
+        ) : quoteError && !isFetchingQuote && numFromAmount > 0 && !isUnverifiedToken ? (
           <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-mono flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
             <span>{quoteError}</span>
           </div>
         ) : null}
+
+        {/* UNVERIFIED TOKEN PROMINENT RED BANNER */}
+        {isUnverifiedToken && (
+          <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-mono flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 shrink-0 text-rose-400" />
+            <div className="space-y-0.5">
+              <div className="font-bold text-rose-200">Unverified Token Detected - Trading Disabled</div>
+              <div className="text-[11px] text-rose-300/80 font-sans">
+                {fromToken.isVerified === false && toToken.isVerified === false
+                  ? `Tokens ${fromToken.symbol} and ${toToken.symbol} are unverified on-chain.`
+                  : fromToken.isVerified === false
+                  ? `Token ${fromToken.symbol} is unverified on-chain.`
+                  : `Token ${toToken.symbol} is unverified on-chain.`}{' '}
+                Swap execution is strictly disabled to protect user funds.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* SOLID, NON-FLICKERING ACTION BUTTON */}
         <div className="pt-2">
@@ -554,6 +588,14 @@ export const SwapView: React.FC = () => {
             >
               <Zap className="w-4 h-4 fill-white" />
               <span>Kết Nối Ví Web3</span>
+            </button>
+          ) : isUnverifiedToken ? (
+            <button
+              disabled
+              className="w-full py-4 bg-rose-500/10 border border-rose-500/30 text-rose-400 font-bold text-sm rounded-2xl cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <AlertCircle className="w-4 h-4 text-rose-400" />
+              <span>Unverified Token Detected - Trading Disabled</span>
             </button>
           ) : numFromAmount <= 0 ? (
             <button
