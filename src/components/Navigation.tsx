@@ -56,7 +56,7 @@ export const Navigation: React.FC = () => {
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'ai-signals', label: 'AI Alpha Signals', icon: Sparkles, badge: '94% Win', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
         { id: 'onchain-radar', label: 'Whale Radar', icon: Activity, badge: 'Smart Money', badgeColor: 'bg-teal-500/10 text-teal-400 border-teal-500/20' },
-        { id: 'ai-intelligence', label: 'Market Sentiment', icon: Cpu, badge: 'Gemini 2.5', badgeColor: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' },
+        { id: 'ai-intelligence', label: 'Market Sentiment', icon: Cpu },
         { id: 'ai-risk-scanner', label: 'Token Risk Scanner', icon: ShieldAlert, badge: 'Audit', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
         { id: 'ai-copilot', label: 'Portfolio Copilot', icon: BrainCircuit },
         { id: 'ai-agent', label: 'AI Trading Bot', icon: Bot, badge: 'Active', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },

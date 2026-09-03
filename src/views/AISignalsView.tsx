@@ -55,7 +55,7 @@ export const AISignalsView: React.FC = () => {
     averageWinRate: 68.5,
     profitFactor: 2.58,
     methodology: 'Historical Backtest (0.1% Slippage + 0.3% DEX Fee deduction)',
-    verifiedModel: 'HYPERON-DEX Multi-Indicator Confluence + Gemini 2.5 Flash',
+    verifiedModel: 'HYPERON-DEX Multi-Indicator Confluence + Quantitative Engine',
   });
   const [loading, setLoading] = useState<boolean>(true);
   const [filterType, setFilterType] = useState<string>('ALL');

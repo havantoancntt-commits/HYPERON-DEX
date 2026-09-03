@@ -1,29 +1,11 @@
-import { GoogleGenAI } from '@google/genai';
 import { AIMarketIntelligence, AITradingSignal, ChainId } from '../../src/types';
 import { priceCache, getPrice, getPriceState } from './priceFeed';
 import { fetchLiveKlines, calculateLiveTechnicalIndicators } from './marketData';
 import { runStrategyBacktest } from './backtestEngine';
 
-let aiClient: GoogleGenAI | null = null;
-let quotaExceededCooldownUntil = 0;
-
-// In-memory cache for market intelligence to protect API quota
+// In-memory cache for market intelligence
 const marketIntelligenceCache: Record<string, { data: AIMarketIntelligence; cachedAt: number }> = {};
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache per symbol
-
-function getAI(): GoogleGenAI | null {
-  if (!aiClient && process.env.GEMINI_API_KEY) {
-    aiClient = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
-  }
-  return aiClient;
-}
 
 export async function generateMarketIntelligence(symbol: string = 'ETH'): Promise<AIMarketIntelligence> {
   const targetSymbol = symbol.toUpperCase();
@@ -44,7 +26,7 @@ export async function generateMarketIntelligence(symbol: string = 'ETH'): Promis
   // Calculate live mathematical technical indicators
   const indicators = await calculateLiveTechnicalIndicators(targetSymbol, '15m');
 
-  const defaultIntelligence: AIMarketIntelligence = {
+  const intelligence: AIMarketIntelligence = {
     marketScore: indicators.overallScore,
     trend:
       indicators.overallRating === 'STRONG_BUY'
@@ -96,75 +78,8 @@ export async function generateMarketIntelligence(symbol: string = 'ETH'): Promis
     generatedAt: new Date().toISOString(),
   };
 
-  const now = Date.now();
-  if (now < quotaExceededCooldownUntil) {
-    // In rate limit cooldown window, serve verified quantitative synthesis directly
-    marketIntelligenceCache[targetSymbol] = { data: defaultIntelligence, cachedAt: now };
-    return defaultIntelligence;
-  }
-
-  const ai = getAI();
-  if (!ai) {
-    marketIntelligenceCache[targetSymbol] = { data: defaultIntelligence, cachedAt: now };
-    return defaultIntelligence;
-  }
-
-  try {
-    const prompt = `You are the lead quantitative crypto research analyst for HYPERON-DEX.
-Verified Live Market Oracle Data for ${targetSymbol}:
-- Current Price: $${currentPrice} (24h Change: ${change24h}%)
-- 24h High/Low: $${high24h} / $${low24h}
-- 24h Volume: $${vol24h.toLocaleString()}
-- RSI (14): ${indicators.rsi} (${indicators.rsiSignal})
-- MACD (12,26,9): Line ${indicators.macd.macdLine}, Signal ${indicators.macd.signalLine}, Histogram ${indicators.macd.histogram}, Trend: ${indicators.macd.trend}
-- EMA 20/50/200: $${indicators.ema20} / $${indicators.ema50} / $${indicators.ema200} (Trend: ${indicators.maTrend})
-- Bollinger Bands: Upper $${indicators.bollingerBands.upper}, Lower $${indicators.bollingerBands.lower}, Bandwidth ${indicators.bollingerBands.bandwidth}% (${indicators.bollingerBands.status})
-- ATR(14): $${indicators.atr} (${indicators.atrPercent}% Volatility Regime: ${indicators.volatilityRegime})
-- Standard Pivot Points: Pivot $${indicators.pivotPoints.pivot}, R1 $${indicators.pivotPoints.r1}, S1 $${indicators.pivotPoints.s1}
-- Buying Pressure Ratio: ${indicators.volumeMetrics.buyingPressurePercent}%
-
-Synthesize this factual data into a high-precision institutional market intelligence summary in JSON schema:
-{
-  "marketScore": number (0-100, based on calculated mathematical confluence),
-  "trend": "Bullish" | "Bearish" | "Neutral" | "Strong Bullish" | "Strong Bearish",
-  "momentum": "Strong" | "Moderate" | "Weak",
-  "volatility": "Low" | "Medium" | "High" | "Extreme",
-  "liquidityCondition": "High" | "Adequate" | "Thin",
-  "marketRisk": "Low" | "Moderate" | "Elevated" | "High",
-  "confidenceScore": number (0-100),
-  "whaleActivityLevel": "High Inflow" | "High Outflow" | "Neutral" | "Accumulating",
-  "keyInsights": string[] (3-4 crisp institutional analytical bullet points explaining price structure, support/resistance, and indicators confluence)
-}
-Return ONLY valid JSON.`;
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-      },
-    });
-
-    const parsed = JSON.parse(response.text || '{}');
-    const result: AIMarketIntelligence = {
-      ...defaultIntelligence,
-      ...parsed,
-      disclaimer: defaultIntelligence.disclaimer,
-      generatedAt: new Date().toISOString(),
-    };
-
-    marketIntelligenceCache[targetSymbol] = { data: result, cachedAt: Date.now() };
-    return result;
-  } catch (err: any) {
-    console.error('[HYPERON-DEX AI] Generation failed:', err.message || err);
-    const isRateLimit = err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || err?.message?.includes('quota');
-    if (isRateLimit) {
-      quotaExceededCooldownUntil = Date.now() + 60 * 1000; // 60s cooldown
-    }
-    // Silently serve quantitative synthesis without throwing
-    marketIntelligenceCache[targetSymbol] = { data: defaultIntelligence, cachedAt: Date.now() };
-    return defaultIntelligence;
-  }
+  marketIntelligenceCache[targetSymbol] = { data: intelligence, cachedAt: Date.now() };
+  return intelligence;
 }
 
 export async function generateQuantitativeSignals(): Promise<AITradingSignal[]> {

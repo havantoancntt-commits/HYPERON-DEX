@@ -92,9 +92,6 @@ export const AIIntelligenceView: React.FC = () => {
               <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
                 AI Market Intelligence & Quantitative Analytics
               </h1>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">
-                Gemini 2.5 Flash
-              </span>
             </div>
             <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
               Institutional quantitative market analysis combining real-time multi-exchange price oracles, RSI(14), MACD(12,26,9), Bollinger Bands, ATR volatility regimes, and classical support/resistance pivot points.

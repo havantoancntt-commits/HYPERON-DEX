@@ -85,7 +85,7 @@ export const AdminConsoleView: React.FC = () => {
           </div>
 
           <div className="p-4 rounded-2xl bg-[#0A0A0A] border border-white/5">
-            <div className="text-[10px] text-slate-500">AI GEMINI 2.5 USAGE</div>
+            <div className="text-[10px] text-slate-500">QUANTITATIVE AI ENGINE USAGE</div>
             <div className="text-base font-bold text-slate-200 mt-1">{metrics.aiModelQuotaUsage.requests24h} reqs</div>
           </div>
         </div>

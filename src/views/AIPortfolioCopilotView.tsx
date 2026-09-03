@@ -215,7 +215,7 @@ export const AIPortfolioCopilotView: React.FC = () => {
                 <Bot className="w-4 h-4 animate-spin" />
               </div>
               <div className="p-4 rounded-2xl bg-[#121212] border border-white/5 text-slate-400">
-                Analyzing portfolio state & computing optimal risk vectors with Gemini...
+                Analyzing portfolio state & computing optimal risk vectors...
               </div>
             </div>
           )}
