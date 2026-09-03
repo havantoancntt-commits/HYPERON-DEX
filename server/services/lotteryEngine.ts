@@ -18,6 +18,7 @@ import {
 } from '../../src/types';
 import { getUsdPrice } from './priceFeed';
 import { loadPersistedLotteryState, savePersistedLotteryState } from './lotteryStore';
+import { DexError, DEX_ERROR_CODES } from '../../src/lib/errorCodes';
 
 export interface VRFRequestCommitment {
   requestId: string;
@@ -901,15 +902,28 @@ export function joinSyndicatePool(params: {
   userAddress: string;
   paymentToken: string;
 }) {
+  if (!params.userAddress || !params.userAddress.startsWith('0x') || params.userAddress.length !== 42) {
+    throw new DexError(DEX_ERROR_CODES.INVALID_ADDRESS, 'Invalid Ethereum wallet address');
+  }
+
   const syndicate = syndicatesDb.find((s) => s.id === params.syndicateId);
-  if (!syndicate) throw new Error('Syndicate pool not found');
+  if (!syndicate) {
+    throw new DexError(DEX_ERROR_CODES.SYNDICATE_NOT_FOUND, 'Syndicate pool not found');
+  }
 
   const round = roundsDb[syndicate.roundId];
-  if (!round || round.status === 'CLOSED') throw new Error('Round is closed');
+  if (!round || round.status === 'CLOSED') {
+    throw new DexError(DEX_ERROR_CODES.ROUND_NOT_OPEN, 'Round is closed');
+  }
 
   const ticketsToAdd = params.sharesCount * (syndicate.poolId === 'mega-daily' ? 5 : 1);
   syndicate.currentTickets = Math.min(syndicate.targetTickets, syndicate.currentTickets + ticketsToAdd);
   syndicate.participantCount += 1;
+
+  if (!syndicate.members) syndicate.members = {};
+  if (!syndicate.claimedMembers) syndicate.claimedMembers = {};
+  const normUser = params.userAddress.toLowerCase();
+  syndicate.members[normUser] = (syndicate.members[normUser] || 0) + params.sharesCount;
 
   const tickets: number[][] = [];
   for (let i = 0; i < ticketsToAdd; i++) {
@@ -1051,7 +1065,8 @@ export function drawLotteryRound(roundId: number) {
 
   const roundTickets = userTicketsDb.filter((t) => t.roundId === roundId);
 
-  // Pass 1: Count total winners per tier to establish accurate tier.winnersCount
+  // Pass 1: Count total winners and compute total multiplier-weighted shares per tier
+  const tierSharesMap: Record<number, number> = {};
   roundTickets.forEach((t) => {
     const matched = calculateMatchedDigits(t.numbers, winningNumbers);
     t.matchedDigitsCount = matched;
@@ -1061,6 +1076,8 @@ export function drawLotteryRound(roundId: number) {
       const tier = round.prizesByTier.find((p) => p.matchedDigits === matched);
       if (tier) {
         tier.winnersCount++;
+        const weight = matched < 6 ? (t.multiplier || 1) : 1;
+        tierSharesMap[matched] = (tierSharesMap[matched] || 0) + weight;
         if (matched === 6) jackpotHit = true;
       }
     } else {
@@ -1069,10 +1086,11 @@ export function drawLotteryRound(roundId: number) {
     }
   });
 
-  // Calculate finalized prizePerWinnerUsd for each tier after all winners are counted
+  // Calculate finalized base share prize for each tier so total payouts never exceed tier.poolAmountUsd
   round.prizesByTier.forEach((tier) => {
-    if (tier.winnersCount > 0) {
-      tier.prizePerWinnerUsd = Number((tier.poolAmountUsd / tier.winnersCount).toFixed(2));
+    const totalShares = tierSharesMap[tier.matchedDigits] || 0;
+    if (totalShares > 0) {
+      tier.prizePerWinnerUsd = Number((tier.poolAmountUsd / totalShares).toFixed(2));
     } else {
       tier.prizePerWinnerUsd = 0;
     }
@@ -1083,9 +1101,18 @@ export function drawLotteryRound(roundId: number) {
     if (t.status === 'WON' && t.matchedDigitsCount && t.matchedDigitsCount > 0) {
       const tier = round.prizesByTier.find((p) => p.matchedDigits === t.matchedDigitsCount);
       if (tier && tier.winnersCount > 0) {
-        const mult = t.multiplier || 1;
-        const basePrize = tier.prizePerWinnerUsd;
-        t.wonPrizeUsd = Number((basePrize * (t.matchedDigitsCount < 6 ? mult : 1)).toFixed(2));
+        const mult = t.matchedDigitsCount < 6 ? (t.multiplier || 1) : 1;
+        const baseSharePrize = tier.prizePerWinnerUsd;
+        t.wonPrizeUsd = Number((baseSharePrize * mult).toFixed(2));
+
+        // Credit to syndicate pool if ticket was purchased as part of a syndicate
+        if (t.syndicateId) {
+          const synd = syndicatesDb.find((s) => s.id === t.syndicateId);
+          if (synd) {
+            synd.totalPrizeWonUsd = Number(((synd.totalPrizeWonUsd || 0) + (t.wonPrizeUsd || 0)).toFixed(2));
+            synd.status = 'WON';
+          }
+        }
 
         // Record winner record
         recentWinnersDb.unshift({
@@ -1171,34 +1198,100 @@ export function drawLotteryRound(roundId: number) {
   };
 }
 
+const activeClaimLocks = new Set<string>();
+
 /**
  * Claim all won prizes for a user address
  */
 export function claimLotteryWinnings(userAddress: string) {
-  const wonTickets = userTicketsDb.filter(
-    (t) => t.ownerAddress.toLowerCase() === userAddress.toLowerCase() && t.status === 'WON' && (t.wonPrizeUsd || 0) > 0
-  );
-
-  if (wonTickets.length === 0) {
-    throw new Error('No unclaimed lottery winnings found for this wallet address');
+  if (!userAddress || !userAddress.startsWith('0x') || userAddress.length !== 42) {
+    throw new DexError(DEX_ERROR_CODES.INVALID_ADDRESS, 'Invalid Ethereum wallet address format');
   }
 
-  let totalClaimedUsd = 0;
-  const now = Date.now();
-  const payoutTxHash = keccak256(encodePacked(['string', 'uint256'], [userAddress, BigInt(now)]));
+  const normalized = userAddress.toLowerCase();
+  if (activeClaimLocks.has(normalized)) {
+    throw new DexError(DEX_ERROR_CODES.CLAIM_ALREADY_IN_PROGRESS, 'Prize claim already in progress for this wallet address');
+  }
+  activeClaimLocks.add(normalized);
 
-  wonTickets.forEach((t) => {
-    t.status = 'CLAIMED';
-    t.claimedAt = now;
-    totalClaimedUsd += t.wonPrizeUsd || 0;
-  });
+  try {
+    const wonTickets = userTicketsDb.filter(
+      (t) => t.ownerAddress.toLowerCase() === normalized && t.status === 'WON' && (t.wonPrizeUsd || 0) > 0
+    );
+
+    if (wonTickets.length === 0) {
+      throw new DexError(DEX_ERROR_CODES.NO_WINNINGS_FOUND, 'No unclaimed lottery winnings found for this wallet address');
+    }
+
+    let totalClaimedUsd = 0;
+    const now = Date.now();
+    const payoutTxHash = keccak256(encodePacked(['string', 'uint256'], [userAddress, BigInt(now)]));
+
+    // Checks-Effects-Interactions: mutate state before returning
+    wonTickets.forEach((t) => {
+      t.status = 'CLAIMED';
+      t.claimedAt = now;
+      totalClaimedUsd += t.wonPrizeUsd || 0;
+    });
+
+    persistLotteryState();
+
+    return {
+      success: true,
+      claimedTicketsCount: wonTickets.length,
+      totalClaimedUsd: Number(totalClaimedUsd.toFixed(2)),
+      payoutTxHash,
+    };
+  } finally {
+    activeClaimLocks.delete(normalized);
+  }
+}
+
+/**
+ * Claim a member's share of winnings from a Syndicate Pool
+ */
+export function claimSyndicateWinnings(syndicateId: string, userAddress: string) {
+  if (!userAddress || !userAddress.startsWith('0x') || userAddress.length !== 42) {
+    throw new DexError(DEX_ERROR_CODES.INVALID_ADDRESS, 'Invalid Ethereum wallet address format');
+  }
+
+  const syndicate = syndicatesDb.find((s) => s.id === syndicateId);
+  if (!syndicate) {
+    throw new DexError(DEX_ERROR_CODES.SYNDICATE_NOT_FOUND, 'Syndicate pool not found');
+  }
+
+  const normalized = userAddress.toLowerCase();
+  const userShares = syndicate.members?.[normalized] || 0;
+  if (userShares <= 0) {
+    throw new DexError(DEX_ERROR_CODES.NO_WINNINGS_FOUND, 'Wallet holds zero shares in this syndicate');
+  }
+
+  if (syndicate.claimedMembers?.[normalized]) {
+    throw new DexError(DEX_ERROR_CODES.NO_WINNINGS_FOUND, 'Syndicate share prize already claimed by this wallet address');
+  }
+
+  const totalPrize = syndicate.totalPrizeWonUsd || 0;
+  if (totalPrize <= 0) {
+    throw new DexError(DEX_ERROR_CODES.NO_WINNINGS_FOUND, 'No prize won by this syndicate pool');
+  }
+
+  const totalShares = syndicate.currentTickets || 1;
+  const userSharePrizeUsd = Number(((userShares / totalShares) * totalPrize).toFixed(2));
+
+  if (!syndicate.claimedMembers) syndicate.claimedMembers = {};
+  syndicate.claimedMembers[normalized] = true;
+
+  const now = Date.now();
+  const payoutTxHash = keccak256(encodePacked(['string', 'string', 'uint256'], [syndicateId, userAddress, BigInt(now)]));
 
   persistLotteryState();
 
   return {
     success: true,
-    claimedTicketsCount: wonTickets.length,
-    totalClaimedUsd: Number(totalClaimedUsd.toFixed(2)),
+    syndicateId,
+    userShares,
+    totalShares,
+    userSharePrizeUsd,
     payoutTxHash,
   };
 }

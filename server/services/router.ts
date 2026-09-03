@@ -177,6 +177,14 @@ export class SmartGraphRouter {
     const decimalsOut = toToken.decimals;
     const amountInRaw = parseUnits(rawAmountStr, decimalsIn);
 
+    // Fee-on-transfer / tax token deduction:
+    // If fromToken has a detected transfer fee/sell tax, AMM receives net amount
+    const sellTaxPercent = resolvedFrom.security?.sellTaxPercent || 0;
+    const effectiveTaxBps = BigInt(Math.min(5000, Math.max(0, Math.round(sellTaxPercent * 100))));
+    const effectiveAmountInRaw = effectiveTaxBps > 0n
+      ? amountInRaw - (amountInRaw * effectiveTaxBps) / 10000n
+      : amountInRaw;
+
     const fromPrice = resolvedFrom.priceUsd ?? getUsdPrice(fromToken.symbol) ?? 0;
     const toPrice = resolvedTo.priceUsd ?? getUsdPrice(toToken.symbol) ?? 0;
 
@@ -197,12 +205,12 @@ export class SmartGraphRouter {
     for (const pool of directPools) {
       if (pool.dexProtocol === 'Uniswap v3' && pool.v3State) {
         const isToken0In = pool.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
-        const q = uniV3.computeQuoteWithV3State(amountInRaw, decimalsIn, decimalsOut, pool.v3State, isToken0In);
+        const q = uniV3.computeQuoteWithV3State(effectiveAmountInRaw, decimalsIn, decimalsOut, pool.v3State, isToken0In);
         if (q.status === 'AVAILABLE' && q.amountOutRaw > 0n && q.priceImpactPercent < 50.0) {
           singlePoolCandidates.push({ pool, quote: q });
         }
       } else if (pool.reserves) {
-        const q = uniV2.computeQuote(amountInRaw, decimalsIn, decimalsOut, pool.reserves, pool.feeBps);
+        const q = uniV2.computeQuote(effectiveAmountInRaw, decimalsIn, decimalsOut, pool.reserves, pool.feeBps);
         if (q.status === 'AVAILABLE' && q.amountOutRaw > 0n && q.priceImpactPercent < 50.0) {
           singlePoolCandidates.push({ pool, quote: q });
         }
@@ -214,6 +222,10 @@ export class SmartGraphRouter {
     const multiHopCandidates: RouteCandidate[] = [];
     const baseIntermediateSymbols = ['USDC', 'USDT', 'WETH', routerConfig.nativeSymbol, 'WBTC'];
     const visitedMids = new Set<string>();
+    const forbiddenAddresses = new Set([
+      resolvedFrom.address.toLowerCase(),
+      resolvedTo.address.toLowerCase(),
+    ]);
 
     for (const midSym of baseIntermediateSymbols) {
       if (
@@ -231,6 +243,7 @@ export class SmartGraphRouter {
           .resolveToken({ chainId: verifiedChain, symbol: midSym })
           .catch(() => null);
         if (!resolvedMid) continue;
+        if (forbiddenAddresses.has(resolvedMid.address.toLowerCase())) continue;
 
         const midDecimals = resolvedMid.decimals;
         const hop1Pools = await poolDiscovery
@@ -247,9 +260,9 @@ export class SmartGraphRouter {
           let q1: AMMQuoteResult | null = null;
           if (p1.dexProtocol === 'Uniswap v3' && p1.v3State) {
             const isToken0In = p1.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
-            q1 = uniV3.computeQuoteWithV3State(amountInRaw, decimalsIn, midDecimals, p1.v3State, isToken0In);
+            q1 = uniV3.computeQuoteWithV3State(effectiveAmountInRaw, decimalsIn, midDecimals, p1.v3State, isToken0In);
           } else if (p1.reserves) {
-            q1 = uniV2.computeQuote(amountInRaw, decimalsIn, midDecimals, p1.reserves, p1.feeBps);
+            q1 = uniV2.computeQuote(effectiveAmountInRaw, decimalsIn, midDecimals, p1.reserves, p1.feeBps);
           }
 
           if (!q1 || q1.status !== 'AVAILABLE' || q1.amountOutRaw <= 0n || q1.priceImpactPercent >= 50.0) {
@@ -367,7 +380,7 @@ export class SmartGraphRouter {
 
     // 5. Gas-Aware Split Routing Optimizer:
     // Evaluates allocations (90/10, 80/20, 70/30, 60/40, 50/50, 40/60, 30/70, 20/80, 10/90) across top pools.
-    if (singlePoolCandidates.length >= 2) {
+    if (singlePoolCandidates.length >= 2 && effectiveAmountInRaw >= 1000n) {
       // Sort single pools descending by output
       singlePoolCandidates.sort((a, b) =>
         b.quote.amountOutRaw > a.quote.amountOutRaw ? 1 : b.quote.amountOutRaw < a.quote.amountOutRaw ? -1 : 0
@@ -383,8 +396,8 @@ export class SmartGraphRouter {
       let bestSplitQuoteB: AMMQuoteResult | null = null;
 
       for (const pctA of allocationSteps) {
-        const splitInA = (amountInRaw * BigInt(pctA)) / 100n;
-        const splitInB = amountInRaw - splitInA;
+        const splitInA = (effectiveAmountInRaw * BigInt(pctA)) / 100n;
+        const splitInB = effectiveAmountInRaw - splitInA;
 
         let qA: AMMQuoteResult | null = null;
         let qB: AMMQuoteResult | null = null;

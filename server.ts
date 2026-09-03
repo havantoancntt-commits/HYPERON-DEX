@@ -15,6 +15,7 @@ import {
   depositNoLossSavings,
   drawLotteryRound,
   claimLotteryWinnings,
+  claimSyndicateWinnings,
   generateRandomTicketNumbers,
   calculateLotteryAnalytics,
   joinSyndicatePool,
@@ -962,12 +963,55 @@ app.post('/api/lottery/claim', requireWalletAuth, (req: Request, res: Response) 
   try {
     const { userAddress } = req.body;
     if (!userAddress) {
-      return res.status(400).json({ error: 'Missing userAddress' });
+      return res.status(400).json(
+        createDexError(
+          DEX_ERROR_CODES.USER_ADDRESS_REQUIRED,
+          'User wallet address is required to claim lottery winnings',
+          ERROR_MESSAGES.USER_ADDRESS_REQUIRED
+        )
+      );
     }
     const result = claimLotteryWinnings(userAddress);
     res.json(result);
   } catch (err: any) {
-    res.status(400).json({ error: err?.message || 'Failed to claim winnings' });
+    const code = err?.code && Object.values(DEX_ERROR_CODES).includes(err.code)
+      ? err.code
+      : DEX_ERROR_CODES.INTERNAL_ERROR;
+    res.status(400).json(
+      createDexError(
+        code,
+        err?.message || 'Failed to claim winnings',
+        ERROR_MESSAGES[code as DexErrorCode] || err?.message
+      )
+    );
+  }
+});
+
+app.post('/api/lottery/syndicate/claim', requireWalletAuth, (req: Request, res: Response) => {
+  try {
+    const { syndicateId, userAddress } = req.body;
+    if (!syndicateId || !userAddress) {
+      return res.status(400).json(
+        createDexError(
+          DEX_ERROR_CODES.INVALID_PARAMS,
+          'Missing required parameters: syndicateId and userAddress',
+          ERROR_MESSAGES.INVALID_PARAMS
+        )
+      );
+    }
+    const result = claimSyndicateWinnings(syndicateId, userAddress);
+    res.json(result);
+  } catch (err: any) {
+    const code = err?.code && Object.values(DEX_ERROR_CODES).includes(err.code)
+      ? err.code
+      : DEX_ERROR_CODES.INTERNAL_ERROR;
+    res.status(400).json(
+      createDexError(
+        code,
+        err?.message || 'Failed to claim syndicate winnings',
+        ERROR_MESSAGES[code as DexErrorCode] || err?.message
+      )
+    );
   }
 });
 

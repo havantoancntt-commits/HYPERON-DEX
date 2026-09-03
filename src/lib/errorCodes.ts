@@ -34,6 +34,13 @@ export const DEX_ERROR_CODES = {
   INVALID_SLIPPAGE: 'INVALID_SLIPPAGE',
   INVALID_AMOUNT: 'INVALID_AMOUNT',
   RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
+  CLAIM_ALREADY_IN_PROGRESS: 'CLAIM_ALREADY_IN_PROGRESS',
+  NO_WINNINGS_FOUND: 'NO_WINNINGS_FOUND',
+  SYNDICATE_NOT_FOUND: 'SYNDICATE_NOT_FOUND',
+  ROUND_NOT_OPEN: 'ROUND_NOT_OPEN',
+  VRF_VERIFICATION_FAILED: 'VRF_VERIFICATION_FAILED',
+  INVALID_PARAMS: 'INVALID_PARAMS',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 
 export type DexErrorCode = (typeof DEX_ERROR_CODES)[keyof typeof DEX_ERROR_CODES];
@@ -106,4 +113,11 @@ export const ERROR_MESSAGES: Record<DexErrorCode, string> = {
   INVALID_SLIPPAGE: 'Slippage tolerance must be between 0.01% and 50.0%.',
   INVALID_AMOUNT: 'The swap input amount must be a positive non-zero number.',
   RATE_LIMIT_EXCEEDED: 'API rate limit exceeded. Please wait a moment before sending new requests.',
+  CLAIM_ALREADY_IN_PROGRESS: 'Prize claim is already in progress for this wallet address. Please wait for confirmation.',
+  NO_WINNINGS_FOUND: 'No unclaimed lottery winnings found for this wallet address.',
+  SYNDICATE_NOT_FOUND: 'The specified lottery syndicate pool was not found or has concluded.',
+  ROUND_NOT_OPEN: 'The specified lottery round is currently not open for participation.',
+  VRF_VERIFICATION_FAILED: 'Provably fair VRF seed verification failed. Commitment integrity check rejected.',
+  INVALID_PARAMS: 'Invalid or missing request parameters.',
+  INTERNAL_ERROR: 'An internal error occurred while processing the request.',
 };

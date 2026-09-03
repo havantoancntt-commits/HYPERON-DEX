@@ -670,6 +670,8 @@ export interface LotterySyndicatePool {
   totalPrizeWonUsd?: number;
   description: string;
   bannerGradient: string;
+  members?: Record<string, number>; // userAddress -> sharesCount
+  claimedMembers?: Record<string, boolean>; // userAddress -> hasClaimed
 }
 
 export interface LotteryDigitFrequency {

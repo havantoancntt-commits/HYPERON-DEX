@@ -9,6 +9,8 @@
  * - Provenance tracking (source, timestamp, age, status).
  */
 
+import { DexError, DEX_ERROR_CODES } from '../../src/lib/errorCodes';
+
 export type PriceStatus = 'LIVE' | 'STALE' | 'UNAVAILABLE' | 'ERROR';
 
 export interface PriceEntry {
@@ -239,6 +241,7 @@ const SYMBOL_MAP: Record<string, string> = {
   MATICUSDT: 'POL',
   SOLUSDT: 'SOL',
   AVAXUSDT: 'AVAX',
+  USDCUSDT: 'USDC',
 };
 
 const COINGECKO_MAP: Record<string, string> = {
@@ -273,12 +276,23 @@ const CRYPTOCOMPARE_MAP: Record<string, string> = {
 // Max freshness threshold: 30 seconds
 const STALE_THRESHOLD_MS = 30000;
 let lastSyncTimestamp = 0;
+let activeSyncPromise: Promise<void> | null = null;
 
 export async function syncRealTimePrices(): Promise<void> {
+  if (activeSyncPromise) {
+    return activeSyncPromise;
+  }
   const now = Date.now();
   if (now - lastSyncTimestamp < 2000) {
     return;
   }
+  activeSyncPromise = _doSyncRealTimePrices(now).finally(() => {
+    activeSyncPromise = null;
+  });
+  return activeSyncPromise;
+}
+
+async function _doSyncRealTimePrices(now: number): Promise<void> {
   lastSyncTimestamp = now;
 
   let success = false;
@@ -600,3 +614,38 @@ export function getPrice(symbol: string): number {
   // Fallback to static reference for initial rendering ONLY if bootstrap is running
   return priceCache[symbol.toUpperCase()]?.priceUsd || 0;
 }
+
+/**
+ * Asserts that the price feed for an asset is active and fresh.
+ * Throws DexError if price is unavailable or older than maxAgeMs.
+ * Enforces strict protection against oracle arbitrage exploits.
+ */
+export function assertFreshPrice(symbol: string, maxAgeMs: number = STALE_THRESHOLD_MS): PriceEntry {
+  const state = getPriceState(symbol);
+  if (state.status === 'UNAVAILABLE' || state.priceUsd === null || state.priceUsd <= 0) {
+    throw new DexError(
+      DEX_ERROR_CODES.PRICE_UNAVAILABLE,
+      `Real-time price feed unavailable for asset '${symbol.toUpperCase()}'. Oracle provider not responding.`
+    );
+  }
+  if (state.status === 'STALE' || state.ageMs > maxAgeMs) {
+    throw new DexError(
+      DEX_ERROR_CODES.STALE_PRICE,
+      `Oracle price for '${symbol.toUpperCase()}' is stale (${(state.ageMs / 1000).toFixed(1)}s old, threshold: ${maxAgeMs / 1000}s). Stale prices rejected to prevent arbitrage exploits.`
+    );
+  }
+  return state;
+}
+
+/**
+ * Checks whether an asset price is actively fresh without throwing.
+ */
+export function isPriceFresh(symbol: string, maxAgeMs: number = STALE_THRESHOLD_MS): boolean {
+  try {
+    assertFreshPrice(symbol, maxAgeMs);
+    return true;
+  } catch {
+    return false;
+  }
+}
+

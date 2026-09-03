@@ -11,7 +11,7 @@
  */
 
 import { Address, getAddress, isAddress } from 'viem';
-import { ChainId, Token } from '../../src/types';
+import { ChainId, Token, TokenSecurityReport } from '../../src/types';
 import { VERIFIED_TOKENS, SUPPORTED_CHAINS } from '../../src/lib/constants';
 import { getContractBytecode, getERC20Metadata } from './rpc';
 import { getUsdPrice } from './priceFeed';
@@ -35,6 +35,7 @@ export interface ResolvedToken {
   category: Token['category'];
   isNative?: boolean;
   logoUrl?: string;
+  security?: TokenSecurityReport;
 }
 
 export class CanonicalTokenResolver {
