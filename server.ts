@@ -1,6 +1,6 @@
+import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
 import { VERIFIED_TOKENS, SUPPORTED_CHAINS, DEX_SOURCES, SAMPLE_POOLS, SAMPLE_STAKING_VAULTS } from './src/lib/constants';
@@ -22,13 +22,24 @@ import {
   joinSyndicatePool,
   scanTicketAgainstRound,
 } from './server/services/lotteryEngine';
-import { DEX_ERROR_CODES, createDexError, ERROR_MESSAGES, DexErrorCode } from './src/lib/errorCodes';
+import { DEX_ERROR_CODES, createDexError, ERROR_MESSAGES, DexErrorCode, DexError } from './src/lib/errorCodes';
 import { requireWalletAuth } from './server/middleware/walletAuth';
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '1mb' }));
+
+// CORS Middleware for Web3 DApps & External Oracles
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Wallet-Address');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
 
 // Basic Security & Telemetry Headers
 app.use((req, res, next) => {
@@ -200,10 +211,9 @@ app.get('/api/tokens', (req: Request, res: Response) => {
         : token;
     });
 
-    const tokens = dynamicTokens.filter(
-      (t) => t.chainId === chainId || t.symbol === 'USDC' || t.symbol === 'USDT' || t.symbol === 'WBTC'
-    );
-    res.json({ tokens: tokens.length > 0 ? tokens : dynamicTokens });
+    // Filter strictly by requested chainId to prevent Ethereum contract addresses leaking into L2 chains
+    const tokens = dynamicTokens.filter((t) => t.chainId === chainId);
+    res.json({ tokens });
   } catch (err: unknown) {
     console.error('[HYPERON-DEX] Tokens fetch error:', err);
     res.status(500).json({ error: 'Failed to retrieve verified tokens' });
@@ -329,6 +339,36 @@ app.post('/api/quotes', async (req: Request, res: Response) => {
     });
     res.json({ quote });
   } catch (err: any) {
+    if (err instanceof DexError) {
+      let httpStatus = 500;
+      if (
+        err.code === DEX_ERROR_CODES.INVALID_AMOUNT ||
+        err.code === DEX_ERROR_CODES.INVALID_SLIPPAGE ||
+        err.code === DEX_ERROR_CODES.INVALID_CHAIN ||
+        err.code === DEX_ERROR_CODES.AMBIGUOUS_TOKEN ||
+        err.code === DEX_ERROR_CODES.TOKEN_UNVERIFIED ||
+        err.code === DEX_ERROR_CODES.USER_ADDRESS_REQUIRED ||
+        err.code === DEX_ERROR_CODES.INVALID_PARAMS
+      ) {
+        httpStatus = 400;
+      } else if (
+        err.code === DEX_ERROR_CODES.TOKEN_NOT_FOUND ||
+        err.code === DEX_ERROR_CODES.NO_LIQUIDITY ||
+        err.code === DEX_ERROR_CODES.ROUTE_UNAVAILABLE
+      ) {
+        httpStatus = 404;
+      } else if (
+        err.code === DEX_ERROR_CODES.RPC_UNAVAILABLE ||
+        err.code === DEX_ERROR_CODES.PRICE_UNAVAILABLE
+      ) {
+        httpStatus = 503;
+      }
+
+      return res.status(httpStatus).json(
+        createDexError(err.code, err.message, ERROR_MESSAGES[err.code] || err.message, err.details)
+      );
+    }
+
     const msg = err?.message || 'Failed to compute swap quote';
     const code: DexErrorCode = msg.includes('TOKEN_NOT_FOUND')
       ? DEX_ERROR_CODES.TOKEN_NOT_FOUND
@@ -390,9 +430,9 @@ app.post('/api/swaps/simulate', async (req: Request, res: Response) => {
     if (!parsed.success) {
       return res.status(400).json(
         createDexError(
-          DEX_ERROR_CODES.SIMULATION_FAILED,
-          'Invalid simulation payload',
-          ERROR_MESSAGES.SIMULATION_FAILED,
+          DEX_ERROR_CODES.INVALID_PARAMS,
+          'Invalid simulation payload parameters',
+          ERROR_MESSAGES.INVALID_PARAMS,
           parsed.error.issues
         )
       );
@@ -961,8 +1001,14 @@ app.get('/api/lottery/overview', (req: Request, res: Response) => {
 app.post('/api/lottery/buy', requireWalletAuth, (req: Request, res: Response) => {
   try {
     const { roundId, poolId, tickets, paymentToken = 'USDC', userAddress } = req.body;
-    if (!roundId || !tickets || !Array.isArray(tickets) || tickets.length === 0 || !userAddress) {
-      return res.status(400).json({ error: 'Missing required parameters (roundId, tickets, userAddress)' });
+    if (!roundId || !tickets || !Array.isArray(tickets) || tickets.length === 0 || tickets.length > 50 || !userAddress) {
+      return res.status(400).json(
+        createDexError(
+          DEX_ERROR_CODES.INVALID_PARAMS,
+          'Missing or invalid parameters: roundId, userAddress are required, and tickets must be a non-empty array with at most 50 tickets.',
+          ERROR_MESSAGES.INVALID_PARAMS
+        )
+      );
     }
     const result = buyLotteryTickets({
       roundId: Number(roundId),
@@ -1108,7 +1154,8 @@ app.post('/api/lottery/syndicate/claim', requireWalletAuth, (req: Request, res: 
 // -------------------------------------------------------------
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
+    const { createServer } = await import('vite');
+    const vite = await createServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
