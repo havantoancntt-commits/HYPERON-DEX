@@ -22,6 +22,7 @@ import {
 import { getChainClient, getERC20Allowance, getERC20Balance, getNativeBalance, getLiveBlockNumber, getLiveGasPrice } from './rpc';
 import { getRouterConfig } from './routerRegistry';
 import { getUsdPrice } from './priceFeed';
+import { safeTruncateAndParseUnits } from './router';
 import { SwapQuote, TransactionSimulation, ChainId } from '../../src/types';
 
 export const UNISWAP_V3_ROUTER_ABI = [
@@ -248,8 +249,8 @@ export class SimulationEngine {
 
     const decimalsIn = quote.fromToken.decimals || 18;
     const decimalsOut = quote.toToken.decimals || 18;
-    const amountInRaw = parseUnits(quote.fromAmount.toString(), decimalsIn);
-    const amountOutMinRaw = parseUnits(quote.minimumReceived.toString(), decimalsOut);
+    const amountInRaw = safeTruncateAndParseUnits(quote.fromAmount.toString(), decimalsIn);
+    const amountOutMinRaw = safeTruncateAndParseUnits(quote.minimumReceived.toString(), decimalsOut);
 
     const isNativeIn =
       quote.fromToken.symbol === nativeSymbol ||

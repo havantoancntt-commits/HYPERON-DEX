@@ -99,6 +99,45 @@ export function calculateGasCostInTokenOutRaw(
   return 0n;
 }
 
+/**
+ * Safely parses a token amount string into BigInt with decimals truncation.
+ * Prevents Viem parseUnits from throwing RangeError when fractional part exceeds token decimals.
+ * Validates input strictly and returns DEX_ERROR_CODES.INVALID_AMOUNT on malformed or non-positive input.
+ */
+export function safeTruncateAndParseUnits(rawAmount: string, decimals: number): bigint {
+  if (!rawAmount || typeof rawAmount !== 'string') {
+    throw new DexError(DEX_ERROR_CODES.INVALID_AMOUNT, 'Amount must be a non-empty string.');
+  }
+
+  // Normalize comma to dot and trim whitespace
+  const cleaned = rawAmount.trim().replace(/,/g, '.');
+  if (!/^\d+(\.\d+)?$/.test(cleaned)) {
+    throw new DexError(
+      DEX_ERROR_CODES.INVALID_AMOUNT,
+      `Invalid numeric format for token amount: '${rawAmount}'`
+    );
+  }
+
+  const [intPart, fracPart = ''] = cleaned.split('.');
+  // Truncate fractional part to max allowed decimals before passing to parseUnits
+  const truncatedFrac = fracPart.slice(0, decimals);
+  const normalizedStr = truncatedFrac.length > 0 ? `${intPart}.${truncatedFrac}` : intPart;
+
+  try {
+    const raw = parseUnits(normalizedStr, decimals);
+    if (raw <= 0n) {
+      throw new DexError(DEX_ERROR_CODES.INVALID_AMOUNT, 'The swap input amount must be greater than zero.');
+    }
+    return raw;
+  } catch (err: any) {
+    if (err instanceof DexError) throw err;
+    throw new DexError(
+      DEX_ERROR_CODES.INVALID_AMOUNT,
+      `Failed to parse token amount: ${err?.message || 'invalid decimal representation'}`
+    );
+  }
+}
+
 export interface RouteCandidate {
   dexName: string;
   protocol: string;
@@ -175,7 +214,8 @@ export class SmartGraphRouter {
 
     const decimalsIn = fromToken.decimals;
     const decimalsOut = toToken.decimals;
-    const amountInRaw = parseUnits(rawAmountStr, decimalsIn);
+    // Production fix: Truncate fractional decimals before calling parseUnits to prevent Viem crash
+    const amountInRaw = safeTruncateAndParseUnits(rawAmountStr, decimalsIn);
 
     // Fee-on-transfer / tax token deduction:
     // If fromToken has a detected transfer fee/sell tax, AMM receives net amount

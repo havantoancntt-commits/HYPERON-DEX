@@ -27,6 +27,37 @@ import {
   AlertCircle
 } from 'lucide-react';
 
+/**
+ * Production-grade sanitizer for numeric token amounts:
+ * 1. Converts commas to dots (crucial for mobile/European keyboards).
+ * 2. Strips all non-numeric and non-dot characters.
+ * 3. Prevents multiple dots (keeps only the first).
+ * 4. Caps decimal places to token decimals.
+ * 5. Auto-prefixes leading dot with 0 (e.g. '.5' -> '0.5').
+ */
+export const sanitizeAmountInput = (value: string, maxDecimals: number = 18): string => {
+  if (!value) return '';
+  // Normalize comma to dot
+  let cleaned = value.replace(/,/g, '.');
+  // Strip non-numeric and non-period characters
+  cleaned = cleaned.replace(/[^0-9.]/g, '');
+  // Keep only the first decimal point
+  const parts = cleaned.split('.');
+  if (parts.length > 2) {
+    cleaned = parts[0] + '.' + parts.slice(1).join('');
+  }
+  // Auto prefix leading zero
+  if (cleaned.startsWith('.')) {
+    cleaned = '0' + cleaned;
+  }
+  // Truncate decimal digits to token decimals
+  const splitParts = cleaned.split('.');
+  if (splitParts.length === 2 && splitParts[1].length > maxDecimals) {
+    cleaned = `${splitParts[0]}.${splitParts[1].slice(0, maxDecimals)}`;
+  }
+  return cleaned;
+};
+
 export const SwapView: React.FC = () => {
   const { balances, isConnected, connectWallet, slippage, setSlippage, mevProtected, setMevProtected, address, chainId } = useWallet();
   const { selectedPair, setActiveSimulation, setActiveQuote, addToast, getLiveToken, liveTokens } = useExchange();
@@ -147,6 +178,18 @@ export const SwapView: React.FC = () => {
     }
   }, [chainId]);
 
+  // Fix 4: Clear stale quote immediately whenever trading pair changes to avoid race conditions and stale route UI
+  useEffect(() => {
+    setQuote(null);
+    setQuoteError(null);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  }, [fromSymbol, toSymbol]);
+
   // Trigger debounced quote updates when user changes amount or token
   useEffect(() => {
     const num = parseFloat(fromAmount);
@@ -183,13 +226,12 @@ export const SwapView: React.FC = () => {
   const fromBalance = balances[fromToken.symbol] || 0;
   const toBalance = balances[toToken.symbol] || 0;
   const numFromAmount = parseFloat(fromAmount) || 0;
-  const isInsufficientBalance = isConnected && numFromAmount > fromBalance;
+  // Fix 5: Insufficient balance validation logic
+  const isInsufficientBalance = isConnected && numFromAmount > 0 && (fromBalance <= 0 || numFromAmount > fromBalance);
 
   const handlePercentageSelect = (percent: number) => {
-    if (fromBalance <= 0) {
-      setFromAmount('0.0');
-      return;
-    }
+    // Fix 5: Do not set amount if balance is zero or negative
+    if (fromBalance <= 0) return;
     const val = percent === 100 ? fromBalance.toString() : (fromBalance * (percent / 100)).toFixed(4);
     setFromAmount(val);
   };
@@ -263,10 +305,11 @@ export const SwapView: React.FC = () => {
     }
   };
 
-  const filteredSelectionTokens = liveTokens.filter(
+  const filteredSelectionTokens = (liveTokens || []).filter(
     (t) =>
-      t.symbol.toLowerCase().includes(searchTokenQuery.toLowerCase()) ||
-      t.name.toLowerCase().includes(searchTokenQuery.toLowerCase())
+      t?.symbol?.toLowerCase().includes(searchTokenQuery.toLowerCase().trim()) ||
+      t?.name?.toLowerCase().includes(searchTokenQuery.toLowerCase().trim()) ||
+      t?.address?.toLowerCase().includes(searchTokenQuery.toLowerCase().trim())
   );
 
   const priceRatio = fromToken.priceUsd > 0 && toToken.priceUsd > 0
@@ -428,10 +471,9 @@ export const SwapView: React.FC = () => {
               inputMode="decimal"
               value={fromAmount}
               onChange={(e) => {
-                const val = e.target.value;
-                if (/^\d*\.?\d*$/.test(val)) {
-                  setFromAmount(val);
-                }
+                // Fix 3: Sanitize input replacing commas, stripping non-numeric chars, and capping decimals
+                const sanitized = sanitizeAmountInput(e.target.value, fromToken.decimals || 18);
+                setFromAmount(sanitized);
               }}
               placeholder="0.0"
               className="w-full bg-transparent text-2xl sm:text-3xl font-mono font-black text-white placeholder-slate-600 focus:outline-none"
@@ -456,8 +498,13 @@ export const SwapView: React.FC = () => {
               {[25, 50, 75, 100].map((pct) => (
                 <button
                   key={pct}
+                  disabled={fromBalance <= 0}
                   onClick={() => handlePercentageSelect(pct)}
-                  className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-lg bg-white/[0.04] hover:bg-cyan-500/20 text-slate-300 hover:text-cyan-300 transition-colors cursor-pointer"
+                  className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded-lg transition-colors ${
+                    fromBalance <= 0
+                      ? 'bg-white/[0.02] text-slate-600 cursor-not-allowed border border-white/[0.02]'
+                      : 'bg-white/[0.04] hover:bg-cyan-500/20 text-slate-300 hover:text-cyan-300 transition-colors cursor-pointer'
+                  }`}
                 >
                   {pct === 100 ? 'MAX' : `${pct}%`}
                 </button>
@@ -607,10 +654,10 @@ export const SwapView: React.FC = () => {
           ) : isInsufficientBalance ? (
             <button
               disabled
-              className="w-full py-4 bg-rose-500/10 border border-rose-500/30 text-rose-400 font-bold text-sm rounded-2xl cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full py-4 bg-rose-500/15 border border-rose-500/30 text-rose-400 font-bold text-sm rounded-2xl cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-rose-950/20"
             >
               <AlertCircle className="w-4 h-4 text-rose-400" />
-              <span>Số Dư {fromToken.symbol} Không Đủ</span>
+              <span>Số Dư Không Đủ (Insufficient Balance)</span>
             </button>
           ) : !quote ? (
             <button
@@ -837,35 +884,52 @@ export const SwapView: React.FC = () => {
             </div>
 
             <div className="max-h-72 overflow-y-auto space-y-1 scrollbar-none">
-              {filteredSelectionTokens.map((token, idx) => (
-                <button
-                  key={`${token.chainId}-${token.address}-${token.symbol}-${idx}`}
-                  onClick={() => {
-                    if (showFromSelect) setFromSymbol(token.symbol);
-                    if (showToSelect) setToSymbol(token.symbol);
-                    setShowFromSelect(false);
-                    setShowToSelect(false);
-                  }}
-                  className="w-full flex items-center justify-between p-2.5 rounded-2xl hover:bg-white/[0.05] text-left transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <TokenLogo symbol={token.symbol} name={token.name} src={token.logoUrl} chainId={token.chainId} className="w-7 h-7" />
-                    <div>
-                      <div className="font-bold text-xs text-white group-hover:text-cyan-300 transition-colors flex items-center gap-2">
-                        {token.symbol}
-                        <span className="text-[10px] font-normal text-slate-400">{token.name}</span>
+              {!liveTokens || liveTokens.length === 0 ? (
+                <div className="py-8 text-center space-y-2">
+                  <RefreshCw className="w-6 h-6 text-cyan-400 mx-auto animate-spin" />
+                  <div className="text-xs font-semibold text-slate-400">Đang đồng bộ danh sách token on-chain...</div>
+                </div>
+              ) : filteredSelectionTokens.length === 0 ? (
+                <div className="py-10 text-center space-y-2.5 px-4">
+                  <div className="w-10 h-10 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center mx-auto text-slate-500">
+                    <Search className="w-5 h-5" />
+                  </div>
+                  <div className="text-sm font-bold text-slate-300">Không tìm thấy token nào</div>
+                  <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
+                    Không có tài sản nào khớp với từ khóa "{searchTokenQuery}". Vui lòng kiểm tra lại ký hiệu hoặc địa chỉ hợp đồng.
+                  </p>
+                </div>
+              ) : (
+                filteredSelectionTokens.map((token, idx) => (
+                  <button
+                    key={`${token.chainId}-${token.address}-${token.symbol}-${idx}`}
+                    onClick={() => {
+                      if (showFromSelect) setFromSymbol(token.symbol);
+                      if (showToSelect) setToSymbol(token.symbol);
+                      setShowFromSelect(false);
+                      setShowToSelect(false);
+                    }}
+                    className="w-full flex items-center justify-between p-2.5 rounded-2xl hover:bg-white/[0.05] text-left transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <TokenLogo symbol={token.symbol} name={token.name} src={token.logoUrl} chainId={token.chainId} className="w-7 h-7" />
+                      <div>
+                        <div className="font-bold text-xs text-white group-hover:text-cyan-300 transition-colors flex items-center gap-2">
+                          {token.symbol}
+                          <span className="text-[10px] font-normal text-slate-400">{token.name}</span>
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-500">Đã xác thực On-chain</div>
                       </div>
-                      <div className="text-[10px] font-mono text-slate-500">Đã xác thực On-chain</div>
                     </div>
-                  </div>
-                  <div className="text-right font-mono">
-                    <div className="text-xs font-bold text-white">${token.priceUsd.toLocaleString(undefined, { minimumFractionDigits: token.priceUsd < 10 ? 4 : 2 })}</div>
-                    <div className={`text-[10px] font-bold ${token.change24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {token.change24h >= 0 ? '+' : ''}{token.change24h.toFixed(2)}%
+                    <div className="text-right font-mono">
+                      <div className="text-xs font-bold text-white">${token.priceUsd.toLocaleString(undefined, { minimumFractionDigits: token.priceUsd < 10 ? 4 : 2 })}</div>
+                      <div className={`text-[10px] font-bold ${token.change24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {token.change24h >= 0 ? '+' : ''}{token.change24h.toFixed(2)}%
+                      </div>
                     </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                ))
+              )}
             </div>
           </div>
         </div>

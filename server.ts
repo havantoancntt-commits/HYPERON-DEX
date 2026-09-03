@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { z } from 'zod';
+import { GoogleGenAI } from '@google/genai';
 import { VERIFIED_TOKENS, SUPPORTED_CHAINS, DEX_SOURCES, SAMPLE_POOLS, SAMPLE_STAKING_VAULTS } from './src/lib/constants';
 import { priceCache, getPrice, getPriceState, getUsdPrice, syncRealTimePrices } from './server/services/priceFeed';
 import { fetchLiveKlines, fetchLiveOrderBook, fetchLiveTrades, calculateLiveTechnicalIndicators } from './server/services/marketData';
@@ -466,6 +467,17 @@ app.post('/api/ai/token-scanner', async (req: Request, res: Response) => {
   }
 });
 
+// Lazy-initialized Gemini AI client & rate-limit cooldown manager
+let geminiClient: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI | null {
+  if (!geminiClient && process.env.GEMINI_API_KEY) {
+    geminiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  }
+  return geminiClient;
+}
+
+let aiRateLimitedUntil = 0;
+
 // -------------------------------------------------------------
 // 8. AI Quantitative Portfolio Copilot
 // -------------------------------------------------------------
@@ -499,37 +511,38 @@ app.post('/api/ai/portfolio-copilot', async (req: Request, res: Response) => {
     const ethRatio = computedTotal > 0 ? Math.round((ethUsd / computedTotal) * 100) : 45;
     const wbtcRatio = computedTotal > 0 ? Math.round((wbtcUsd / computedTotal) * 100) : 30;
 
-    let analysis = '';
-    const riskFactors: string[] = [];
-    const suggestedActions: any[] = [];
+    // Structured fallback quantitative analysis
+    let fallbackAnalysis = '';
+    const fallbackRiskFactors: string[] = [];
+    const fallbackSuggestedActions: any[] = [];
 
     if (sanitizedMsg.includes('rebalance') || sanitizedMsg.includes('allocation') || sanitizedMsg.includes('portfolio')) {
-      analysis = `### 📊 Institutional Portfolio Structure Analysis
+      fallbackAnalysis = `### 📊 Institutional Portfolio Structure Analysis
 - **Current Total Asset Exposure**: ~$${computedTotal.toLocaleString()}
 - **Allocation Vectors**: ETH (${ethRatio}%), WBTC (${wbtcRatio}%), Stablecoins (${stableRatio}%)
 - **Systemic Beta Exposure**: Moderate-High correlated with Layer-1 ecosystem.
 - **Smart Router Recommendation**: Maintaining a 20-30% stablecoin liquidity reserve protects against downside volatility while generating yield in Hyperon AMM pools.`;
 
-      riskFactors.push(
+      fallbackRiskFactors.push(
         ethRatio > 60 ? 'High single-asset exposure on Ethereum' : 'Layer-1 market beta sensitivity',
         stableRatio < 15 ? 'Low defensive liquidity buffer during drawdowns' : 'Defensive allocation optimal'
       );
 
-      suggestedActions.push({
+      fallbackSuggestedActions.push({
         title: 'Defensive Liquidity Rebalance',
         description: 'Swap small allocation into USDC to maintain 25% cash buffer against market volatility.',
         targetPair: 'ETH/USDC',
-        suggestedAmount: Number(((computedTotal * 0.05) / ethPrice).toFixed(3)),
+        suggestedAmount: Number(((computedTotal * 0.05) / (ethPrice || 2500)).toFixed(3)),
         type: 'REBALANCE',
       });
     } else if (sanitizedMsg.includes('risk') || sanitizedMsg.includes('safe') || sanitizedMsg.includes('audit')) {
-      analysis = `### 🛡️ Non-Custodial Security & Exposure Audit
+      fallbackAnalysis = `### 🛡️ Non-Custodial Security & Exposure Audit
 - **Contract Approvals Status**: All verified ERC-20 allowances are isolated. Zero unlimited approvals detected on unverified spenders.
 - **MEV Protection Status**: Active via Flashbots Private RPC relay. Zero sandwich risk on executed swaps.
 - **Counterparty Risk**: 0% custodial risk — all funds remain in user-controlled smart contract accounts or cold storage.`;
 
-      riskFactors.push('Unchecked ERC-20 approvals on third-party dApps', 'Slippage during extreme network congestion');
-      suggestedActions.push({
+      fallbackRiskFactors.push('Unchecked ERC-20 approvals on third-party dApps', 'Slippage during extreme network congestion');
+      fallbackSuggestedActions.push({
         title: 'Audit Active Allowances',
         description: 'Review security center token approvals and revoke stale DEX authorizations.',
         targetPair: 'USDC/USDT',
@@ -537,14 +550,14 @@ app.post('/api/ai/portfolio-copilot', async (req: Request, res: Response) => {
         type: 'AUDIT',
       });
     } else {
-      analysis = `### 🤖 Quantitative Copilot Evaluation
+      fallbackAnalysis = `### 🤖 Quantitative Copilot Evaluation
 Analyzed query: *"${message}"*
 - **Market State**: Live multi-exchange price oracles indicate healthy liquidity conditions across major trading pairs.
 - **Execution Architecture**: Non-custodial Smart Router calculates optimal split-routing (Constant-Product + Curve Stable Swap) to minimize slippage.
 - **Recommendation**: Ensure pre-flight simulation succeeds before broadcasting large on-chain swaps.`;
 
-      riskFactors.push('Volatility spikes near scheduled macroeconomic releases', 'Gas fee variability during high network volume');
-      suggestedActions.push({
+      fallbackRiskFactors.push('Volatility spikes near scheduled macroeconomic releases', 'Gas fee variability during high network volume');
+      fallbackSuggestedActions.push({
         title: 'Execute Smart Split-Swap',
         description: 'Route trades through multi-DEX pools for minimal price impact.',
         targetPair: 'ETH/USDT',
@@ -553,12 +566,87 @@ Analyzed query: *"${message}"*
       });
     }
 
+    // Call Gemini 1.5 Flash Model when client is available and not in cooldown
+    const ai = getGeminiClient();
+    const now = Date.now();
+    if (ai && now >= aiRateLimitedUntil) {
+      try {
+        const prompt = `You are HYPERON-DEX Quantitative Portfolio Copilot, an institutional Web3 DeFi risk and execution advisor.
+User query: "${message}"
+Portfolio snapshot:
+- Estimated Portfolio Value: $${computedTotal.toLocaleString()}
+- ETH: ${ethBalance} ($${ethUsd.toFixed(0)}, ${ethRatio}%) [Oracle Price: $${ethPrice}]
+- WBTC: ${wbtcBalance} ($${wbtcUsd.toFixed(0)}, ${wbtcRatio}%) [Oracle Price: $${wbtcPrice}]
+- Stables (USDC/USDT): $${stableUsd.toFixed(0)} (${stableRatio}%)
+
+Generate an institutional-grade markdown response.
+Reply strictly with a JSON object:
+{
+  "analysis": "Markdown string with clear headings, bullet points, and quantitative recommendations",
+  "riskFactors": ["Risk 1", "Risk 2"],
+  "suggestedActions": [
+    {
+      "title": "Action Title",
+      "description": "Short explanation",
+      "targetPair": "ETH/USDC",
+      "suggestedAmount": 0.5,
+      "type": "REBALANCE"
+    }
+  ]
+}`;
+
+        // Production-grade fix: Use valid model 'gemini-1.5-flash'
+        const response = await ai.models.generateContent({
+          model: 'gemini-1.5-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+          },
+        });
+
+        const rawText = response.text?.trim();
+        if (rawText) {
+          try {
+            const parsedJson = JSON.parse(rawText);
+            return res.json({
+              analysis: parsedJson.analysis || rawText,
+              riskFactors: Array.isArray(parsedJson.riskFactors) ? parsedJson.riskFactors : fallbackRiskFactors,
+              suggestedActions: Array.isArray(parsedJson.suggestedActions) ? parsedJson.suggestedActions : fallbackSuggestedActions,
+            });
+          } catch {
+            return res.json({
+              analysis: rawText,
+              riskFactors: fallbackRiskFactors,
+              suggestedActions: fallbackSuggestedActions,
+            });
+          }
+        }
+      } catch (apiErr: any) {
+        const status = apiErr?.status || apiErr?.statusCode || apiErr?.response?.status;
+        const errMsg = apiErr?.message || String(apiErr);
+
+        if (status === 429 || errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+          // Set 60-second cooldown on 429 Rate Limit to prevent spamming
+          aiRateLimitedUntil = Date.now() + 60 * 1000;
+          console.warn('[HYPERON-DEX AI Copilot] Gemini API 429 Rate Limit hit. Cooldown active for 60s.');
+        } else {
+          // Explicit diagnostic logging for non-429 failures (404, 401, timeouts, network)
+          console.error('[HYPERON-DEX AI Copilot API Error]:', {
+            status,
+            message: errMsg,
+            stack: apiErr?.stack,
+          });
+        }
+      }
+    }
+
     return res.json({
-      analysis,
-      riskFactors,
-      suggestedActions,
+      analysis: fallbackAnalysis,
+      riskFactors: fallbackRiskFactors,
+      suggestedActions: fallbackSuggestedActions,
     });
   } catch (err: any) {
+    console.error('[HYPERON-DEX AI Copilot Route Error]:', err);
     res.status(500).json({ error: 'Copilot analysis failed' });
   }
 });
