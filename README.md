@@ -135,3 +135,18 @@ The regression suite (`tests/runAllTests.ts`) rigorously verifies:
 7. **Gas-Aware Routing**: Verifies `calculateGasCostInTokenOutRaw` and rejects inefficient split routes where gas overhead exceeds output gains.
 8. **EVM Disassembler**: Verifies `PUSH` data is isolated from executable opcodes.
 9. **Chainlink VRF 2.5**: Verifies cryptographic determinism and entropy uniformity.
+
+---
+
+## 5. Security Architecture, Formal Audits & Bug Bounty
+
+HYPERON-DEX is designed to institutional security standards:
+
+- **Formal Security Audit Report**: Refer to [`AUDIT.md`](./AUDIT.md) for full audit scopes, threat models, invariant proofs, and automated scanner integrations.
+- **Changelog & Version History**: Refer to [`CHANGELOG.md`](./CHANGELOG.md) for detailed security release notes.
+- **SSRF Mitigation (CVE-2026-63730)**: Strict domain whitelist, RFC 1918 private IP rejection, sensitive port filtering (443 only), and static path enforcement in `server/services/webhookSecurity.ts`.
+- **Multi-Oracle Consensus & Flashloan Circuit Breaker**: Consolidated weighted median across minimum 3 independent sources with 15% outlier filtering and automatic routing halt on >20% price shifts within 60 seconds (`server/services/multiOracleAggregator.ts`).
+- **Web Security Headers**: Enforced via `helmet` with strict CSP, HSTS (`max-age=31536000`), and `X-Content-Type-Options: nosniff`.
+- **Automated Security Pipeline**: Compatible with Slither and Mythril smart contract static analyzers.
+
+For responsible vulnerability disclosures or bug bounty inquiries, contact the security engineering team at `security@hyperon.io`.

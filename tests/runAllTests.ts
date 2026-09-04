@@ -26,6 +26,14 @@ import { validateAndCleanCandles } from '../server/services/marketData';
 import { poolDiscovery } from '../server/services/poolDiscovery';
 import { tokenResolver } from '../server/services/tokenResolver';
 import { getRouterConfig } from '../server/services/routerRegistry';
+import { validateWebhookUrl } from '../server/services/webhookSecurity';
+import {
+  getConsolidatedPrice,
+  aggregateMultiSourcePrice,
+  recordPriceSnapshot,
+  isCircuitBreakerTripped,
+  PriceSource,
+} from '../server/services/multiOracleAggregator';
 
 let totalTests = 0;
 let passedTests = 0;
@@ -419,6 +427,75 @@ async function runTests() {
     'Ethereum USDC matches canonical Ethereum address'
   );
   assert(arbUsdc.address.toLowerCase() !== ethUsdc.address.toLowerCase(), 'Cross-chain addresses are strictly distinct');
+
+  // -------------------------------------------------------------
+  // Test 13: Enterprise Webhook Security & SSRF Protection (CVE-2026-63730)
+  // -------------------------------------------------------------
+  console.log('\n--- 13. Enterprise Webhook Security & SSRF Protection (CVE-2026-63730) ---');
+  const validWebhook = validateWebhookUrl('https://api.hyperon.io/webhooks/alerts');
+  assert(validWebhook.isValid === true, 'Whitelisted HTTPS domain and static path is ALLOWED');
+
+  const httpWebhook = validateWebhookUrl('http://api.hyperon.io/webhooks/alerts');
+  assert(httpWebhook.isValid === false, 'Plain HTTP scheme is strictly BLOCKED');
+
+  const cloudMetadataWebhook = validateWebhookUrl('https://169.254.169.254/latest/meta-data');
+  assert(cloudMetadataWebhook.isValid === false, 'Cloud metadata IP 169.254.169.254 is strictly BLOCKED');
+
+  const loopbackWebhook = validateWebhookUrl('https://127.0.0.1/admin');
+  assert(loopbackWebhook.isValid === false, 'Loopback IP 127.0.0.1 is strictly BLOCKED');
+
+  const nonStandardPortWebhook = validateWebhookUrl('https://api.hyperon.io:8080/hook');
+  assert(nonStandardPortWebhook.isValid === false, 'Non-standard port 8080 is strictly BLOCKED');
+
+  const untrustedDomainWebhook = validateWebhookUrl('https://malicious-attacker.com/leak');
+  assert(untrustedDomainWebhook.isValid === false, 'Non-whitelisted domain is strictly BLOCKED');
+
+  const queryParamWebhook = validateWebhookUrl('https://api.hyperon.io/hook?redirect=internal');
+  assert(queryParamWebhook.isValid === false, 'URL containing query parameters is strictly BLOCKED');
+
+  // -------------------------------------------------------------
+  // Test 14: Multi-Oracle Price Consensus & Flashloan Circuit Breaker
+  // -------------------------------------------------------------
+  console.log('\n--- 14. Multi-Oracle Price Consensus & Flashloan Circuit Breaker ---');
+  const now = Date.now();
+  const normalSources: PriceSource[] = [
+    { name: 'Uniswap V3 TWAP', price: 3000000000000000000000n, timestamp: now, weight: 10 },
+    { name: 'Chainlink Feed', price: 3005000000000000000000n, timestamp: now, weight: 10 },
+    { name: 'Binance Index', price: 2995000000000000000000n, timestamp: now, weight: 8 },
+  ];
+  const consolidated = getConsolidatedPrice(normalSources);
+  assert(consolidated > 2990000000000000000000n && consolidated < 3010000000000000000000n, 'Consolidates multi-source prices into accurate weighted consensus');
+
+  // Outlier rejection test (>15% deviation)
+  const sourcesWithOutlier: PriceSource[] = [
+    ...normalSources,
+    { name: 'Manipulated Flashloan Pool', price: 5000000000000000000000n, timestamp: now, weight: 10 }, // 66% spike!
+  ];
+  const report = aggregateMultiSourcePrice('ETH', sourcesWithOutlier);
+  assert(report.outliersRejected.length === 1, 'Detects and isolates manipulated outlier feed (>15% divergence)');
+  assert(report.outliersRejected[0].name === 'Manipulated Flashloan Pool', 'Identifies correct outlier source name');
+
+  // Flashloan Circuit Breaker (>20% shock in 60s)
+  recordPriceSnapshot('TEST_TOKEN', 100000000000000000000n); // $100 base
+  // Simulate 30% instant spike
+  const cbStatus = recordPriceSnapshot('TEST_TOKEN', 130000000000000000000n); // $130 spike (+30%)
+  assert(cbStatus.isTripped === true, 'Flashloan Circuit Breaker trips on >20% price change in <60s');
+  assert(isCircuitBreakerTripped('TEST_TOKEN') === true, 'isCircuitBreakerTripped returns true when tripped');
+
+  // -------------------------------------------------------------
+  // Test 15: Advanced EVM Disassembler & Token Risk Tier
+  // -------------------------------------------------------------
+  console.log('\n--- 15. Advanced EVM Disassembler & Token Risk Tier ---');
+  // Bytecode with SSTORE (0x55), SLOAD (0x54), and ORIGIN (0x32)
+  const advancedBytecode = '0x60015560025432';
+  const opcodeForensics = scanBytecodeOpcodes(advancedBytecode);
+  assert(opcodeForensics.hasSStore === true, 'Accurately identifies SSTORE instruction');
+  assert(opcodeForensics.hasSLoad === true, 'Accurately identifies SLOAD instruction');
+  assert(opcodeForensics.hasOriginCheck === true, 'Accurately identifies ORIGIN instruction');
+  assert(opcodeForensics.sstoreCount === 1, 'Accurately counts SSTORE operations');
+
+  const ethAudit = await scanTokenSecurity('0x0000000000000000000000000000000000000000', 'ETH', 'ethereum');
+  assert(ethAudit.verificationTier === 'VERIFIED', 'Native ETH is classified into VERIFIED tier');
 
   // Summary
   console.log('\n======================================================');

@@ -37,6 +37,7 @@ import { getRouterConfig } from './routerRegistry';
 import { poolDiscovery, VerifiedPoolRecord } from './poolDiscovery';
 import { tokenResolver, ResolvedToken } from './tokenResolver';
 import { simulationEngine } from './simulationEngine';
+import { isCircuitBreakerTripped } from './multiOracleAggregator';
 
 export interface QuoteParams {
   fromTokenSymbol?: string;
@@ -222,6 +223,20 @@ export class SmartGraphRouter {
 
     const fromToken = tokenResolver.toToken(resolvedFrom);
     const toToken = tokenResolver.toToken(resolvedTo);
+
+    // Multi-Oracle Circuit Breaker Check (>20% 60s price shock protection)
+    if (isCircuitBreakerTripped(fromToken.symbol)) {
+      throw new DexError(
+        DEX_ERROR_CODES.CIRCUIT_BREAKER_TRIGGERED,
+        `CIRCUIT_BREAKER_TRIGGERED: Extreme price volatility detected for ${fromToken.symbol} (>20% change in <60s). Routing temporarily halted to protect against oracle manipulation.`
+      );
+    }
+    if (isCircuitBreakerTripped(toToken.symbol)) {
+      throw new DexError(
+        DEX_ERROR_CODES.CIRCUIT_BREAKER_TRIGGERED,
+        `CIRCUIT_BREAKER_TRIGGERED: Extreme price volatility detected for ${toToken.symbol} (>20% change in <60s). Routing temporarily halted to protect against oracle manipulation.`
+      );
+    }
 
     const decimalsIn = fromToken.decimals;
     const decimalsOut = toToken.decimals;

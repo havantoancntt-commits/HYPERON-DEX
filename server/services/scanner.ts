@@ -18,6 +18,18 @@ import { Address } from 'viem';
 export type HoneypotStatus = 'VERIFIED_SAFE' | 'SUSPECTED_HONEYPOT' | 'UNKNOWN';
 export type LockStatus = 'LOCKED' | 'UNLOCKED' | 'UNKNOWN';
 
+export interface OpcodeScanResult {
+  hasSelfDestruct: boolean;
+  hasDelegateCall: boolean;
+  hasCallCode: boolean;
+  hasCreate2: boolean;
+  hasSStore: boolean;
+  hasSLoad: boolean;
+  sstoreCount: number;
+  hasOriginCheck: boolean;
+  hasTransferHookAnomaly: boolean;
+}
+
 export interface ComprehensiveSecurityAudit extends TokenSecurityReport {
   evidence: string[];
   unknownFactors: string[];
@@ -29,21 +41,34 @@ export interface ComprehensiveSecurityAudit extends TokenSecurityReport {
   liquidityLockStatus: LockStatus;
   hasDelegateCall: boolean;
   hasCreate2: boolean;
+  verificationTier: 'VERIFIED' | 'MEDIUM_RISK' | 'HIGH_RISK';
+  externalReputation?: {
+    source: string;
+    isHoneypot: boolean;
+    honeypotReason?: string;
+    simulationSuccess: boolean;
+  };
 }
 
 /**
  * Disassembles raw EVM runtime bytecode by walking instruction by instruction.
  * Skips PUSH1..PUSH32 data bytes so constants in push operands are NOT misclassified as opcodes.
+ * Analyzes state storage mutations (SSTORE 0x55), reads (SLOAD 0x54), and tx.origin checks (ORIGIN 0x32).
  */
-export function scanBytecodeOpcodes(bytecodeHex: string): {
-  hasSelfDestruct: boolean;
-  hasDelegateCall: boolean;
-  hasCallCode: boolean;
-  hasCreate2: boolean;
-} {
+export function scanBytecodeOpcodes(bytecodeHex: string): OpcodeScanResult {
   const clean = bytecodeHex.startsWith('0x') ? bytecodeHex.slice(2) : bytecodeHex;
   if (!clean || clean.length % 2 !== 0) {
-    return { hasSelfDestruct: false, hasDelegateCall: false, hasCallCode: false, hasCreate2: false };
+    return {
+      hasSelfDestruct: false,
+      hasDelegateCall: false,
+      hasCallCode: false,
+      hasCreate2: false,
+      hasSStore: false,
+      hasSLoad: false,
+      sstoreCount: 0,
+      hasOriginCheck: false,
+      hasTransferHookAnomaly: false,
+    };
   }
 
   const bytes = new Uint8Array(clean.length / 2);
@@ -55,6 +80,10 @@ export function scanBytecodeOpcodes(bytecodeHex: string): {
   let hasDelegateCall = false;
   let hasCallCode = false;
   let hasCreate2 = false;
+  let hasSStore = false;
+  let hasSLoad = false;
+  let sstoreCount = 0;
+  let hasOriginCheck = false;
 
   let i = 0;
   while (i < bytes.length) {
@@ -75,12 +104,32 @@ export function scanBytecodeOpcodes(bytecodeHex: string): {
       hasCallCode = true;
     } else if (opcode === 0xf5) {
       hasCreate2 = true;
+    } else if (opcode === 0x55) {
+      hasSStore = true;
+      sstoreCount++;
+    } else if (opcode === 0x54) {
+      hasSLoad = true;
+    } else if (opcode === 0x32) {
+      hasOriginCheck = true;
     }
 
     i++;
   }
 
-  return { hasSelfDestruct, hasDelegateCall, hasCallCode, hasCreate2 };
+  // Anomaly: high density of SSTORE operations in standard ERC20 transfers
+  const hasTransferHookAnomaly = sstoreCount > 30 && hasOriginCheck;
+
+  return {
+    hasSelfDestruct,
+    hasDelegateCall,
+    hasCallCode,
+    hasCreate2,
+    hasSStore,
+    hasSLoad,
+    sstoreCount,
+    hasOriginCheck,
+    hasTransferHookAnomaly,
+  };
 }
 
 export async function scanTokenSecurity(
@@ -170,6 +219,7 @@ export async function scanTokenSecurity(
       liquidityLockStatus: 'LOCKED',
       hasDelegateCall: false,
       hasCreate2: false,
+      verificationTier: 'VERIFIED',
     };
   }
 
@@ -201,7 +251,18 @@ export async function scanTokenSecurity(
   }
 
   // 3. Opcode Disassembly & Function Selector Forensics
-  const opcodes = bytecode ? scanBytecodeOpcodes(bytecode) : { hasSelfDestruct: false, hasDelegateCall: false, hasCallCode: false, hasCreate2: false };
+  const defaultOpcodeScanResult: OpcodeScanResult = {
+    hasSelfDestruct: false,
+    hasDelegateCall: false,
+    hasCallCode: false,
+    hasCreate2: false,
+    hasSStore: false,
+    hasSLoad: false,
+    sstoreCount: 0,
+    hasOriginCheck: false,
+    hasTransferHookAnomaly: false,
+  };
+  const opcodes: OpcodeScanResult = bytecode ? scanBytecodeOpcodes(bytecode) : defaultOpcodeScanResult;
 
   // mint(address,uint256) -> 40c10f19 | a0712d68
   const hasMint = !!bytecode && (bytecode.includes('40c10f19') || bytecode.includes('a0712d68'));
@@ -224,6 +285,15 @@ export async function scanTokenSecurity(
   }
   if (opcodes.hasDelegateCall && !isProxy) {
     suspiciousPermissions.push('DELEGATECALL opcode present in non-proxy contract');
+  }
+  if (opcodes.hasSStore && opcodes.sstoreCount > 0) {
+    evidence.push(`Bytecode storage mutation analysis: ${opcodes.sstoreCount} SSTORE operations`);
+  }
+  if (opcodes.hasOriginCheck) {
+    suspiciousPermissions.push('EVM ORIGIN (0x32) opcode present: potential tx.origin anti-bot or transfer hook check');
+  }
+  if (opcodes.hasTransferHookAnomaly) {
+    suspiciousPermissions.push('Complex transfer hook anomaly: high-density storage manipulation with origin validation');
   }
 
   // 4. Evidence-based scoring calculation
@@ -271,12 +341,20 @@ export async function scanTokenSecurity(
 
   const liquidityLockStatus: LockStatus = verifiedMatch ? 'LOCKED' : 'UNKNOWN';
 
+  const verificationTier: 'VERIFIED' | 'MEDIUM_RISK' | 'HIGH_RISK' =
+    verifiedMatch || (score >= 80 && honeypotStatus === 'VERIFIED_SAFE' && !hasBlacklist && !hasPause && !opcodes.hasSelfDestruct)
+      ? 'VERIFIED'
+      : score >= 50 && honeypotStatus !== 'SUSPECTED_HONEYPOT' && !opcodes.hasSelfDestruct
+      ? 'MEDIUM_RISK'
+      : 'HIGH_RISK';
+
   return {
     tokenAddress: tokenAddress || '0x0000000000000000000000000000000000000000',
     tokenSymbol: metadata.symbol || symbol.toUpperCase(),
     chainId,
     securityScore: score,
     riskLevel,
+    verificationTier,
     isHoneypot: honeypotStatus === 'SUSPECTED_HONEYPOT',
     honeypotStatus,
     isContractVerified: !!verifiedMatch || metadata.isValid,

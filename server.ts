@@ -24,9 +24,48 @@ import {
 } from './server/services/lotteryEngine';
 import { DEX_ERROR_CODES, createDexError, ERROR_MESSAGES, DexErrorCode, DexError } from './src/lib/errorCodes';
 import { requireWalletAuth } from './server/middleware/walletAuth';
+import helmet from 'helmet';
+import {
+  validateWebhookUrl,
+  dispatchSecureWebhook,
+  getWebhookAuditLogs,
+} from './server/services/webhookSecurity';
+import {
+  aggregateMultiSourcePrice,
+  buildLiveOracleSources,
+  isCircuitBreakerTripped,
+  resetCircuitBreaker,
+} from './server/services/multiOracleAggregator';
 
 const app = express();
 const PORT = 3000;
+
+// Production Web Security Headers via Helmet (HSTS, CSP, X-Content-Type-Options)
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
+        connectSrc: ["'self'", 'https:', 'wss:', 'http://localhost:*'],
+        frameAncestors: ["'self'", 'https:', 'http:'],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+      },
+    },
+    frameguard: false, // Frame ancestors in CSP manages iframe embedding safely for AI Studio preview
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    noSniff: true,
+    xssFilter: true,
+  })
+);
 
 app.use(express.json({ limit: '1mb' }));
 
@@ -44,9 +83,7 @@ app.use((req, res, next) => {
 // Basic Security & Telemetry Headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('X-Dex-Engine', 'HYPERON-DEX Core v4.0.0');
+  res.setHeader('X-Dex-Engine', 'HYPERON-DEX Core v4.1.0-Institutional');
   next();
 });
 
@@ -505,6 +542,100 @@ app.post('/api/ai/token-scanner', async (req: Request, res: Response) => {
       )
     );
   }
+});
+
+// -------------------------------------------------------------
+// 7B. Enterprise Webhook & SSRF Protection Endpoints (CVE-2026-63730 Remediation)
+// -------------------------------------------------------------
+const WebhookVerifySchema = z.object({
+  url: z.string().min(1).max(2048),
+});
+
+const WebhookDispatchSchema = z.object({
+  url: z.string().min(1).max(2048),
+  event: z.string().min(1).max(100),
+  payload: z.record(z.string(), z.unknown()),
+  secret: z.string().optional(),
+});
+
+app.post('/api/v1/webhooks/verify-url', (req: Request, res: Response) => {
+  const parsed = WebhookVerifySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json(
+      createDexError(
+        DEX_ERROR_CODES.INVALID_PARAMS,
+        'Invalid URL parameter for webhook verification',
+        ERROR_MESSAGES.INVALID_PARAMS,
+        parsed.error.issues
+      )
+    );
+  }
+
+  const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  const result = validateWebhookUrl(parsed.data.url, clientIp);
+  res.json(result);
+});
+
+app.post('/api/v1/webhooks/dispatch', async (req: Request, res: Response) => {
+  const parsed = WebhookDispatchSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json(
+      createDexError(
+        DEX_ERROR_CODES.INVALID_PARAMS,
+        'Invalid dispatch parameters',
+        ERROR_MESSAGES.INVALID_PARAMS,
+        parsed.error.issues
+      )
+    );
+  }
+
+  const clientIp = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '127.0.0.1';
+  const validation = validateWebhookUrl(parsed.data.url, clientIp);
+  if (!validation.isValid) {
+    return res.status(403).json(
+      createDexError(
+        DEX_ERROR_CODES.SSRF_DETECTED,
+        validation.reason,
+        ERROR_MESSAGES.SSRF_DETECTED,
+        { decision: validation.decision }
+      )
+    );
+  }
+
+  const dispatchResult = await dispatchSecureWebhook(
+    parsed.data.url,
+    parsed.data.event,
+    parsed.data.payload,
+    parsed.data.secret
+  );
+
+  res.json(dispatchResult);
+});
+
+app.get('/api/v1/webhooks/audit-logs', (req: Request, res: Response) => {
+  const logs = getWebhookAuditLogs();
+  res.json({ total: logs.length, logs });
+});
+
+// -------------------------------------------------------------
+// 7C. Multi-Oracle Price Consolidation & Circuit Breaker Endpoints
+// -------------------------------------------------------------
+app.get('/api/v1/oracle/consolidated/:symbol', (req: Request, res: Response) => {
+  const sym = req.params.symbol?.toUpperCase() || 'ETH';
+  const basePrice = getUsdPrice(sym);
+
+  const sources = buildLiveOracleSources(sym, basePrice);
+  const report = aggregateMultiSourcePrice(sym, sources);
+  res.json(report);
+});
+
+app.post('/api/v1/oracle/circuit-breaker/reset', (req: Request, res: Response) => {
+  const sym = req.body?.symbol;
+  if (!sym || typeof sym !== 'string') {
+    return res.status(400).json({ error: 'Symbol string required' });
+  }
+  resetCircuitBreaker(sym);
+  res.json({ symbol: sym.toUpperCase(), isTripped: false, message: 'Circuit breaker reset successful' });
 });
 
 // Lazy-initialized Gemini AI client & rate-limit cooldown manager

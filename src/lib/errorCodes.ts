@@ -39,6 +39,8 @@ export const DEX_ERROR_CODES = {
   SYNDICATE_NOT_FOUND: 'SYNDICATE_NOT_FOUND',
   ROUND_NOT_OPEN: 'ROUND_NOT_OPEN',
   VRF_VERIFICATION_FAILED: 'VRF_VERIFICATION_FAILED',
+  CIRCUIT_BREAKER_TRIGGERED: 'CIRCUIT_BREAKER_TRIGGERED',
+  SSRF_DETECTED: 'SSRF_DETECTED',
   INVALID_PARAMS: 'INVALID_PARAMS',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
@@ -118,6 +120,8 @@ export const ERROR_MESSAGES: Record<DexErrorCode, string> = {
   SYNDICATE_NOT_FOUND: 'The specified lottery syndicate pool was not found or has concluded.',
   ROUND_NOT_OPEN: 'The specified lottery round is currently not open for participation.',
   VRF_VERIFICATION_FAILED: 'Provably fair VRF seed verification failed. Commitment integrity check rejected.',
+  CIRCUIT_BREAKER_TRIGGERED: 'Circuit breaker active: Extreme price volatility detected (>20% in 60s). Routing paused to prevent flashloan exploits.',
+  SSRF_DETECTED: 'Security violation: The target destination is restricted or resolved to internal/private infrastructure.',
   INVALID_PARAMS: 'Invalid or missing request parameters.',
   INTERNAL_ERROR: 'An internal error occurred while processing the request.',
 };

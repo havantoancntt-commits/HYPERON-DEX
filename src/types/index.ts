@@ -280,6 +280,7 @@ export interface TokenSecurityReport {
   chainId: ChainId;
   securityScore: number; // 0 - 100
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  verificationTier?: 'VERIFIED' | 'MEDIUM_RISK' | 'HIGH_RISK';
   isHoneypot: boolean;
   isContractVerified: boolean;
   isProxyContract: boolean;
