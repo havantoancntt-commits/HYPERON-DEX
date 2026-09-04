@@ -34,6 +34,7 @@ import {
   isCircuitBreakerTripped,
   PriceSource,
 } from '../server/services/multiOracleAggregator';
+import { runUltraRouterTests } from './UltraRouter.test';
 
 let totalTests = 0;
 let passedTests = 0;
@@ -497,9 +498,17 @@ async function runTests() {
   const ethAudit = await scanTokenSecurity('0x0000000000000000000000000000000000000000', 'ETH', 'ethereum');
   assert(ethAudit.verificationTier === 'VERIFIED', 'Native ETH is classified into VERIFIED tier');
 
+  // -------------------------------------------------------------
+  // Test 16: UltraRouter & FormalMath 512-Bit Edge Cases Suite
+  // -------------------------------------------------------------
+  const ultraRes = await runUltraRouterTests();
+  totalTests += ultraRes.total;
+  passedTests += ultraRes.passed;
+  failedTests += ultraRes.failed;
+
   // Summary
   console.log('\n======================================================');
-  console.log(` TEST SUMMARY: ${passedTests}/${totalTests} PASSED (${failedTests} FAILED)`);
+  console.log(` OVERALL HYPERON-DEX SUITE: ${passedTests}/${totalTests} PASSED (${failedTests} FAILED)`);
   console.log('======================================================\n');
 
   if (failedTests > 0) {
