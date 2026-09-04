@@ -124,6 +124,19 @@ export interface SwapQuote {
   poolAddress?: string;
   protocol?: string;
   feeTierBps?: number;
+  calculationLatencyMs?: number;
+  quoteHash?: string;
+  mevProtectionStats?: {
+    frontrunningRisk: 'IMMUNE' | 'LOW' | 'HIGH';
+    sandwichRiskScore: number;
+    privateMempoolRelay: string;
+    mevSavedEstUsd: number;
+  };
+  smartSplitMetrics?: {
+    efficiencyScore: number;
+    depthAnalyzedUsd: number;
+    routesEvaluatedCount: number;
+  };
 }
 
 export type SimulationStatus =
