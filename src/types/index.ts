@@ -126,7 +126,15 @@ export interface SwapQuote {
   feeTierBps?: number;
 }
 
-export type SimulationStatus = 'SUCCESS' | 'REVERTED' | 'FAILED' | 'RPC_ERROR';
+export type SimulationStatus =
+  | 'SUCCESS'
+  | 'REVERTED'
+  | 'FAILED'
+  | 'RPC_ERROR'
+  | 'TIMEOUT'
+  | 'INSUFFICIENT_DATA'
+  | 'INVALID_INPUT'
+  | 'CHAIN_MISMATCH';
 
 export interface TransactionSimulation {
   success: boolean;

@@ -46,6 +46,7 @@ export interface QuoteParams {
   amount: number | string;
   slippage?: number; // e.g. 0.5 for 0.5%
   chainId?: string;
+  allowMultiHop?: boolean;
 }
 
 const uniV2 = new UniswapV2Adapter();
@@ -119,6 +120,15 @@ export function safeTruncateAndParseUnits(rawAmount: string, decimals: number): 
   }
 
   const [intPart, fracPart = ''] = cleaned.split('.');
+  if (fracPart.length > decimals) {
+    const discarded = fracPart.slice(decimals);
+    if (/[1-9]/.test(discarded)) {
+      throw new DexError(
+        DEX_ERROR_CODES.INVALID_AMOUNT,
+        `Token supports a maximum of ${decimals} decimal places. Input '${rawAmount}' exceeds precision limit.`
+      );
+    }
+  }
   // Truncate fractional part to max allowed decimals before passing to parseUnits
   const truncatedFrac = fracPart.slice(0, decimals);
   const normalizedStr = truncatedFrac.length > 0 ? `${intPart}.${truncatedFrac}` : intPart;
@@ -169,6 +179,7 @@ export class SmartGraphRouter {
       amount,
       slippage = 0.5,
       chainId = 'ethereum',
+      allowMultiHop = false,
     } = params;
 
     const rawAmountStr = typeof amount === 'number' ? amount.toString() : amount;
@@ -258,9 +269,12 @@ export class SmartGraphRouter {
     }
 
     // 3. Multi-Hop Pathfinding Engine (Token A -> Base Intermediate Token -> Token B)
-    // Resolves liquidity routes when direct pools are unavailable or fragmented
+    // Resolves liquidity routes when direct pools are unavailable or fragmented and multi-hop is enabled
     const multiHopCandidates: RouteCandidate[] = [];
-    const baseIntermediateSymbols = ['USDC', 'USDT', 'WETH', routerConfig.nativeSymbol, 'WBTC'];
+    const shouldSearchMultiHop = allowMultiHop && (singlePoolCandidates.length === 0 || singlePoolCandidates[0].quote.priceImpactPercent > 1.0);
+    const baseIntermediateSymbols = shouldSearchMultiHop
+      ? ['USDC', 'USDT', 'WETH', routerConfig.nativeSymbol, 'WBTC']
+      : [];
     const visitedMids = new Set<string>();
     const forbiddenAddresses = new Set([
       resolvedFrom.address.toLowerCase(),

@@ -22,12 +22,12 @@ const createRobustTransport = (urls: string[]) =>
   fallback(
     urls.map((url) =>
       http(url, {
-        timeout: 4500,
-        retryCount: 2,
-        retryDelay: 350,
+        timeout: 2000,
+        retryCount: 1,
+        retryDelay: 150,
       })
     ),
-    { rank: false, retryCount: 2 }
+    { rank: false, retryCount: 1 }
   );
 
 export const CHAIN_CLIENTS: Record<ChainId, PublicClient> = {

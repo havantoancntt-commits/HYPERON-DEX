@@ -251,13 +251,21 @@ export class PoolDiscoveryService {
 
     try {
       const { client } = getChainClient(chainId);
-      const poolEntry =
-        VERIFIED_CANONICAL_POOLS[canonicalKey] ||
-        VERIFIED_CANONICAL_POOLS[reverseKey] ||
-        VERIFIED_CANONICAL_POOLS[`${chainId}:${token0Symbol}:${token1Symbol}:v3:500`] ||
-        VERIFIED_CANONICAL_POOLS[`${chainId}:${token1Symbol}:${token0Symbol}:v3:500`] ||
-        VERIFIED_CANONICAL_POOLS[`${chainId}:${token0Symbol}:${token1Symbol}:v2`] ||
-        VERIFIED_CANONICAL_POOLS[`${chainId}:${token1Symbol}:${token0Symbol}:v2`];
+      
+      let poolEntry = VERIFIED_CANONICAL_POOLS[canonicalKey] || VERIFIED_CANONICAL_POOLS[reverseKey];
+      if (!poolEntry) {
+        if (protocol === 'Uniswap v3') {
+          const v3FeeStr = feeBps === 5 ? 'v3:500' : feeBps === 30 ? 'v3:3000' : feeBps === 100 ? 'v3:10000' : feeBps === 1 ? 'v3:100' : `v3:${feeBps * 100}`;
+          poolEntry = VERIFIED_CANONICAL_POOLS[`${chainId}:${token0Symbol}:${token1Symbol}:${v3FeeStr}`] ||
+                      VERIFIED_CANONICAL_POOLS[`${chainId}:${token1Symbol}:${token0Symbol}:${v3FeeStr}`];
+        } else if (protocol === 'Uniswap v2') {
+          poolEntry = VERIFIED_CANONICAL_POOLS[`${chainId}:${token0Symbol}:${token1Symbol}:v2`] ||
+                      VERIFIED_CANONICAL_POOLS[`${chainId}:${token1Symbol}:${token0Symbol}:v2`];
+        } else if (protocol === 'Curve') {
+          poolEntry = VERIFIED_CANONICAL_POOLS[`${chainId}:${token0Symbol}:${token1Symbol}:curve`] ||
+                      VERIFIED_CANONICAL_POOLS[`${chainId}:${token1Symbol}:${token0Symbol}:curve`];
+        }
+      }
 
       if (!poolEntry) {
         // Pool is not registered or discovered
@@ -265,10 +273,23 @@ export class PoolDiscoveryService {
       }
 
       const poolAddress = poolEntry.address;
-      const blockNumber = await client.getBlockNumber().catch(() => null);
+
+      const withTimeout = async <T>(promise: Promise<T>, ms = 1500): Promise<T> => {
+        let timer: any;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('RPC_TIMEOUT')), ms);
+        });
+        try {
+          return await Promise.race([promise, timeoutPromise]);
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
+      const blockNumber = await withTimeout(client.getBlockNumber()).catch(() => null);
 
       if (poolEntry.protocol === 'Uniswap v3') {
-        const [slot0, liquidity] = await Promise.all([
+        const [slot0, liquidity] = await withTimeout(Promise.all([
           client.readContract({
             address: poolAddress,
             abi: UNISWAP_V3_POOL_ABI,
@@ -279,7 +300,7 @@ export class PoolDiscoveryService {
             abi: UNISWAP_V3_POOL_ABI,
             functionName: 'liquidity',
           } as any) as Promise<bigint>,
-        ]);
+        ]));
 
         const sqrtPriceX96 = slot0[0];
         const tick = slot0[1];
@@ -314,11 +335,11 @@ export class PoolDiscoveryService {
         poolCache.set(canonicalKey, record);
         return record;
       } else if (poolEntry.protocol === 'Uniswap v2' || poolEntry.protocol === 'PancakeSwap' || poolEntry.protocol === 'QuickSwap') {
-        const reservesData = (await client.readContract({
+        const reservesData = (await withTimeout(client.readContract({
           address: poolAddress,
           abi: UNISWAP_V2_PAIR_ABI,
           functionName: 'getReserves',
-        } as any)) as [bigint, bigint, number];
+        } as any))) as [bigint, bigint, number];
 
         const reserve0 = reservesData[0];
         const reserve1 = reservesData[1];

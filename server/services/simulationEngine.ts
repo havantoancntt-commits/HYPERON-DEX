@@ -23,7 +23,7 @@ import { getChainClient, getERC20Allowance, getERC20Balance, getNativeBalance, g
 import { getRouterConfig } from './routerRegistry';
 import { getUsdPrice } from './priceFeed';
 import { safeTruncateAndParseUnits } from './router';
-import { SwapQuote, TransactionSimulation, ChainId } from '../../src/types';
+import { SwapQuote, TransactionSimulation, ChainId, SimulationStatus } from '../../src/types';
 
 export const UNISWAP_V3_ROUTER_ABI = [
   {
@@ -239,39 +239,35 @@ export class SimulationEngine {
       options
     );
 
-    const rpcBlock = await getLiveBlockNumber(verifiedChain);
-    const currentBlock = rpcBlock.data ? Number(rpcBlock.data) : 0;
-    const rpcGas = await getLiveGasPrice(verifiedChain);
-    const gasGwei = rpcGas.data?.gasPriceGwei || 15.0;
-
     const nativeSymbol = routerConfig.nativeSymbol;
     const nativePriceUsd = getUsdPrice(nativeSymbol) || 0;
-
     const decimalsIn = quote.fromToken.decimals || 18;
     const decimalsOut = quote.toToken.decimals || 18;
-    const amountInRaw = safeTruncateAndParseUnits(quote.fromAmount.toString(), decimalsIn);
-    const amountOutMinRaw = safeTruncateAndParseUnits(quote.minimumReceived.toString(), decimalsOut);
 
     const isNativeIn =
       quote.fromToken.symbol === nativeSymbol ||
       quote.fromToken.address === '0x0000000000000000000000000000000000000000';
 
-    // 1. Read live caller balance
+    // 1. Read block, gas price, and caller balance concurrently
+    const [rpcBlock, rpcGas, balRes] = await Promise.all([
+      getLiveBlockNumber(verifiedChain).catch(() => ({ data: null })),
+      getLiveGasPrice(verifiedChain).catch(() => ({ data: null })),
+      isNativeIn
+        ? getNativeBalance(userAddress, verifiedChain).catch(() => ({ data: null }))
+        : getERC20Balance(quote.fromToken.address, userAddress, decimalsIn, verifiedChain).catch(() => ({ data: null })),
+    ]);
+
+    const currentBlock = rpcBlock.data ? Number(rpcBlock.data) : 0;
+    const gasGwei = rpcGas.data?.gasPriceGwei || 15.0;
+
+    const amountInRaw = safeTruncateAndParseUnits(quote.fromAmount.toString(), decimalsIn);
+    const amountOutMinRaw = safeTruncateAndParseUnits(quote.minimumReceived.toString(), decimalsOut);
+
     let balanceBeforeRaw = 0n;
     let balanceFormatted = '0.0';
-
-    if (isNativeIn) {
-      const balRes = await getNativeBalance(userAddress, verifiedChain);
-      if (balRes.data) {
-        balanceBeforeRaw = balRes.data.raw;
-        balanceFormatted = balRes.data.formatted;
-      }
-    } else {
-      const balRes = await getERC20Balance(quote.fromToken.address, userAddress, decimalsIn, verifiedChain);
-      if (balRes.data) {
-        balanceBeforeRaw = balRes.data.raw;
-        balanceFormatted = balRes.data.formatted;
-      }
+    if (balRes?.data) {
+      balanceBeforeRaw = balRes.data.raw;
+      balanceFormatted = balRes.data.formatted;
     }
 
     const hasSufficientBalance = balanceBeforeRaw >= amountInRaw;
@@ -363,14 +359,31 @@ export class SimulationEngine {
       warnings.push(`High Price Impact: Execution price deviates by ${quote.priceImpactPercent.toFixed(2)}% from pool spot price.`);
     }
 
+    let simulationErrorType: 'REVERTED' | 'RPC_ERROR' | 'TIMEOUT' | null = null;
     try {
+      const withTimeout = async <T>(promise: Promise<T>, ms = 2500): Promise<T> => {
+        let timer: any;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            const tErr = new Error('SIMULATION_TIMEOUT');
+            tErr.name = 'TimeoutError';
+            reject(tErr);
+          }, ms);
+        });
+        try {
+          return await Promise.race([promise, timeoutPromise]);
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
       // Execute eth_call with sender and calldata
-      const callResult = await client.call({
+      const callResult = await withTimeout(client.call({
         account: userAddress as Address,
         to: routerSpender,
         data: calldata,
         value: isNativeIn ? amountInRaw : 0n,
-      });
+      }));
 
       // If call didn't throw and returned data
       if (callResult && callResult.data) {
@@ -379,7 +392,22 @@ export class SimulationEngine {
     } catch (err: any) {
       ethCallSuccess = false;
       const rawData = err?.data || err?.cause?.data;
-      revertReason = decodeRevertReason(rawData || err?.message);
+      if (err?.name === 'TimeoutError' || err?.message?.includes('SIMULATION_TIMEOUT')) {
+        simulationErrorType = 'TIMEOUT';
+        revertReason = 'Simulation request timed out on RPC node.';
+      } else if (rawData) {
+        simulationErrorType = 'REVERTED';
+        revertReason = decodeRevertReason(rawData);
+      } else if (err?.message?.includes('revert') || err?.message?.includes('execution reverted')) {
+        simulationErrorType = 'REVERTED';
+        revertReason = decodeRevertReason(err?.message);
+      } else if (err?.name === 'HttpRequestError' || err?.message?.includes('fetch failed') || err?.message?.includes('RPC')) {
+        simulationErrorType = 'RPC_ERROR';
+        revertReason = `RPC connectivity failure: ${err?.message?.slice(0, 80)}`;
+      } else {
+        simulationErrorType = 'REVERTED';
+        revertReason = decodeRevertReason(err?.message);
+      }
     }
 
     // Estimate gas if balance & allowance are sufficient
@@ -399,11 +427,13 @@ export class SimulationEngine {
 
     const gasCostUsd = nativePriceUsd > 0 ? Number(((gasEstimated * gasGwei * 1e-9) * nativePriceUsd).toFixed(2)) : 0;
     const overallSuccess = ethCallSuccess && hasSufficientBalance && isAllowanceApproved;
-    const status = ethCallSuccess
+    const status: SimulationStatus = ethCallSuccess
       ? 'SUCCESS'
-      : hasSufficientBalance && isAllowanceApproved
-      ? 'REVERTED'
-      : 'FAILED';
+      : simulationErrorType === 'TIMEOUT'
+      ? 'TIMEOUT'
+      : simulationErrorType === 'RPC_ERROR'
+      ? 'RPC_ERROR'
+      : 'REVERTED';
 
     const simulationLogs = [
       `[SIMULATION] Network: ${verifiedChain.toUpperCase()} (Block #${currentBlock})`,
