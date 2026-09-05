@@ -427,13 +427,21 @@ export class SimulationEngine {
 
     const gasCostUsd = nativePriceUsd > 0 ? Number(((gasEstimated * gasGwei * 1e-9) * nativePriceUsd).toFixed(2)) : 0;
     const overallSuccess = ethCallSuccess && hasSufficientBalance && isAllowanceApproved;
-    const status: SimulationStatus = ethCallSuccess
+    const status: SimulationStatus = overallSuccess
       ? 'SUCCESS'
       : simulationErrorType === 'TIMEOUT'
       ? 'TIMEOUT'
       : simulationErrorType === 'RPC_ERROR'
       ? 'RPC_ERROR'
       : 'REVERTED';
+
+    if (!overallSuccess && !revertReason) {
+      if (!hasSufficientBalance) {
+        revertReason = 'Pre-flight check blocked: Insufficient token balance to execute swap.';
+      } else if (!isAllowanceApproved) {
+        revertReason = 'Pre-flight check blocked: Token allowance to router is not approved.';
+      }
+    }
 
     const simulationLogs = [
       `[SIMULATION] Network: ${verifiedChain.toUpperCase()} (Block #${currentBlock})`,

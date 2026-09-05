@@ -23,7 +23,8 @@ import {
   scanTicketAgainstRound,
 } from './server/services/lotteryEngine';
 import { DEX_ERROR_CODES, createDexError, ERROR_MESSAGES, DexErrorCode, DexError } from './src/lib/errorCodes';
-import { requireWalletAuth } from './server/middleware/walletAuth';
+import { requireWalletAuth, issueWalletNonce } from './server/middleware/walletAuth';
+import { isAddress } from 'viem';
 import helmet from 'helmet';
 import {
   validateWebhookUrl,
@@ -35,18 +36,19 @@ import {
   buildLiveOracleSources,
   isCircuitBreakerTripped,
   resetCircuitBreaker,
+  getCircuitBreakerAuditLogs,
 } from './server/services/multiOracleAggregator';
 
 const app = express();
 const PORT = 3000;
 
-// Production Web Security Headers via Helmet (HSTS, CSP, X-Content-Type-Options)
+// Production Web Security Headers via Helmet (HSTS, strict CSP without unsafe-eval, X-Content-Type-Options)
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"], // Removed unsafe-eval
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
         imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
@@ -56,7 +58,7 @@ app.use(
         baseUri: ["'self'"],
       },
     },
-    frameguard: false, // Frame ancestors in CSP manages iframe embedding safely for AI Studio preview
+    frameguard: false, // Frame ancestors in CSP manages iframe embedding safely for preview
     hsts: {
       maxAge: 31536000,
       includeSubDomains: true,
@@ -69,11 +71,13 @@ app.use(
 
 app.use(express.json({ limit: '1mb' }));
 
-// CORS Middleware for Web3 DApps & External Oracles
+// Tiered CORS Middleware: Public reads allow Web3 DApps/Oracles; Sensitive mutation routes validate headers
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Wallet-Address');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Wallet-Address, X-Auth-Message, X-Auth-Nonce');
+  res.setHeader('Access-Control-Max-Age', '86400');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
@@ -678,12 +682,41 @@ app.get('/api/v1/oracle/consolidated/:symbol', (req: Request, res: Response) => 
 });
 
 app.post('/api/v1/oracle/circuit-breaker/reset', (req: Request, res: Response) => {
-  const sym = req.body?.symbol;
-  if (!sym || typeof sym !== 'string') {
+  const { symbol, operator, reason, verifiedPriceUsd } = req.body || {};
+  if (!symbol || typeof symbol !== 'string') {
     return res.status(400).json({ error: 'Symbol string required' });
   }
-  resetCircuitBreaker(sym);
-  res.json({ symbol: sym.toUpperCase(), isTripped: false, message: 'Circuit breaker reset successful' });
+  const result = resetCircuitBreaker(
+    symbol,
+    operator || 'GOVERNANCE_TIMELOCK',
+    reason || 'Audited price verified post-cooldown',
+    verifiedPriceUsd ? Number(verifiedPriceUsd) : undefined
+  );
+  if (!result.success) {
+    return res.status(400).json({ error: 'RESET_FAILED', message: result.message });
+  }
+  res.json({ symbol: symbol.toUpperCase(), isTripped: false, message: result.message });
+});
+
+app.get('/api/v1/oracle/circuit-breaker/audit-logs', (_req: Request, res: Response) => {
+  res.json({ auditLogs: getCircuitBreakerAuditLogs() });
+});
+
+// -------------------------------------------------------------
+// Authentication Nonce Issuance for EIP-191 / SIWE
+// -------------------------------------------------------------
+app.get('/api/auth/nonce', (req: Request, res: Response) => {
+  try {
+    const address = req.query.address as string;
+    const chainId = (req.query.chainId as string) || 'ethereum';
+    if (!address || !isAddress(address)) {
+      return res.status(400).json({ error: 'INVALID_ADDRESS', message: 'Valid EVM address required to generate authentication nonce.' });
+    }
+    const nonceData = issueWalletNonce(address, chainId);
+    res.json(nonceData);
+  } catch (err: any) {
+    res.status(500).json({ error: 'NONCE_GENERATION_FAILED', message: err?.message });
+  }
 });
 
 // Lazy-initialized Gemini AI client & rate-limit cooldown manager

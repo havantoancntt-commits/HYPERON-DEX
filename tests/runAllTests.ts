@@ -6,6 +6,7 @@
 
 import { UniswapV2Adapter, UniswapV3Adapter, CurveAdapter, BalancerAdapter } from '../server/services/ammEngine';
 import { parseUnits, formatUnits } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import {
   calculateSmartRouteQuote,
   simulateSwapTransaction,
@@ -37,7 +38,14 @@ import {
   recordPriceSnapshot,
   isCircuitBreakerTripped,
   PriceSource,
+  resetCircuitBreaker,
+  getCircuitBreakerAuditLogs,
 } from '../server/services/multiOracleAggregator';
+import {
+  issueWalletNonce,
+  verifyWalletAuth,
+  verifyRelaySwapSignature,
+} from '../server/middleware/walletAuth';
 import { runUltraRouterTests } from './UltraRouter.test';
 
 let totalTests = 0;
@@ -542,6 +550,135 @@ async function runTests() {
 
   const ethAudit = await scanTokenSecurity('0x0000000000000000000000000000000000000000', 'ETH', 'ethereum');
   assert(ethAudit.verificationTier === 'VERIFIED', 'Native ETH is classified into VERIFIED tier');
+
+  // -------------------------------------------------------------
+  // Test 17: Production Hardened Wallet Authentication & Nonce Replay Protection
+  // -------------------------------------------------------------
+  console.log('\n--- 17. Wallet Authentication & Cryptographic Replay Protection ---');
+  const testAccount = privateKeyToAccount('0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d');
+  const userAddr = testAccount.address;
+
+  const nonceObj = issueWalletNonce(userAddr, 'ethereum');
+  assert(nonceObj.nonce.startsWith('hyp_') && nonceObj.nonce.length === 36, 'Nonce is cryptographically generated hex token with prefix');
+  assert(nonceObj.authMessage.includes(nonceObj.nonce), 'SIWE authentication message binds exact nonce');
+  assert(nonceObj.authMessage.includes(userAddr), 'SIWE authentication message binds user address');
+
+  const authSig = await testAccount.signMessage({ message: nonceObj.authMessage });
+
+  const authVerification = await verifyWalletAuth({
+    address: userAddr,
+    signature: authSig,
+    message: nonceObj.authMessage,
+    nonce: nonceObj.nonce,
+  });
+  assert(authVerification.verified === true, 'Valid SIWE cryptographic signature authenticates successfully');
+
+  // Replay Attack Test: Attempting to reuse the consumed nonce MUST fail
+  const replayAttempt = await verifyWalletAuth({
+    address: userAddr,
+    signature: authSig,
+    message: nonceObj.authMessage,
+    nonce: nonceObj.nonce,
+  });
+  assert(replayAttempt.verified === false, 'Replaying previously consumed nonce is strictly rejected');
+
+  // Forged Address Test: Address does not match signature
+  const forgedNonce = issueWalletNonce('0x0000000000000000000000000000000000000001', 'ethereum');
+  const forgedAttempt = await verifyWalletAuth({
+    address: '0x0000000000000000000000000000000000000001',
+    signature: authSig,
+    message: forgedNonce.authMessage,
+    nonce: forgedNonce.nonce,
+  });
+  assert(forgedAttempt.verified === false, 'Forged address signature mismatch is strictly rejected');
+
+  // -------------------------------------------------------------
+  // Test 18: EIP-712 Relay Swap Signature Verification & Parameter Binding
+  // -------------------------------------------------------------
+  console.log('\n--- 18. EIP-712 Relay Swap Signature Verification ---');
+  const routerAddress = '0x2222222222222222222222222222222222222222';
+  const relayMsg = {
+    user: userAddr,
+    tokenIn: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tokenOut: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    amountIn: 1000000000000000000n, // 1 WETH
+    amountOutMinimum: 2600000000n, // 2600 USDC
+    recipient: userAddr,
+    feeTier: 3000,
+    routeHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as `0x${string}`,
+    deadline: BigInt(Math.floor(Date.now() / 1000) + 3600),
+    nonce: 1n,
+  };
+
+  const eip712Domain = {
+    name: 'HyperonRouter',
+    version: '1',
+    chainId: 1,
+    verifyingContract: routerAddress as `0x${string}`,
+  };
+  const eip712Types = {
+    RelaySwap: [
+      { name: 'user', type: 'address' },
+      { name: 'tokenIn', type: 'address' },
+      { name: 'tokenOut', type: 'address' },
+      { name: 'amountIn', type: 'uint256' },
+      { name: 'amountOutMinimum', type: 'uint256' },
+      { name: 'recipient', type: 'address' },
+      { name: 'feeTier', type: 'uint24' },
+      { name: 'routeHash', type: 'bytes32' },
+      { name: 'deadline', type: 'uint256' },
+      { name: 'nonce', type: 'uint256' },
+    ],
+  };
+
+  const eip712Sig = await testAccount.signTypedData({
+    domain: eip712Domain,
+    types: eip712Types,
+    primaryType: 'RelaySwap',
+    message: relayMsg,
+  });
+
+  const validRelayCheck = await verifyRelaySwapSignature({
+    message: relayMsg as any,
+    signature: eip712Sig,
+    verifyingContract: routerAddress,
+    chainId: 1,
+  });
+  assert(validRelayCheck.verified === true, 'EIP-712 typed signature verified for RelaySwap intent');
+
+  // Tampering with swap parameters (e.g. changing recipient to attacker) MUST invalidate signature
+  const tamperedCheck = await verifyRelaySwapSignature({
+    message: { ...relayMsg, recipient: '0x000000000000000000000000000000000000dEaD' } as any,
+    signature: eip712Sig,
+    verifyingContract: routerAddress,
+    chainId: 1,
+  });
+  assert(tamperedCheck.verified === false, 'Tampered swap parameters invalidate EIP-712 signature');
+
+  // -------------------------------------------------------------
+  // Test 19: Multi-Oracle Circuit Breaker Audited Reset & Cooldown
+  // -------------------------------------------------------------
+  console.log('\n--- 19. Multi-Oracle Circuit Breaker Audited Reset ---');
+  recordPriceSnapshot('TRIP_TEST_TOKEN', 100000000000000000000n);
+  const tripResult = recordPriceSnapshot('TRIP_TEST_TOKEN', 125000000000000000000n);
+  assert(tripResult.isTripped === true, 'Circuit breaker trips on >20% price jump');
+
+  const prematureReset = resetCircuitBreaker('TRIP_TEST_TOKEN', 'UNAUDITED_BOT', 'Quick reset', 100);
+  assert(prematureReset.success === false, 'Premature circuit breaker reset is blocked during mandatory cooldown window');
+
+  const breakerLogs = getCircuitBreakerAuditLogs();
+  assert(breakerLogs.length > 0, 'Circuit breaker actions are captured in immutable audit logs');
+  assert(breakerLogs.some(log => log.symbol === 'TRIP_TEST_TOKEN'), 'Audit log contains record for tripped asset');
+
+  // -------------------------------------------------------------
+  // Test 20: Token Scanner Zero-Fake Classification
+  // -------------------------------------------------------------
+  console.log('\n--- 20. Token Scanner Zero-Fake Verification Guard ---');
+  const unknownTokenScan = await scanTokenSecurity('0x1111111111111111111111111111111111111111', 'UNKNOWN_TOKEN', 'ethereum');
+  assert(unknownTokenScan.verificationTier !== 'VERIFIED', 'Unregistered token is NEVER classified as VERIFIED tier');
+  assert(unknownTokenScan.honeypotStatus !== 'VERIFIED_SAFE', 'Unregistered token without on-chain proof is NEVER marked VERIFIED_SAFE');
+  assert(unknownTokenScan.liquidityLockStatus === 'UNKNOWN', 'Unverified token liquidity lock status is strictly UNKNOWN without locker proof');
+  assert(unknownTokenScan.unknownFactors.length > 0, 'Scanner transparently enumerates unverified factors');
 
   // -------------------------------------------------------------
   // Test 16: UltraRouter & FormalMath 512-Bit Edge Cases Suite

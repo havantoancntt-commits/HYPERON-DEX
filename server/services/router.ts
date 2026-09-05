@@ -849,6 +849,20 @@ export const simulateSwapTransaction = (
 // ============================================================================
 export interface RelayerPayload {
   signedTx?: string;
+  eip712Signature?: string;
+  relaySwapParams?: {
+    user: string;
+    tokenIn: string;
+    tokenOut: string;
+    amountIn: string;
+    amountOutMinimum: string;
+    recipient: string;
+    feeTier: number;
+    routeHash: string;
+    deadline: string;
+    nonce: string;
+    verifyingContract?: string;
+  };
   zkProof?: {
     protocol: string;
     proofHash: string;
@@ -866,6 +880,7 @@ export interface RelayerResult {
   relayTimestamp: number;
   mevProtectionTier: 'TITAN_BUILDER' | 'FLASHBOTS_PROTECT';
   zkProofVerified: boolean;
+  eip712Verified?: boolean;
   blockNumberTarget?: number;
 }
 
@@ -877,12 +892,50 @@ export function verifyZkProof(zkProof: RelayerPayload['zkProof']): boolean {
 }
 
 export async function relayTransaction(payload: RelayerPayload): Promise<RelayerResult> {
-  const isZkValid = payload.zkProof ? verifyZkProof(payload.zkProof) : true;
-  if (payload.zkProof && !isZkValid) {
-    throw new Error('INVALID_ZK_PROOF: Zero-Knowledge route proof verification failed');
+  const hasZk = !!payload.zkProof;
+  const hasSignedTx = !!payload.signedTx && payload.signedTx.startsWith('0x');
+  const hasEip712 = !!payload.eip712Signature && !!payload.relaySwapParams;
+
+  if (!hasZk && !hasSignedTx && !hasEip712) {
+    throw new Error('AUTHENTICATION_REQUIRED: Transaction relay requires a signed transaction, EIP-712 swap authorization, or valid ZK proof.');
   }
 
-  // Generate deterministic mock execution txHash for Flashbots private mempool bundle
+  let isZkValid = false;
+  if (hasZk) {
+    isZkValid = verifyZkProof(payload.zkProof);
+    if (!isZkValid) {
+      throw new Error('INVALID_ZK_PROOF: Zero-Knowledge route proof verification failed');
+    }
+  }
+
+  let isEip712Valid = false;
+  if (hasEip712 && payload.relaySwapParams && payload.eip712Signature) {
+    const { verifyRelaySwapSignature } = await import('../middleware/walletAuth');
+    const p = payload.relaySwapParams;
+    const res = await verifyRelaySwapSignature({
+      message: {
+        user: p.user as any,
+        tokenIn: p.tokenIn as any,
+        tokenOut: p.tokenOut as any,
+        amountIn: BigInt(p.amountIn),
+        amountOutMinimum: BigInt(p.amountOutMinimum),
+        recipient: p.recipient as any,
+        feeTier: p.feeTier,
+        routeHash: p.routeHash as any,
+        deadline: BigInt(p.deadline),
+        nonce: BigInt(p.nonce),
+      },
+      signature: payload.eip712Signature as any,
+      verifyingContract: (p.verifyingContract || '0x1111111111111111111111111111111111111111') as any,
+      chainId: payload.chainId === 'base' ? 8453 : payload.chainId === 'arbitrum' ? 42161 : 1,
+    });
+
+    if (!res.verified) {
+      throw new Error(`INVALID_EIP712_SIGNATURE: ${res.reason || 'Relayer signature rejected'}`);
+    }
+    isEip712Valid = true;
+  }
+
   const randomSuffix = crypto.randomBytes(28).toString('hex');
   const txHash = `0x9a${randomSuffix}`;
 
@@ -892,6 +945,7 @@ export async function relayTransaction(payload: RelayerPayload): Promise<Relayer
     relayTimestamp: Date.now(),
     mevProtectionTier: 'FLASHBOTS_PROTECT',
     zkProofVerified: isZkValid,
+    eip712Verified: isEip712Valid,
     blockNumberTarget: 21458990,
   };
 }

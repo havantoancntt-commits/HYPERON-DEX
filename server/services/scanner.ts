@@ -325,28 +325,35 @@ export async function scanTokenSecurity(
     if (opcodes.hasSelfDestruct) score -= 30;
     if (isProxy) score -= 5;
 
-    honeypotStatus = score >= 70 ? 'VERIFIED_SAFE' : score >= 40 ? 'UNKNOWN' : 'SUSPECTED_HONEYPOT';
+    // Unverified contracts without live buy/sell simulations CANNOT be marked VERIFIED_SAFE
+    // Incomplete data remains UNKNOWN to prevent false sense of security
+    honeypotStatus =
+      score < 40 || opcodes.hasSelfDestruct || (hasBlacklist && hasPause)
+        ? 'SUSPECTED_HONEYPOT'
+        : 'UNKNOWN';
   }
 
   score = Math.max(10, Math.min(100, score));
 
   const riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' =
-    score >= 85 ? 'LOW' : score >= 70 ? 'MEDIUM' : score >= 50 ? 'HIGH' : 'CRITICAL';
+    verifiedMatch ? 'LOW' : score >= 70 ? 'MEDIUM' : score >= 50 ? 'HIGH' : 'CRITICAL';
 
-  // Unknown factors
+  // Unknown factors strictly enumerated
   if (!verifiedMatch) {
+    confidence = Math.min(confidence, 65); // Cap confidence when off-chain indexer proof is absent
     unknownFactors.push('LP Locker verification requires external locker contract indexing');
     unknownFactors.push('Top 10 holder distribution requires historical transfer indexing');
+    unknownFactors.push('Live buy/sell simulation required to conclusively verify tax mechanisms');
   }
 
   const liquidityLockStatus: LockStatus = verifiedMatch ? 'LOCKED' : 'UNKNOWN';
 
-  const verificationTier: 'VERIFIED' | 'MEDIUM_RISK' | 'HIGH_RISK' =
-    verifiedMatch || (score >= 80 && honeypotStatus === 'VERIFIED_SAFE' && !hasBlacklist && !hasPause && !opcodes.hasSelfDestruct)
-      ? 'VERIFIED'
-      : score >= 50 && honeypotStatus !== 'SUSPECTED_HONEYPOT' && !opcodes.hasSelfDestruct
-      ? 'MEDIUM_RISK'
-      : 'HIGH_RISK';
+  // Strict verification tier: ONLY verified registry matches are VERIFIED
+  const verificationTier: 'VERIFIED' | 'MEDIUM_RISK' | 'HIGH_RISK' = verifiedMatch
+    ? 'VERIFIED'
+    : score >= 55 && honeypotStatus !== 'SUSPECTED_HONEYPOT' && !opcodes.hasSelfDestruct
+    ? 'MEDIUM_RISK'
+    : 'HIGH_RISK';
 
   return {
     tokenAddress: tokenAddress || '0x0000000000000000000000000000000000000000',
