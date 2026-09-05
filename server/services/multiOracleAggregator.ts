@@ -185,6 +185,15 @@ export function resetCircuitBreaker(
     };
   }
 
+  if (verifiedPriceUsd !== undefined) {
+    if (typeof verifiedPriceUsd !== 'number' || isNaN(verifiedPriceUsd) || !isFinite(verifiedPriceUsd) || verifiedPriceUsd <= 0) {
+      return {
+        success: false,
+        message: 'Cannot reset circuit breaker: verifiedPriceUsd must be a strictly positive finite number.',
+      };
+    }
+  }
+
   circuitBreakerMap.set(sym, {
     symbol: sym,
     isTripped: false,

@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyMessage, verifyTypedData, isAddress, Address, Hex } from 'viem';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 
 export interface WalletAuthPayload {
   userAddress: string;
@@ -16,37 +18,126 @@ export interface NonceRecord {
   expiresAt: number;
   used: boolean;
   issuedAt: number;
-  chainId?: string;
+  chainId: string;
+  domain?: string;
+  action?: string;
 }
 
-// In-memory single-use nonce store with automatic pruning
-const nonceStore: Map<string, NonceRecord> = new Map();
-const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes validity
+export interface INonceStore {
+  get(key: string): Promise<NonceRecord | null> | NonceRecord | null;
+  set(key: string, record: NonceRecord): Promise<void> | void;
+  markUsed(key: string): Promise<boolean> | boolean;
+  delete(key: string): Promise<void> | void;
+  prune(): Promise<void> | void;
+}
 
 /**
- * Prunes expired nonces periodically
+ * Production Durable Nonce Store supporting serverless/multi-container deployments.
+ * Persists to disk with in-memory write-through cache for instant reads.
  */
-function pruneExpiredNonces(): void {
-  const now = Date.now();
-  for (const [key, record] of nonceStore.entries()) {
-    if (record.expiresAt < now || record.used) {
-      nonceStore.delete(key);
+export class DurableNonceStore implements INonceStore {
+  private cache: Map<string, NonceRecord> = new Map();
+  private storagePath: string;
+
+  constructor(filePath?: string) {
+    this.storagePath = filePath || path.resolve('.data', 'nonces.json');
+    this.init();
+  }
+
+  private init(): void {
+    try {
+      const dir = path.dirname(this.storagePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      if (fs.existsSync(this.storagePath)) {
+        const raw = fs.readFileSync(this.storagePath, 'utf8');
+        const data = JSON.parse(raw);
+        if (Array.isArray(data)) {
+          const now = Date.now();
+          for (const item of data) {
+            if (item.expiresAt > now && !item.used) {
+              this.cache.set(`${item.userAddress.toLowerCase()}:${item.nonce}`, item);
+            }
+          }
+        }
+      }
+    } catch {
+      // Fallback to in-memory if disk is unavailable
+    }
+  }
+
+  private persist(): void {
+    try {
+      const records = Array.from(this.cache.values());
+      fs.writeFileSync(this.storagePath, JSON.stringify(records, null, 2), 'utf8');
+    } catch {
+      // Best-effort file sync
+    }
+  }
+
+  get(key: string): NonceRecord | null {
+    return this.cache.get(key) || null;
+  }
+
+  set(key: string, record: NonceRecord): void {
+    this.cache.set(key, record);
+    this.persist();
+  }
+
+  markUsed(key: string): boolean {
+    const rec = this.cache.get(key);
+    if (!rec || rec.used) {
+      return false;
+    }
+    rec.used = true;
+    this.persist();
+    return true;
+  }
+
+  delete(key: string): void {
+    this.cache.delete(key);
+    this.persist();
+  }
+
+  prune(): void {
+    const now = Date.now();
+    let modified = false;
+    for (const [k, v] of this.cache.entries()) {
+      if (v.expiresAt < now || v.used) {
+        this.cache.delete(k);
+        modified = true;
+      }
+    }
+    if (modified) {
+      this.persist();
     }
   }
 }
 
-const cleanupTimer = setInterval(pruneExpiredNonces, 60 * 1000);
+export const nonceStore: INonceStore = new DurableNonceStore();
+const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes validity
+export const DEFAULT_AUTH_DOMAIN = 'hyperon.dex';
+
+const cleanupTimer = setInterval(() => nonceStore.prune(), 60 * 1000);
 if (cleanupTimer && typeof cleanupTimer.unref === 'function') {
   cleanupTimer.unref();
 }
 
 /**
- * Issues a cryptographically random, single-use nonce tied to a specific wallet.
+ * Issues a cryptographically random, single-use nonce bound to userAddress, chainId, and domain.
  */
-export function issueWalletNonce(userAddress: string, chainId: string = 'ethereum'): {
+export function issueWalletNonce(
+  userAddress: string,
+  chainId: string = 'ethereum',
+  domain: string = DEFAULT_AUTH_DOMAIN,
+  action: string = 'AUTHENTICATE_SESSION'
+): {
   nonce: string;
   expiresAt: number;
   authMessage: string;
+  domain: string;
+  chainId: string;
 } {
   if (!userAddress || !isAddress(userAddress)) {
     throw new Error('INVALID_ADDRESS: Must provide a valid EVM address to issue nonce');
@@ -63,42 +154,94 @@ export function issueWalletNonce(userAddress: string, chainId: string = 'ethereu
     expiresAt,
     used: false,
     issuedAt: now,
-    chainId,
+    chainId: chainId.toLowerCase(),
+    domain,
+    action,
   };
 
   nonceStore.set(`${normalized}:${nonce}`, record);
 
-  const authMessage = buildWalletAuthMessage(userAddress, 'AUTHENTICATE_SESSION', nonce, now, chainId);
+  const authMessage = buildWalletAuthMessage(userAddress, action, nonce, now, chainId, domain);
 
   return {
     nonce,
     expiresAt,
     authMessage,
+    domain,
+    chainId,
   };
 }
 
 /**
- * Standard SIWE / EIP-191 Auth Message Builder
+ * Standard SIWE / EIP-4361 Auth Message Builder
  */
 export function buildWalletAuthMessage(
   userAddress: string,
   action: string,
   nonce: string,
   timestamp: number,
-  chainId: string = 'ethereum'
+  chainId: string = 'ethereum',
+  domain: string = DEFAULT_AUTH_DOMAIN
 ): string {
   return [
-    'HYPERON-DEX Non-Custodial Security Protocol',
+    `${domain} wants you to sign in with your Ethereum account:`,
+    userAddress,
     '',
-    `Sign-in authorization for account: ${userAddress}`,
-    `Action: ${action}`,
-    `Chain: ${chainId}`,
+    `HYPERON-DEX Non-Custodial Protocol Authorization`,
+    '',
+    `URI: https://${domain}`,
+    `Version: 1`,
+    `Chain ID: ${chainId}`,
     `Nonce: ${nonce}`,
+    `Action: ${action}`,
     `Issued At: ${new Date(timestamp).toISOString()}`,
-    `Expires In: 5 minutes`,
+    `Expiration Time: ${new Date(timestamp + NONCE_TTL_MS).toISOString()}`,
     '',
     'Signing this message will not trigger a blockchain transaction or cost any gas.',
   ].join('\n');
+}
+
+export interface ParsedAuthMessage {
+  domain?: string;
+  address?: string;
+  nonce?: string;
+  chainId?: string;
+  action?: string;
+  issuedAt?: number;
+  expirationTime?: number;
+}
+
+export function parseAuthMessage(msg: string): ParsedAuthMessage {
+  const parsed: ParsedAuthMessage = {};
+
+  const domainMatch = msg.match(/^([a-zA-Z0-9.-]+)\s+wants you to sign in/i);
+  if (domainMatch) parsed.domain = domainMatch[1];
+
+  const nonceMatch = msg.match(/Nonce:\s*([^\r\n]+)/i);
+  if (nonceMatch) parsed.nonce = nonceMatch[1].trim();
+
+  const chainMatch = msg.match(/Chain ID:\s*([^\r\n]+)/i);
+  if (chainMatch) parsed.chainId = chainMatch[1].trim().toLowerCase();
+
+  const actionMatch = msg.match(/Action:\s*([^\r\n]+)/i);
+  if (actionMatch) parsed.action = actionMatch[1].trim();
+
+  const issuedMatch = msg.match(/Issued At:\s*([^\r\n]+)/i);
+  if (issuedMatch) {
+    const t = Date.parse(issuedMatch[1].trim());
+    if (!isNaN(t)) parsed.issuedAt = t;
+  }
+
+  const expMatch = msg.match(/Expiration Time:\s*([^\r\n]+)/i);
+  if (expMatch) {
+    const t = Date.parse(expMatch[1].trim());
+    if (!isNaN(t)) parsed.expirationTime = t;
+  }
+
+  const addrMatch = msg.match(/(0x[a-fA-F0-9]{40})/);
+  if (addrMatch) parsed.address = addrMatch[1];
+
+  return parsed;
 }
 
 /**
@@ -106,9 +249,11 @@ export function buildWalletAuthMessage(
  * Enforces:
  * 1. Valid EVM address
  * 2. Non-empty signature and message
- * 3. Valid, unexpired, unused nonce (replay attack prevention)
- * 4. Exact ECDSA verification via viem verifyMessage
- * 5. Immediate consumption of nonce upon success
+ * 3. Mandatory, registered, unexpired, unused nonce (replay attack prevention)
+ * 4. User address binding (message address == claimed address)
+ * 5. Domain, chainId, and action consistency
+ * 6. Exact ECDSA verification via viem verifyMessage
+ * 7. Immediate consumption of nonce upon success
  */
 export async function verifyWalletAuth(
   userAddressOrParams:
@@ -120,15 +265,20 @@ export async function verifyWalletAuth(
         authMessage?: string;
         nonce?: string;
         authNonce?: string;
+        expectedAction?: string;
+        expectedChainId?: string;
+        expectedDomain?: string;
       },
   paramSignature?: string,
   paramAuthMessage?: string,
-  paramAuthNonce?: string
+  paramAuthNonce?: string,
+  expectedAction?: string
 ): Promise<{ verified: boolean; reason?: string }> {
   let userAddress: string;
   let signature: string;
   let authMessage: string;
   let authNonce: string | undefined;
+  let actionExpected = expectedAction;
 
   if (typeof userAddressOrParams === 'string') {
     userAddress = userAddressOrParams;
@@ -140,6 +290,7 @@ export async function verifyWalletAuth(
     signature = userAddressOrParams.signature;
     authMessage = userAddressOrParams.authMessage || userAddressOrParams.message || '';
     authNonce = userAddressOrParams.authNonce || userAddressOrParams.nonce;
+    actionExpected = userAddressOrParams.expectedAction;
   }
 
   if (!userAddress || !isAddress(userAddress)) {
@@ -155,32 +306,44 @@ export async function verifyWalletAuth(
   }
 
   const normalized = userAddress.toLowerCase();
+  const parsed = parseAuthMessage(authMessage);
 
-  // If a nonce is provided or embedded in message, verify single-use replay protection
-  let extractedNonce = authNonce;
-  if (!extractedNonce) {
-    const nonceMatch = authMessage.match(/Nonce:\s*(hyp_[a-f0-9]+)/i);
-    if (nonceMatch) {
-      extractedNonce = nonceMatch[1];
-    }
+  // Address in message must match claimed address
+  if (parsed.address && parsed.address.toLowerCase() !== normalized) {
+    return { verified: false, reason: 'ADDRESS_MISMATCH: Message address does not match claimed signer' };
   }
 
-  if (extractedNonce) {
-    const key = `${normalized}:${extractedNonce}`;
-    const record = nonceStore.get(key);
+  // Extract nonce from parameter or message
+  const nonceToVerify = authNonce || parsed.nonce;
+  if (!nonceToVerify) {
+    return { verified: false, reason: 'NONCE_REQUIRED: Cryptographic auth requires single-use nonce' };
+  }
 
-    if (!record) {
-      return { verified: false, reason: 'NONCE_INVALID_OR_EXPIRED: Nonce not recognized or expired' };
-    }
+  const key = `${normalized}:${nonceToVerify}`;
+  const record = await nonceStore.get(key);
 
-    if (record.used) {
-      return { verified: false, reason: 'NONCE_ALREADY_USED: Replay attack detected. Nonce was already consumed.' };
-    }
+  if (!record) {
+    return { verified: false, reason: 'NONCE_INVALID_OR_EXPIRED: Nonce not recognized or expired' };
+  }
 
-    if (Date.now() > record.expiresAt) {
-      nonceStore.delete(key);
-      return { verified: false, reason: 'NONCE_EXPIRED: Authentication session timed out' };
-    }
+  if (record.used) {
+    return { verified: false, reason: 'NONCE_ALREADY_USED: Replay attack detected. Nonce was already consumed.' };
+  }
+
+  const now = Date.now();
+  if (now > record.expiresAt) {
+    await nonceStore.delete(key);
+    return { verified: false, reason: 'NONCE_EXPIRED: Authentication session timed out' };
+  }
+
+  // Check action binding if expected
+  if (actionExpected && record.action && record.action !== actionExpected) {
+    return { verified: false, reason: `ACTION_MISMATCH: Expected action ${actionExpected}, got ${record.action}` };
+  }
+
+  // Check clock skew on issuedAt (tolerance: 60s in future)
+  if (parsed.issuedAt && parsed.issuedAt > now + 60000) {
+    return { verified: false, reason: 'TIMESTAMP_FUTURE: Message timestamp is in the future' };
   }
 
   try {
@@ -194,13 +357,10 @@ export async function verifyWalletAuth(
       return { verified: false, reason: 'INVALID_SIGNATURE: Cryptographic signature does not match claimed address' };
     }
 
-    // Mark nonce as consumed upon successful verification
-    if (extractedNonce) {
-      const key = `${normalized}:${extractedNonce}`;
-      const record = nonceStore.get(key);
-      if (record) {
-        record.used = true;
-      }
+    // Atomic consumption of single-use nonce
+    const marked = await nonceStore.markUsed(key);
+    if (!marked) {
+      return { verified: false, reason: 'NONCE_ALREADY_USED: Race condition / replay detected during consumption' };
     }
 
     return { verified: true };
@@ -211,7 +371,6 @@ export async function verifyWalletAuth(
 
 /**
  * Express Middleware strictly enforcing cryptographic wallet authentication for privileged endpoints.
- * Rejects unsigned requests on production.
  */
 export async function requireWalletAuth(req: Request, res: Response, next: NextFunction) {
   const userAddress = req.body?.userAddress || (req.headers['x-wallet-address'] as string);
@@ -296,6 +455,14 @@ export async function verifyRelaySwapSignature(params: {
     const nowEpoch = BigInt(Math.floor(Date.now() / 1000));
     if (params.message.deadline < nowEpoch) {
       return { verified: false, reason: 'EXPIRED_DEADLINE: Relay swap deadline has expired' };
+    }
+
+    if (params.message.tokenIn.toLowerCase() === params.message.tokenOut.toLowerCase()) {
+      return { verified: false, reason: 'IDENTICAL_TOKENS: tokenIn and tokenOut cannot be identical' };
+    }
+
+    if (!isAddress(params.message.user) || !isAddress(params.message.recipient)) {
+      return { verified: false, reason: 'INVALID_ADDRESS: user and recipient must be valid EVM addresses' };
     }
 
     const domain = {

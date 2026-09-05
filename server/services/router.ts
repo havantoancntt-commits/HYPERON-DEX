@@ -13,7 +13,7 @@
  * - Mathematical price impact calculated directly from pool state invariants.
  */
 
-import { formatUnits, parseUnits, Address } from 'viem';
+import { formatUnits, parseUnits, Address, isAddress } from 'viem';
 import crypto from 'crypto';
 import { getUsdPrice } from './priceFeed';
 import { DEX_SOURCES } from '../../src/lib/constants';
@@ -912,6 +912,12 @@ export async function relayTransaction(payload: RelayerPayload): Promise<Relayer
   if (hasEip712 && payload.relaySwapParams && payload.eip712Signature) {
     const { verifyRelaySwapSignature } = await import('../middleware/walletAuth');
     const p = payload.relaySwapParams;
+    const routerConfig = getRouterConfig(payload.chainId || 'ethereum');
+    const targetVerifyingContract = (p.verifyingContract && isAddress(p.verifyingContract)
+      ? p.verifyingContract
+      : (routerConfig.universalRouter || routerConfig.uniswapV3Router || '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD')) as `0x${string}`;
+    const targetChainIdNum = routerConfig.chainNumericId || 1;
+
     const res = await verifyRelaySwapSignature({
       message: {
         user: p.user as any,
@@ -926,8 +932,8 @@ export async function relayTransaction(payload: RelayerPayload): Promise<Relayer
         nonce: BigInt(p.nonce),
       },
       signature: payload.eip712Signature as any,
-      verifyingContract: (p.verifyingContract || '0x1111111111111111111111111111111111111111') as any,
-      chainId: payload.chainId === 'base' ? 8453 : payload.chainId === 'arbitrum' ? 42161 : 1,
+      verifyingContract: targetVerifyingContract,
+      chainId: targetChainIdNum,
     });
 
     if (!res.verified) {

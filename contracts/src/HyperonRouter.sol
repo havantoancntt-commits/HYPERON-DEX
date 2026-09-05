@@ -370,6 +370,9 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         bytes calldata signature
     ) external onlyRelayer nonReentrant whenNotHalted checkDeadline(params.deadline) returns (uint256 amountOut) {
         if (params.user == address(0) || params.recipient == address(0)) revert InvalidAddress();
+        if (params.tokenIn == address(0) || params.tokenOut == address(0) || params.tokenIn == params.tokenOut) {
+            revert InvalidAddress();
+        }
         if (params.amountIn == 0) revert InvalidAmount();
 
         // Strict per-user nonce check
@@ -377,11 +380,22 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         if (params.nonce != expectedNonce) {
             revert InvalidNonce(params.nonce, expectedNonce);
         }
-        // Consume nonce immediately for replay protection
+        // Consume nonce immediately for atomic replay protection
         nonces[params.user] = expectedNonce + 1;
 
-        // Verify EIP-712 signature
-        bytes32 structHash = keccak256(
+        // Verify cryptographic EIP-712 signature
+        _verifyRelaySignature(params, signature);
+
+        // Pre-swap oracle safety check
+        _checkOracleSafety(params.tokenIn);
+        _checkOracleSafety(params.tokenOut);
+
+        // Execute swap and verify output
+        amountOut = _executeRelayedSwap(params);
+    }
+
+    function _hashRelaySwap(RelaySwapParams calldata params) internal pure returns (bytes32) {
+        return keccak256(
             abi.encode(
                 RELAY_SWAP_TYPEHASH,
                 params.user,
@@ -396,16 +410,17 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
                 params.nonce
             )
         );
+    }
 
-        bytes32 digest = _hashTypedDataV4(structHash);
+    function _verifyRelaySignature(RelaySwapParams calldata params, bytes calldata signature) internal view {
+        bytes32 digest = _hashTypedDataV4(_hashRelaySwap(params));
         address recoveredSigner = ECDSA.recover(digest, signature);
         if (recoveredSigner != params.user) {
             revert InvalidSignature();
         }
+    }
 
-        _checkOracleSafety(params.tokenIn);
-        _checkOracleSafety(params.tokenOut);
-
+    function _executeRelayedSwap(RelaySwapParams calldata params) internal returns (uint256 amountOut) {
         uint256 balanceBefore = IERC20(params.tokenIn).balanceOf(address(this));
         IERC20(params.tokenIn).safeTransferFrom(params.user, address(this), params.amountIn);
         uint256 actualAmountIn = IERC20(params.tokenIn).balanceOf(address(this)) - balanceBefore;
@@ -413,18 +428,18 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
 
         IERC20(params.tokenIn).forceApprove(address(uniswapV3Router), actualAmountIn);
 
-        ISwapRouter.ExactInputSingleParams memory uniParams = ISwapRouter.ExactInputSingleParams({
-            tokenIn: params.tokenIn,
-            tokenOut: params.tokenOut,
-            fee: params.feeTier,
-            recipient: params.recipient,
-            deadline: params.deadline,
-            amountIn: actualAmountIn,
-            amountOutMinimum: params.amountOutMinimum,
-            sqrtPriceLimitX96: 0
-        });
-
-        amountOut = uniswapV3Router.exactInputSingle(uniParams);
+        amountOut = uniswapV3Router.exactInputSingle(
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: params.tokenIn,
+                tokenOut: params.tokenOut,
+                fee: params.feeTier,
+                recipient: params.recipient,
+                deadline: params.deadline,
+                amountIn: actualAmountIn,
+                amountOutMinimum: params.amountOutMinimum,
+                sqrtPriceLimitX96: 0
+            })
+        );
 
         if (amountOut < params.amountOutMinimum) {
             revert InsufficientOutputAmount(amountOut, params.amountOutMinimum);

@@ -26,6 +26,7 @@ import { DEX_ERROR_CODES, createDexError, ERROR_MESSAGES, DexErrorCode, DexError
 import { requireWalletAuth, issueWalletNonce } from './server/middleware/walletAuth';
 import { isAddress } from 'viem';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import {
   validateWebhookUrl,
   dispatchSecureWebhook,
@@ -90,6 +91,45 @@ app.use((req, res, next) => {
   res.setHeader('X-Dex-Engine', 'HYPERON-DEX Core v4.1.0-Institutional');
   next();
 });
+
+// Production Multi-Tier Rate Limiting
+const globalApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'TOO_MANY_REQUESTS', message: 'API request limit reached. Please try again in 1 minute.' },
+});
+
+const relayLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'TOO_MANY_REQUESTS', message: 'Relay submission rate limit exceeded. Please wait 1 minute.' },
+});
+
+const copilotLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'TOO_MANY_REQUESTS', message: 'AI copilot rate limit exceeded. Please wait 1 minute.' },
+});
+
+const authNonceLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'TOO_MANY_REQUESTS', message: 'Auth nonce request rate limit exceeded.' },
+});
+
+app.use('/api/', globalApiLimiter);
+app.use('/api/relay', relayLimiter);
+app.use('/api/relay-zk-proof', relayLimiter);
+app.use('/api/ai/portfolio-copilot', copilotLimiter);
+app.use('/api/auth/nonce', authNonceLimiter);
 
 // -------------------------------------------------------------
 // Validation Schemas (Zod)
@@ -533,9 +573,19 @@ app.post('/api/submit', async (req: Request, res: Response) => {
 
 app.post('/api/relay', async (req: Request, res: Response) => {
   try {
-    const { signedTx, zkProof, routeHash, chainId = 'ethereum', userAddress } = req.body;
+    const {
+      signedTx,
+      eip712Signature,
+      relaySwapParams,
+      zkProof,
+      routeHash,
+      chainId = 'ethereum',
+      userAddress,
+    } = req.body;
     const result = await relayTransaction({
       signedTx,
+      eip712Signature,
+      relaySwapParams,
       zkProof,
       routeHash,
       chainId,
@@ -683,15 +733,33 @@ app.get('/api/v1/oracle/consolidated/:symbol', (req: Request, res: Response) => 
 
 app.post('/api/v1/oracle/circuit-breaker/reset', (req: Request, res: Response) => {
   const { symbol, operator, reason, verifiedPriceUsd } = req.body || {};
-  if (!symbol || typeof symbol !== 'string') {
-    return res.status(400).json({ error: 'Symbol string required' });
+  if (!symbol || typeof symbol !== 'string' || symbol.trim().length === 0) {
+    return res.status(400).json({ error: 'INVALID_SYMBOL', message: 'Symbol string is strictly required' });
   }
+  if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
+    return res.status(400).json({
+      error: 'AUDIT_REASON_REQUIRED',
+      message: 'A substantive audit reason (minimum 5 characters) is required to reset a tripped circuit breaker.',
+    });
+  }
+
+  if (verifiedPriceUsd !== undefined) {
+    const numPrice = Number(verifiedPriceUsd);
+    if (isNaN(numPrice) || !isFinite(numPrice) || numPrice <= 0) {
+      return res.status(400).json({
+        error: 'INVALID_VERIFIED_PRICE',
+        message: 'verifiedPriceUsd must be a strictly positive finite number.',
+      });
+    }
+  }
+
   const result = resetCircuitBreaker(
-    symbol,
-    operator || 'GOVERNANCE_TIMELOCK',
-    reason || 'Audited price verified post-cooldown',
-    verifiedPriceUsd ? Number(verifiedPriceUsd) : undefined
+    symbol.trim().toUpperCase(),
+    operator || (req as any).authenticatedUser || 'GOVERNANCE_TIMELOCK',
+    reason.trim(),
+    verifiedPriceUsd !== undefined ? Number(verifiedPriceUsd) : undefined
   );
+
   if (!result.success) {
     return res.status(400).json({ error: 'RESET_FAILED', message: result.message });
   }
