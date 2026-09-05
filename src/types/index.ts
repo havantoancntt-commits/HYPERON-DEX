@@ -78,6 +78,8 @@ export interface RouteSplit {
   fromToken: string;
   toToken: string;
   path: string[];
+  poolAddress?: string;
+  feeTierBps?: number;
 }
 
 export type QuoteComparisonStatus = 'LIVE_QUOTE' | 'ESTIMATE' | 'STALE' | 'UNAVAILABLE' | 'ERROR';

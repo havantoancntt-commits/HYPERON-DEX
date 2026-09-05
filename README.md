@@ -1,6 +1,9 @@
 # HYPERON-DEX — Next-Generation Institutional Web3 Super Exchange
 
-HYPERON-DEX is an institutional-grade, AI-native decentralized exchange (DEX) aggregator and Web3 trading terminal built with **TypeScript**, **Express**, **Vite**, **React 19**, **viem**, and **Tailwind CSS**.
+> **IMPORTANT SECURITY & INDEPENDENCE DECLARATION:**  
+> **HYPERON-DEX** is an independent, non-custodial decentralized exchange protocol and Web3 institutional terminal. **HYPERON-DEX is completely separate, unrelated, and unaffiliated with the HyperDX project** (which was subject to a historical security event). HYPERON-DEX operates on an isolated, formally verified codebase with zero shared keys, infrastructure, or governance.
+
+HYPERON-DEX is an institutional-grade, AI-native decentralized exchange (DEX) aggregator and Web3 trading terminal built with **TypeScript**, **Express**, **Vite**, **React 19**, **viem**, **Foundry**, **Solidity 0.8.28**, and **Tailwind CSS**.
 
 The platform provides mathematically verified on-chain routing, dynamic split optimization, real-time pre-flight transaction simulations (`eth_call`), bytecode-level honeypot & vulnerability scanning, and provably fair Chainlink VRF 2.5 lottery games—with **zero synthetic data** and **strict BigInt precision**.
 
@@ -11,44 +14,52 @@ The platform provides mathematically verified on-chain routing, dynamic split op
 ```
                           ┌──────────────────────────┐
                           │   HYPERON React Client   │
-                          │   (Tailwind, Motion)     │
+                          │   (Client-Side Routing,  │
+                          │    ZK Proofs via viem)   │
                           └─────────────┬────────────┘
-                                        │ REST / RPC
+                                        │ Signed Payload / ZK Proof
                           ┌─────────────▼────────────┐
-                          │ Express Application API   │
+                          │  Minimal Private Relayer  │
+                          │  (/api/submit, Flashbots) │
                           └─────────────┬────────────┘
          ┌──────────────────────────────┼──────────────────────────────┐
          ▼                              ▼                              ▼
 ┌───────────────────┐        ┌─────────────────────┐        ┌───────────────────┐
-│ SmartGraphRouter  │        │  SimulationEngine   │        │   SecurityScanner │
-│ - Gas-aware split │        │ - Dynamic Fee Tier  │        │ - EVM Disassembly │
-│ - Real DEX quotes │        │ - Dynamic Router/ABI│        │ - Honeypot checks │
-│ - BigInt slippage │        │ - Custom Deadline   │        │ - Ownership audit │
+│ SmartGraphRouter  │        │  HyperonRouter.sol  │        │   SecurityScanner │
+│ - Gas-aware split │        │ - Solidity 0.8.28   │        │ - EVM Disassembly │
+│ - Real DEX quotes │        │ - OpenZeppelin v5   │        │ - Honeypot checks │
+│ - EIP-1559 MA Gas │        │ - EIP-4626 Vaults   │        │ - SSRF OWASP block│
 └────────┬──────────┘        └──────────┬──────────┘        └───────────────────┘
          │                              │
          ▼                              ▼
 ┌───────────────────┐        ┌─────────────────────┐
-│    ammEngine      │        │    TokenResolver    │
-│ - Uniswap V2 (x*y)│        │ - Canonical Addr    │
-│ - Uniswap V3 (L)  │        │ - Multi-Chain Map   │
-│ - Curve Invariant │        │ - Zero Fallbacks    │
-│ - Balancer Weights│        │                     │
+│    ammEngine      │        │ Multi-Oracle Agg    │
+│ - Uniswap V2 (x*y)│        │ - ERC-7528 standard │
+│ - Uniswap V3 (L)  │        │ - 5% Outlier Reject │
+│ - Curve Invariant │        │ - 5s 10% Emerg Halt │
+│ - Balancer Weights│        │ - Volume Weighted   │
 └───────────────────┘        └─────────────────────┘
 ```
 
 ### Key Modules & Components:
 
-1. **Smart Graph Router (`server/services/router.ts`)**:
-   - Discovers live on-chain liquidity across Uniswap v3, Uniswap v2, Curve, and Balancer.
-   - Evaluates multi-venue split allocations (90/10, 80/20, 70/30, 60/40, 50/50).
-   - **Gas-Aware Economic Routing**: Quantifies estimated gas consumption (`gasEstimatedUnits`) into output token units (`calculateGasCostInTokenOutRaw`). Compares `netProfit = amountOutRaw - gasCostInToken` so split routes are only selected when net profit strictly exceeds single-pool routes.
-   - Generates an honest DEX comparison matrix (`LIVE_QUOTE` for verified pools, `UNAVAILABLE` when no pool exists, strictly avoiding fake percentage multipliers).
+0. **Zero-Trust Client-Side Routing & Relayer (`src/lib/router.ts`, `server.ts`)**:
+   - Computes multi-venue swap paths directly in browser / Web Worker using public RPCs.
+   - Generates Zero-Knowledge routing proofs (`snarkjs` / SHA256-Merkle) to shield trade intent and eliminate user profiling.
+   - Minimal Relayer `/api/submit` broadcasts transactions into private mempools (Flashbots Protect) without participating in decision calculations.
 
-2. **Pre-Flight Simulation Engine (`server/services/simulationEngine.ts`)**:
-   - Executes real on-chain simulations via `viem` `client.call()`.
-   - Dynamically resolves the pool fee tier (`extractFeeTier`: e.g., 500, 3000, 10000) and router contract (`resolveSimulationRouter`: Uniswap V3 vs. Uniswap V2 Router ABI).
-   - Supports client-specified `deadline` timestamps with relative fallback.
-   - Returns typed simulation outcomes: `SUCCESS`, `REVERTED`, `FAILED`, and non-zero `gasEstimatedUnits`.
+1. **Smart Contracts (`contracts/`)**:
+   - `HyperonRouter.sol`: Institutional hybrid router integrating Uniswap V3, Curve StableSwap, and EIP-4626 Tokenized Vaults with `ReentrancyGuard` and `onlyRelayer` execution.
+   - `HyperonOracleAggregator.sol`: ERC-7528 on-chain price oracle aggregator enforcing volume-weighted pricing, 5% outlier filters, and automated circuit breakers.
+   - Foundry configuration (`foundry.toml`) with Cancún EVM target and fuzzing suite.
+
+2. **Enterprise SSRF Protection (`server/services/webhookSecurity.ts`)**:
+   - Full OWASP SSRF compliance blocking RFC 1918 private subnets, cloud metadata IPs (`169.254.169.254`), internal domains, and restricted ports (443 only). Whitelist domain validation.
+
+3. **Multi-Oracle Price Aggregator (`server/services/multiOracleAggregator.ts`)**:
+   - Volume-weighted median calculation discarding low-volume feeds (< 1% liquidity).
+   - Strict 5% maximum deviation limit against median.
+   - Instant 5-second emergency circuit breaker for >10% price spikes.
 
 3. **AMM Invariant Math Engine (`server/services/ammEngine.ts`)**:
    - **Uniswap V2**: Constant-product $x \cdot y = k$ with exact integer fees (30 bps) across any decimal combination (6, 8, 18).

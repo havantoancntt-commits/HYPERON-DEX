@@ -11,7 +11,11 @@ import {
   simulateSwapTransaction,
   calculateGasCostInTokenOutRaw,
   ROUTER_GAS_CONFIG,
+  relayTransaction,
+  verifyZkProof,
+  getEip1559MovingAverageGasPriceGwei,
 } from '../server/services/router';
+import { generateZkRoutingProof } from '../src/lib/router';
 import { scanTokenSecurity, scanBytecodeOpcodes } from '../server/services/scanner';
 import { getPriceState, getUsdPrice } from '../server/services/priceFeed';
 import {
@@ -467,21 +471,62 @@ async function runTests() {
   const consolidated = getConsolidatedPrice(normalSources);
   assert(consolidated > 2990000000000000000000n && consolidated < 3010000000000000000000n, 'Consolidates multi-source prices into accurate weighted consensus');
 
-  // Outlier rejection test (>15% deviation)
+  // Outlier rejection test (>5% deviation)
   const sourcesWithOutlier: PriceSource[] = [
     ...normalSources,
     { name: 'Manipulated Flashloan Pool', price: 5000000000000000000000n, timestamp: now, weight: 10 }, // 66% spike!
   ];
   const report = aggregateMultiSourcePrice('ETH', sourcesWithOutlier);
-  assert(report.outliersRejected.length === 1, 'Detects and isolates manipulated outlier feed (>15% divergence)');
+  assert(report.outliersRejected.length === 1, 'Detects and isolates manipulated outlier feed (>5% divergence)');
   assert(report.outliersRejected[0].name === 'Manipulated Flashloan Pool', 'Identifies correct outlier source name');
 
-  // Flashloan Circuit Breaker (>20% shock in 60s)
+  // Volume filter test (<1% volume discarded)
+  const sourcesWithLowVolume: PriceSource[] = [
+    { name: 'Deep Liquidity Source', price: 3000000000000000000000n, timestamp: now, weight: 10, volume24h: 100000000 },
+    { name: 'Tiny Dust Pool', price: 3500000000000000000000n, timestamp: now, weight: 5, volume24h: 100 }, // <0.001% of volume!
+  ];
+  const lowVolReport = aggregateMultiSourcePrice('ETH', sourcesWithLowVolume);
+  assert(lowVolReport.sourcesUsed.length === 1, 'Discards low-volume pool (<1% total liquidity)');
+  assert(lowVolReport.volumeFilteredSources.length === 1, 'Identifies and isolates low-volume pool in report');
+
+  // Flashloan Circuit Breaker (>20% shock in 15s)
   recordPriceSnapshot('TEST_TOKEN', 100000000000000000000n); // $100 base
   // Simulate 30% instant spike
   const cbStatus = recordPriceSnapshot('TEST_TOKEN', 130000000000000000000n); // $130 spike (+30%)
-  assert(cbStatus.isTripped === true, 'Flashloan Circuit Breaker trips on >20% price change in <60s');
+  assert(cbStatus.isTripped === true, 'Flashloan Circuit Breaker trips on >20% price change in <15s');
   assert(isCircuitBreakerTripped('TEST_TOKEN') === true, 'isCircuitBreakerTripped returns true when tripped');
+
+  // Instant Emergency Mode (>10% shock in <= 5s)
+  recordPriceSnapshot('EMERGENCY_TOKEN', 100000000000000000000n);
+  const emergencyStatus = recordPriceSnapshot('EMERGENCY_TOKEN', 115000000000000000000n); // +15% spike in instant time
+  assert(emergencyStatus.isTripped === true && emergencyStatus.isEmergencyMode === true, 'Instant 5s spike >10% trips EMERGENCY_HALT mode');
+
+  // EIP-1559 Moving Average Gas Calculation
+  const gasCostOut = calculateGasCostInTokenOutRaw(
+    150000,
+    30.0,
+    2600.0,
+    1.0,
+    6,
+    false,
+    { baseFeeGwei: 28.0, priorityFeeGwei: 2.0 }
+  );
+  assert(gasCostOut > 0n, 'calculateGasCostInTokenOutRaw computes valid EIP-1559 moving average gas cost in token units');
+
+  // Zero-Knowledge Proof & Relayer Execution
+  const zkProof = await generateZkRoutingProof(
+    '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    '1.0',
+    '2650.0'
+  );
+  assert(verifyZkProof(zkProof) === true, 'Generates and verifies cryptographically valid Zero-Knowledge routing proof');
+
+  const relayerRes = await relayTransaction({
+    zkProof,
+    chainId: 'ethereum',
+  });
+  assert(relayerRes.status === 'RELAYED_FLASHBOTS' && relayerRes.txHash.startsWith('0x'), 'Relayer safely dispatches shielded transaction into Flashbots private mempool');
 
   // -------------------------------------------------------------
   // Test 15: Advanced EVM Disassembler & Token Risk Tier

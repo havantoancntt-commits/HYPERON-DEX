@@ -16,6 +16,8 @@ export interface PriceSource {
   price: bigint; // Scaled to 18 decimals
   timestamp: number;
   weight: number; // Reliability score e.g. 1 to 10
+  volume24h?: number; // 24h liquidity/volume in USD
+  isVerified?: boolean; // verified source flag (e.g. Chainlink, Pyth, Uniswap TWAP)
 }
 
 export interface PriceSnapshot {
@@ -27,6 +29,7 @@ export interface PriceSnapshot {
 export interface CircuitBreakerStatus {
   symbol: string;
   isTripped: boolean;
+  isEmergencyMode?: boolean;
   trippedAt?: number;
   reason?: string;
   priceChangePercent?: number;
@@ -38,19 +41,22 @@ export interface ConsolidatedOracleReport {
   consolidatedPriceRaw: bigint;
   consolidatedPriceUsd: number;
   sourcesCount: number;
-  sourcesUsed: { name: string; priceRaw: string; priceUsd: number; weight: number }[];
+  sourcesUsed: { name: string; priceRaw: string; priceUsd: number; weight: number; volume24h?: number }[];
   outliersRejected: { name: string; priceRaw: string; priceUsd: number; reason: string }[];
+  volumeFilteredSources?: { name: string; volume24h: number; reason: string }[];
   medianPriceRaw: bigint;
   circuitBreaker: CircuitBreakerStatus;
   timestamp: number;
-  status: 'HEALTHY' | 'DEGRADED' | 'CIRCUIT_BREAKER_ACTIVE' | 'INSUFFICIENT_SOURCES';
+  status: 'HEALTHY' | 'DEGRADED' | 'CIRCUIT_BREAKER_ACTIVE' | 'EMERGENCY_HALT' | 'INSUFFICIENT_SOURCES';
 }
 
 const PRICE_DECIMALS = 18;
-const MAX_PRICE_DEVIATION_BPS = 1500n; // 15% outlier threshold relative to median
-const CIRCUIT_BREAKER_THRESHOLD_PERCENT = 20.0; // 20% spike in 60s
-const CIRCUIT_BREAKER_WINDOW_MS = 60_000; // 1 minute
-const CIRCUIT_BREAKER_COOLDOWN_MS = 300_000; // 5 minutes cool-off
+export const MAX_PRICE_DEVIATION_BPS = 500n; // 5.00% outlier threshold relative to median (tightened from 15%)
+export const CIRCUIT_BREAKER_THRESHOLD_PERCENT = 20.0; // 20% spike in 15s
+export const CIRCUIT_BREAKER_WINDOW_MS = 15_000; // 15 seconds window (tightened from 60s)
+export const EMERGENCY_SPIKE_PERCENT = 10.0; // 10% change in <= 5s triggers Emergency Mode
+export const EMERGENCY_WINDOW_MS = 5_000; // 5 seconds window for instant flash crash/attack detection
+export const CIRCUIT_BREAKER_COOLDOWN_MS = 300_000; // 5 minutes cool-off
 
 // In-memory rolling price history per symbol (last 120 snapshots)
 const priceHistoryMap = new Map<string, PriceSnapshot[]>();
@@ -59,16 +65,27 @@ const circuitBreakerMap = new Map<string, CircuitBreakerStatus>();
 /**
  * Calculates consolidated price across independent sources.
  * 1. Discards expired or non-positive sources.
- * 2. Computes median price.
- * 3. Identifies and strips outliers deviating > 15% from median.
- * 4. Computes weighted average of surviving sources using strict BigInt integer arithmetic.
+ * 2. Filters out oracles with volume < 1% of total liquidity.
+ * 3. Computes median price.
+ * 4. Identifies and strips outliers deviating > 5% from median.
+ * 5. Computes volume-weighted average of surviving sources using strict BigInt integer arithmetic.
  */
 export function getConsolidatedPrice(sources: PriceSource[]): bigint {
   const now = Date.now();
-  const validSources = sources.filter((s) => s.price > 0n && s.weight > 0 && now - s.timestamp < 120_000);
+  let validSources = sources.filter((s) => s.price > 0n && s.weight > 0 && now - s.timestamp < 120_000);
 
   if (validSources.length === 0) {
     return 0n;
+  }
+
+  // Filter sources with volume < 1% of total volume when volume is reported
+  const totalVolume = validSources.reduce((sum, s) => sum + (s.volume24h || 0), 0);
+  if (totalVolume > 0) {
+    const volumeThreshold = totalVolume * 0.01;
+    const highVolumeSources = validSources.filter((s) => (s.volume24h || 0) >= volumeThreshold);
+    if (highVolumeSources.length > 0) {
+      validSources = highVolumeSources;
+    }
   }
 
   if (validSources.length === 1) {
@@ -82,7 +99,7 @@ export function getConsolidatedPrice(sources: PriceSource[]): bigint {
 
   if (medianPrice === 0n) return 0n;
 
-  // Filter out outliers (>15% divergence from median)
+  // Filter out outliers (>5% divergence from median)
   const nonOutliers = validSources.filter((s) => {
     const diff = s.price > medianPrice ? s.price - medianPrice : medianPrice - s.price;
     const deviationBps = (diff * 10000n) / medianPrice;
@@ -96,9 +113,14 @@ export function getConsolidatedPrice(sources: PriceSource[]): bigint {
   let totalWeight = 0n;
 
   for (const s of finalSources) {
-    const w = BigInt(Math.max(1, Math.round(s.weight)));
-    totalWeightedPrice += s.price * w;
-    totalWeight += w;
+    // Weight calculation: combine reliability weight and volume weight (if present)
+    let effectiveWeight = BigInt(Math.max(1, Math.round(s.weight)));
+    if (s.volume24h && totalVolume > 0) {
+      const volumeFactor = BigInt(Math.max(1, Math.round((s.volume24h / totalVolume) * 10)));
+      effectiveWeight = effectiveWeight * volumeFactor;
+    }
+    totalWeightedPrice += s.price * effectiveWeight;
+    totalWeight += effectiveWeight;
   }
 
   return totalWeight > 0n ? totalWeightedPrice / totalWeight : medianPrice;
@@ -116,11 +138,20 @@ export function isCircuitBreakerTripped(symbol: string): boolean {
     circuitBreakerMap.set(symbol.toUpperCase(), {
       symbol: symbol.toUpperCase(),
       isTripped: false,
+      isEmergencyMode: false,
     });
     return false;
   }
 
   return true;
+}
+
+/**
+ * Checks whether emergency mode is active for a symbol.
+ */
+export function isEmergencyModeActive(symbol: string): boolean {
+  const status = circuitBreakerMap.get(symbol.toUpperCase());
+  return !!status?.isEmergencyMode && isCircuitBreakerTripped(symbol);
 }
 
 /**
@@ -130,15 +161,17 @@ export function resetCircuitBreaker(symbol: string): void {
   circuitBreakerMap.set(symbol.toUpperCase(), {
     symbol: symbol.toUpperCase(),
     isTripped: false,
+    isEmergencyMode: false,
   });
 }
 
 /**
  * Records a new price observation and evaluates circuit breaker triggers.
+ * Includes instant 5s 10% Emergency Mode detection and 15s 20% volatility trip.
  */
-export function recordPriceSnapshot(symbol: string, priceRaw: bigint): CircuitBreakerStatus {
+export function recordPriceSnapshot(symbol: string, priceRaw: bigint, customTimestamp?: number): CircuitBreakerStatus {
   const sym = symbol.toUpperCase();
-  const now = Date.now();
+  const now = customTimestamp || Date.now();
   const priceUsd = parseFloat(formatUnits(priceRaw, PRICE_DECIMALS));
 
   let history = priceHistoryMap.get(sym);
@@ -151,24 +184,41 @@ export function recordPriceSnapshot(symbol: string, priceRaw: bigint): CircuitBr
   const windowCutoff = now - 300_000;
   history = history.filter((h) => h.timestamp >= windowCutoff);
 
-  // Check price change over the last 60 seconds
-  const oneMinCutoff = now - CIRCUIT_BREAKER_WINDOW_MS;
-  const recentSnapshots = history.filter((h) => h.timestamp >= oneMinCutoff);
-
   let tripped = false;
+  let isEmergencyMode = false;
   let maxChangePct = 0;
   let triggerReason = '';
 
-  if (recentSnapshots.length > 0) {
-    // Compare against oldest snapshot in the 60s window
-    const baseSnapshot = recentSnapshots[0];
-    if (baseSnapshot.priceUsd > 0) {
-      const changePct = Math.abs(((priceUsd - baseSnapshot.priceUsd) / baseSnapshot.priceUsd) * 100);
-      maxChangePct = changePct;
-
-      if (changePct >= CIRCUIT_BREAKER_THRESHOLD_PERCENT) {
+  // 1. Check instant 5-second Emergency Mode window (>10% spike in <= 5s)
+  const emergencyCutoff = now - EMERGENCY_WINDOW_MS;
+  const emergencySnapshots = history.filter((h) => h.timestamp >= emergencyCutoff);
+  if (emergencySnapshots.length > 0) {
+    const baseSnap = emergencySnapshots[0];
+    if (baseSnap.priceUsd > 0) {
+      const changePct = Math.abs(((priceUsd - baseSnap.priceUsd) / baseSnap.priceUsd) * 100);
+      if (changePct >= EMERGENCY_SPIKE_PERCENT) {
         tripped = true;
-        triggerReason = `Price changed by ${changePct.toFixed(2)}% in <60s (Threshold: ${CIRCUIT_BREAKER_THRESHOLD_PERCENT}%). Potential flashloan or oracle manipulation detected.`;
+        isEmergencyMode = true;
+        maxChangePct = changePct;
+        triggerReason = `EMERGENCY MODE ACTIVATED: Price changed by ${changePct.toFixed(2)}% in <=5s (Threshold: ${EMERGENCY_SPIKE_PERCENT}%). Trading halted to protect pool liquidity.`;
+      }
+    }
+  }
+
+  // 2. Check 15-second Circuit Breaker window (>20% spike in <= 15s)
+  if (!isEmergencyMode) {
+    const fifteenSecCutoff = now - CIRCUIT_BREAKER_WINDOW_MS;
+    const recentSnapshots = history.filter((h) => h.timestamp >= fifteenSecCutoff);
+    if (recentSnapshots.length > 0) {
+      const baseSnapshot = recentSnapshots[0];
+      if (baseSnapshot.priceUsd > 0) {
+        const changePct = Math.abs(((priceUsd - baseSnapshot.priceUsd) / baseSnapshot.priceUsd) * 100);
+        maxChangePct = Math.max(maxChangePct, changePct);
+
+        if (changePct >= CIRCUIT_BREAKER_THRESHOLD_PERCENT) {
+          tripped = true;
+          triggerReason = `Circuit Breaker tripped: Price changed by ${changePct.toFixed(2)}% in <15s (Threshold: ${CIRCUIT_BREAKER_THRESHOLD_PERCENT}%). Potential flashloan or oracle manipulation detected.`;
+        }
       }
     }
   }
@@ -179,6 +229,7 @@ export function recordPriceSnapshot(symbol: string, priceRaw: bigint): CircuitBr
   const currentStatus: CircuitBreakerStatus = {
     symbol: sym,
     isTripped: isAlreadyTripped || tripped,
+    isEmergencyMode: isEmergencyMode || (isAlreadyTripped && existingStatus?.isEmergencyMode),
     trippedAt: isAlreadyTripped ? existingStatus.trippedAt : tripped ? now : undefined,
     reason: isAlreadyTripped ? existingStatus?.reason : triggerReason || undefined,
     priceChangePercent: maxChangePct,
@@ -206,7 +257,7 @@ export function aggregateMultiSourcePrice(
   const sym = symbol.toUpperCase();
   const now = Date.now();
 
-  const validSources = sources.filter((s) => s.price > 0n);
+  let validSources = sources.filter((s) => s.price > 0n);
 
   if (validSources.length === 0) {
     return {
@@ -216,6 +267,7 @@ export function aggregateMultiSourcePrice(
       sourcesCount: 0,
       sourcesUsed: [],
       outliersRejected: [],
+      volumeFilteredSources: [],
       medianPriceRaw: 0n,
       circuitBreaker: { symbol: sym, isTripped: isCircuitBreakerTripped(sym) },
       timestamp: now,
@@ -223,12 +275,34 @@ export function aggregateMultiSourcePrice(
     };
   }
 
+  // Filter sources with volume < 1% of total liquidity
+  const totalVolume = validSources.reduce((acc, s) => acc + (s.volume24h || 0), 0);
+  const volumeFilteredSources: { name: string; volume24h: number; reason: string }[] = [];
+  if (totalVolume > 0) {
+    const volumeThreshold = totalVolume * 0.01;
+    const keptSources: PriceSource[] = [];
+    for (const s of validSources) {
+      if ((s.volume24h || 0) < volumeThreshold) {
+        volumeFilteredSources.push({
+          name: s.name,
+          volume24h: s.volume24h || 0,
+          reason: `Volume $${(s.volume24h || 0).toLocaleString()} is < 1% of total verified liquidity ($${totalVolume.toLocaleString()})`,
+        });
+      } else {
+        keptSources.push(s);
+      }
+    }
+    if (keptSources.length > 0) {
+      validSources = keptSources;
+    }
+  }
+
   // Compute median
   const sorted = [...validSources].sort((a, b) => (a.price > b.price ? 1 : a.price < b.price ? -1 : 0));
   const mid = Math.floor(sorted.length / 2);
   const medianPrice = sorted.length % 2 === 0 ? (sorted[mid - 1].price + sorted[mid].price) / 2n : sorted[mid].price;
 
-  const sourcesUsed: { name: string; priceRaw: string; priceUsd: number; weight: number }[] = [];
+  const sourcesUsed: { name: string; priceRaw: string; priceUsd: number; weight: number; volume24h?: number }[] = [];
   const outliersRejected: { name: string; priceRaw: string; priceUsd: number; reason: string }[] = [];
 
   for (const s of validSources) {
@@ -240,7 +314,7 @@ export function aggregateMultiSourcePrice(
         name: s.name,
         priceRaw: s.price.toString(),
         priceUsd: parseFloat(formatUnits(s.price, PRICE_DECIMALS)),
-        reason: `Divergence of ${(Number(deviationBps) / 100).toFixed(2)}% exceeds 15% threshold`,
+        reason: `Divergence of ${(Number(deviationBps) / 100).toFixed(2)}% exceeds 5.00% threshold`,
       });
     } else {
       sourcesUsed.push({
@@ -248,6 +322,7 @@ export function aggregateMultiSourcePrice(
         priceRaw: s.price.toString(),
         priceUsd: parseFloat(formatUnits(s.price, PRICE_DECIMALS)),
         weight: s.weight,
+        volume24h: s.volume24h,
       });
     }
   }
@@ -258,7 +333,9 @@ export function aggregateMultiSourcePrice(
   // Evaluate circuit breaker on the consolidated price
   const circuitBreaker = recordPriceSnapshot(sym, consolidatedPriceRaw);
 
-  const status: ConsolidatedOracleReport['status'] = circuitBreaker.isTripped
+  const status: ConsolidatedOracleReport['status'] = circuitBreaker.isEmergencyMode
+    ? 'EMERGENCY_HALT'
+    : circuitBreaker.isTripped
     ? 'CIRCUIT_BREAKER_ACTIVE'
     : outliersRejected.length > 0
     ? 'DEGRADED'
@@ -271,6 +348,7 @@ export function aggregateMultiSourcePrice(
     sourcesCount: validSources.length,
     sourcesUsed,
     outliersRejected,
+    volumeFilteredSources,
     medianPriceRaw: medianPrice,
     circuitBreaker,
     timestamp: now,

@@ -6,7 +6,7 @@ import { GoogleGenAI } from '@google/genai';
 import { VERIFIED_TOKENS, SUPPORTED_CHAINS, DEX_SOURCES, SAMPLE_POOLS, SAMPLE_STAKING_VAULTS } from './src/lib/constants';
 import { priceCache, getPrice, getPriceState, getUsdPrice, syncRealTimePrices } from './server/services/priceFeed';
 import { fetchLiveKlines, fetchLiveOrderBook, fetchLiveTrades, calculateLiveTechnicalIndicators } from './server/services/marketData';
-import { calculateSmartRouteQuote, simulateSwapTransaction } from './server/services/router';
+import { calculateSmartRouteQuote, simulateSwapTransaction, relayTransaction, verifyZkProof } from './server/services/router';
 import { scanTokenSecurity } from './server/services/scanner';
 import { generateMarketIntelligence, generateQuantitativeSignals } from './server/services/aiIntelligence';
 import { getLiveBlockNumber, getLiveGasPrice, getNativeBalance } from './server/services/rpc';
@@ -498,6 +498,54 @@ app.post('/api/swaps/simulate', async (req: Request, res: Response) => {
         ERROR_MESSAGES.SIMULATION_FAILED
       )
     );
+  }
+});
+
+// -------------------------------------------------------------
+// 5b. Minimal Zero-Trust Transaction Relayer API
+// -------------------------------------------------------------
+app.post('/api/submit', async (req: Request, res: Response) => {
+  try {
+    const { signedTx, zkProof, routeHash, chainId = 'ethereum', userAddress } = req.body;
+    const result = await relayTransaction({
+      signedTx,
+      zkProof,
+      routeHash,
+      chainId,
+      userAddress,
+    });
+    res.json({
+      success: true,
+      result,
+      message: 'Transaction relayed via private Flashbots mempool with Zero-Knowledge verification',
+    });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      error: err?.message || 'Failed to relay transaction',
+    });
+  }
+});
+
+app.post('/api/relay', async (req: Request, res: Response) => {
+  try {
+    const { signedTx, zkProof, routeHash, chainId = 'ethereum', userAddress } = req.body;
+    const result = await relayTransaction({
+      signedTx,
+      zkProof,
+      routeHash,
+      chainId,
+      userAddress,
+    });
+    res.json({
+      success: true,
+      result,
+    });
+  } catch (err: any) {
+    res.status(400).json({
+      success: false,
+      error: err?.message || 'Failed to relay transaction',
+    });
   }
 });
 

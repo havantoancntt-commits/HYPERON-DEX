@@ -55,7 +55,7 @@ export function getWebhookAuditLogs(): WebhookAuditLog[] {
 export function isPrivateOrInternalIp(hostname: string): boolean {
   const clean = hostname.trim().toLowerCase();
 
-  // Localhost aliases
+  // Localhost aliases & cloud metadata hostnames
   if (
     clean === 'localhost' ||
     clean === '127.0.0.1' ||
@@ -64,7 +64,9 @@ export function isPrivateOrInternalIp(hostname: string): boolean {
     clean.endsWith('.local') ||
     clean.endsWith('.internal') ||
     clean.endsWith('.localhost') ||
-    clean.includes('metadata.google.internal')
+    clean.includes('metadata.google.internal') ||
+    clean.includes('instance-data') ||
+    clean.includes('169.254.169.254')
   ) {
     return true;
   }
@@ -101,12 +103,25 @@ export function isPrivateOrInternalIp(hostname: string): boolean {
     // Carrier-grade NAT: 100.64.0.0/10
     if (o1 === 100 && o2 >= 64 && o2 <= 127) return true;
 
+    // Benchmark testing: 198.18.0.0/15
+    if (o1 === 198 && (o2 === 18 || o2 === 19)) return true;
+
+    // Multicast & Reserved: 224.0.0.0/4 and 240.0.0.0/4
+    if (o1 >= 224) return true;
+
     // Broadcast: 255.255.255.255
     if (o1 === 255) return true;
   }
 
   // IPv6 prefix checks
-  if (clean.startsWith('fc') || clean.startsWith('fd') || clean.startsWith('fe80') || clean.startsWith('::ffff:')) {
+  if (
+    clean.startsWith('fc') ||
+    clean.startsWith('fd') ||
+    clean.startsWith('fe80') ||
+    clean.startsWith('::ffff:') ||
+    clean.startsWith('2001:db8') ||
+    clean === '::'
+  ) {
     return true;
   }
 
