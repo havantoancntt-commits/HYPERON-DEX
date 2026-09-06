@@ -19,6 +19,7 @@ import {
   toHex,
   Hex,
 } from 'viem';
+import crypto from 'crypto';
 import { getChainClient, getERC20Allowance, getERC20Balance, getNativeBalance, getLiveBlockNumber, getLiveGasPrice } from './rpc';
 import { getRouterConfig } from './routerRegistry';
 import { getUsdPrice } from './priceFeed';
@@ -461,7 +462,7 @@ export class SimulationEngine {
       success: overallSuccess,
       status,
       intentId: `INTENT-${Date.now()}`,
-      correlationId: `CORR-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+      correlationId: `CORR-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
       fromAddress: userAddress,
       toAddress: routerSpender,
       gasEstimated,

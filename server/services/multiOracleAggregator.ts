@@ -11,6 +11,7 @@
  */
 
 import { parseUnits, formatUnits } from 'viem';
+import crypto from 'crypto';
 
 export interface PriceSource {
   name: string;
@@ -202,7 +203,7 @@ export function resetCircuitBreaker(
   });
 
   const auditEntry: CircuitBreakerAuditLog = {
-    id: `CB-RESET-${now}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+    id: `CB-RESET-${now}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
     symbol: sym,
     action: 'RESET',
     operator,

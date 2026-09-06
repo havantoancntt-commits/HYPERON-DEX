@@ -253,7 +253,7 @@ export const TradeTerminalView: React.FC = () => {
 
     if (tradingMode === 'perpetual') {
       const newPos: Position = {
-        id: `POS-${Math.floor(100 + Math.random() * 900)}`,
+        id: `POS-${Date.now()}-${positions.length + 1}`,
         pair: `${activeSymbol}-PERP`,
         side: side === 'buy' ? 'long' : 'short',
         leverage,
@@ -296,7 +296,7 @@ export const TradeTerminalView: React.FC = () => {
       }
     } else {
       const newOrder: UserOrder = {
-        id: `ORD-${Math.floor(10000 + Math.random() * 90000)}`,
+        id: `ORD-${Date.now()}-${userOrders.length + 1}`,
         pair: `${activePair.symbol}/USDC`,
         type: orderType,
         side,

@@ -75,7 +75,16 @@ export async function generateZkRoutingProof(
   amountOutMin: string,
   secretNonce?: string
 ): Promise<ZkRoutingProof> {
-  const nonce = secretNonce || Math.random().toString(36).substring(2);
+  let nonce = secretNonce;
+  if (!nonce) {
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const arr = new Uint8Array(16);
+      crypto.getRandomValues(arr);
+      nonce = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+    } else {
+      nonce = `${Date.now().toString(16)}${tokenIn.slice(2, 10)}`;
+    }
+  }
   const rawString = `${tokenIn.toLowerCase()}:${tokenOut.toLowerCase()}:${amountIn}:${amountOutMin}:${nonce}:${Date.now()}`;
 
   // Use Web Crypto API available in all modern browsers and Node runtimes

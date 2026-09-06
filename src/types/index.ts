@@ -414,7 +414,7 @@ export interface TransactionHistoryItem {
   id: string;
   txHash: string;
   chainId: ChainId;
-  type: 'SWAP' | 'LIMIT_ORDER' | 'ADD_LIQUIDITY' | 'REMOVE_LIQUIDITY' | 'STAKE' | 'UNSTAKE' | 'CLAIM_REWARDS' | 'APPROVE' | 'BRIDGE' | 'SUPPLY' | 'BORROW' | 'REPAY' | 'WITHDRAW_LENDING' | 'FLASH_LOAN' | 'RESTAKE';
+  type: 'SWAP' | 'LIMIT_ORDER' | 'ADD_LIQUIDITY' | 'REMOVE_LIQUIDITY' | 'STAKE' | 'UNSTAKE' | 'CLAIM_REWARDS' | 'APPROVE' | 'BRIDGE' | 'SUPPLY' | 'BORROW' | 'REPAY' | 'WITHDRAW_LENDING' | 'FLASH_LOAN' | 'RESTAKE' | 'TRANSFER';
   status: 'confirmed' | 'pending' | 'failed';
   fromToken?: string;
   toToken?: string;

@@ -149,17 +149,27 @@ export const LotteryView: React.FC = () => {
     return activeRounds.find((r) => r.poolId === selectedPoolId) || activeRounds[0];
   }, [activeRounds, selectedPoolId]);
 
-  // Helper: Generate random 6 numbers
-  const getRandomNumbers = () => Array.from({ length: 6 }).map(() => Math.floor(Math.random() * 10));
+  // Helper: Cryptographically secure random integer in [0, max - 1]
+  const getCryptoRandomInt = (max: number): number => {
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const arr = new Uint32Array(1);
+      crypto.getRandomValues(arr);
+      return arr[0] % max;
+    }
+    return Math.floor(Math.random() * max);
+  };
+
+  // Helper: Generate random 6 numbers via Web Crypto
+  const getRandomNumbers = () => Array.from({ length: 6 }).map(() => getCryptoRandomInt(10));
 
   // Helper: Generate AI Hot Numbers based on analytics
   const getHotNumbers = () => {
     const hotPool = analytics?.hotDigits && analytics.hotDigits.length > 0 ? analytics.hotDigits : [7, 3, 9, 8, 2, 4];
     return Array.from({ length: 6 }).map(() => {
-      if (Math.random() < 0.7) {
-        return hotPool[Math.floor(Math.random() * hotPool.length)];
+      if (getCryptoRandomInt(100) < 70) {
+        return hotPool[getCryptoRandomInt(hotPool.length)];
       }
-      return Math.floor(Math.random() * 10);
+      return getCryptoRandomInt(10);
     });
   };
 
@@ -167,10 +177,10 @@ export const LotteryView: React.FC = () => {
   const getColdNumbers = () => {
     const coldPool = analytics?.coldDigits && analytics.coldDigits.length > 0 ? analytics.coldDigits : [5, 0, 1, 6];
     return Array.from({ length: 6 }).map(() => {
-      if (Math.random() < 0.65) {
-        return coldPool[Math.floor(Math.random() * coldPool.length)];
+      if (getCryptoRandomInt(100) < 65) {
+        return coldPool[getCryptoRandomInt(coldPool.length)];
       }
-      return Math.floor(Math.random() * 10);
+      return getCryptoRandomInt(10);
     });
   };
 

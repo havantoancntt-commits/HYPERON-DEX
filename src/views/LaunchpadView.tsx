@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getContractAddress, isAddress, Address } from 'viem';
 import { useExchange } from '../context/ExchangeContext';
 import { useWallet } from '../context/WalletContext';
 import { LaunchpadProject } from '../types';
@@ -139,7 +140,10 @@ export const LaunchpadView: React.FC = () => {
         endDate: '2026-09-08',
         status: 'LIVE',
         vestingSchedule: '100% Instant Unlocked at TGE',
-        contractAddress: '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+        contractAddress: getContractAddress({
+          from: (address && isAddress(address) ? address : '0x71C28B932F99B52EDb3C0257B4393608F79E9E42') as Address,
+          nonce: BigInt(Date.now() % 1000000),
+        }),
         acceptedToken: 'USDC',
         features: [
           `100% LP Liquidity Locked for ${deployLockMonths} Months`,

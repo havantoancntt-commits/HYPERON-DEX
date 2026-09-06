@@ -21,7 +21,7 @@ import {
 
 export const PaymentsView: React.FC = () => {
   const { addToast } = useExchange();
-  const { isConnected, connectWallet, address } = useWallet();
+  const { isConnected, connectWallet, address, executeTransaction, chainId } = useWallet();
 
   const [invoices, setInvoices] = useState<Web3MerchantInvoice[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -95,41 +95,59 @@ export const PaymentsView: React.FC = () => {
     }, 1000);
   };
 
-  const handlePayInvoice = () => {
+  const handlePayInvoice = async () => {
     if (!isConnected) {
       addToast({
         title: 'Wallet Connection Required',
         message: 'Vui lòng kết nối ví Web3 để thanh toán hóa đơn.',
         type: 'warning',
       });
-      connectWallet('demo');
+      connectWallet('sandbox');
       return;
     }
 
+    if (!payModalInvoice) return;
+
     setPaying(true);
-    setTimeout(() => {
-      if (payModalInvoice) {
-        setInvoices(
-          invoices.map((inv) =>
-            inv.id === payModalInvoice.id
-              ? {
-                  ...inv,
-                  status: 'PAID',
-                  txHash: '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
-                }
-              : inv
-          )
-        );
-      }
-      setPaying(false);
-      setPayModalInvoice(null);
+    try {
+      const tx = await executeTransaction({
+        chainId: chainId || 'ethereum',
+        type: 'TRANSFER',
+        fromToken: payModalInvoice.preferredToken || 'USDC',
+        toToken: payModalInvoice.preferredToken || 'USDC',
+        fromAmount: payModalInvoice.amountUsd,
+        toAmount: payModalInvoice.amountUsd,
+        gasSpentGwei: 15,
+        gasSpentUsd: 1.25,
+      });
+
+      setInvoices(
+        invoices.map((inv) =>
+          inv.id === payModalInvoice.id
+            ? {
+                ...inv,
+                status: 'PAID',
+                txHash: tx.txHash,
+              }
+            : inv
+        )
+      );
 
       addToast({
         title: 'Thanh Toán Hóa Đơn Thành Công!',
-        message: 'Giao dịch đã được thanh toán tức thì với trượt giá 0% và đối soát về ví người nhận.',
+        message: `Giao dịch đã được xác nhận. TX: ${tx.txHash.slice(0, 10)}...`,
         type: 'success',
       });
-    }, 1200);
+      setPayModalInvoice(null);
+    } catch (err: any) {
+      addToast({
+        title: 'Thanh Toán Thất Bại',
+        message: err?.message || 'Giao dịch không thể hoàn tất.',
+        type: 'error',
+      });
+    } finally {
+      setPaying(false);
+    }
   };
 
   return (

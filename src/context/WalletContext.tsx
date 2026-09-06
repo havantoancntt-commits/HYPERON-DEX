@@ -213,7 +213,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const executeTransaction = async (
     txData: Omit<TransactionHistoryItem, 'id' | 'timestamp' | 'status' | 'txHash' | 'blockNumber' | 'correlationId'>
   ): Promise<TransactionHistoryItem> => {
-    const correlationId = `CORR-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const randomHex = typeof crypto !== 'undefined' && crypto.getRandomValues
+      ? Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+      : Date.now().toString(16).toUpperCase();
+    const correlationId = `CORR-${randomHex}`;
 
     // Request actual on-chain signature if live injected wallet is active
     let txHash = '';

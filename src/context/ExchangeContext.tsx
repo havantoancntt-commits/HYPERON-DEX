@@ -74,6 +74,8 @@ interface ExchangeContextType {
 
 const ExchangeContext = createContext<ExchangeContextType | undefined>(undefined);
 
+let toastCounter = 0;
+
 export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeView, setActiveView] = useState<ProductView>('dashboard');
   const [selectedToken, setSelectedToken] = useState<Token>(VERIFIED_TOKENS[0]);
@@ -191,7 +193,7 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const addToast = (toast: Omit<ToastMessage, 'id' | 'timestamp'>) => {
     const newToast: ToastMessage = {
       ...toast,
-      id: `toast-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+      id: `toast-${Date.now()}-${++toastCounter}`,
       timestamp: Date.now(),
     };
     setToasts((prev) => [newToast, ...prev.slice(0, 5)]);

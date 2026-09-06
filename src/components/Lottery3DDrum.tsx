@@ -528,7 +528,7 @@ export const Lottery3DDrum: React.FC<Lottery3DDrumProps> = ({
 
     const targetNumbers = winningNumbers && winningNumbers.length === 6
       ? winningNumbers
-      : Array.from({ length: 6 }).map(() => Math.floor(Math.random() * 10));
+      : Array.from(typeof crypto !== 'undefined' && crypto.getRandomValues ? crypto.getRandomValues(new Uint8Array(6)) : [1, 2, 3, 4, 5, 6]).map((n) => n % 10);
 
     // Eject each ball sequentially with pneumatic delay
     for (let step = 1; step <= 6; step++) {

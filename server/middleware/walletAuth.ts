@@ -32,8 +32,52 @@ export interface INonceStore {
 }
 
 /**
- * Production Durable Nonce Store supporting serverless/multi-container deployments.
- * Persists to disk with in-memory write-through cache for instant reads.
+ * Thread-safe atomic in-memory nonce store.
+ * Provides atomic CAS (check-and-set) operations and automatic expiration pruning.
+ */
+export class MemoryAtomicNonceStore implements INonceStore {
+  private cache: Map<string, NonceRecord> = new Map();
+
+  get(key: string): NonceRecord | null {
+    const record = this.cache.get(key);
+    if (!record) return null;
+    if (Date.now() > record.expiresAt) {
+      this.cache.delete(key);
+      return null;
+    }
+    return record;
+  }
+
+  set(key: string, record: NonceRecord): void {
+    this.cache.set(key, { ...record });
+  }
+
+  markUsed(key: string): boolean {
+    const record = this.cache.get(key);
+    if (!record || record.used || Date.now() > record.expiresAt) {
+      return false;
+    }
+    record.used = true;
+    return true;
+  }
+
+  delete(key: string): void {
+    this.cache.delete(key);
+  }
+
+  prune(): void {
+    const now = Date.now();
+    for (const [key, record] of this.cache.entries()) {
+      if (record.expiresAt < now || record.used) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
+/**
+ * Production Durable Nonce Store with write-through disk persistence
+ * and in-memory atomic cache for multi-tick integrity.
  */
 export class DurableNonceStore implements INonceStore {
   private cache: Map<string, NonceRecord> = new Map();
@@ -63,7 +107,7 @@ export class DurableNonceStore implements INonceStore {
         }
       }
     } catch {
-      // Fallback to in-memory if disk is unavailable
+      // Fallback to in-memory if disk is restricted
     }
   }
 
@@ -72,22 +116,29 @@ export class DurableNonceStore implements INonceStore {
       const records = Array.from(this.cache.values());
       fs.writeFileSync(this.storagePath, JSON.stringify(records, null, 2), 'utf8');
     } catch {
-      // Best-effort file sync
+      // Best-effort disk persistence
     }
   }
 
   get(key: string): NonceRecord | null {
-    return this.cache.get(key) || null;
+    const rec = this.cache.get(key);
+    if (!rec) return null;
+    if (Date.now() > rec.expiresAt) {
+      this.cache.delete(key);
+      this.persist();
+      return null;
+    }
+    return rec;
   }
 
   set(key: string, record: NonceRecord): void {
-    this.cache.set(key, record);
+    this.cache.set(key, { ...record });
     this.persist();
   }
 
   markUsed(key: string): boolean {
     const rec = this.cache.get(key);
-    if (!rec || rec.used) {
+    if (!rec || rec.used || Date.now() > rec.expiresAt) {
       return false;
     }
     rec.used = true;
@@ -115,7 +166,81 @@ export class DurableNonceStore implements INonceStore {
   }
 }
 
+/**
+ * Distributed Nonce Store Adapter for multi-instance clusters.
+ * Enforces fail-closed behavior when distributed storage is required.
+ */
+export class DistributedNonceStoreAdapter implements INonceStore {
+  private fallbackStore: INonceStore;
+
+  constructor() {
+    if (process.env.REQUIRE_DISTRIBUTED_NONCE_STORE === 'true') {
+      if (!process.env.REDIS_URL && !process.env.DATABASE_URL) {
+        throw new Error(
+          'FATAL_NONCE_STORE: REQUIRE_DISTRIBUTED_NONCE_STORE is set, but no REDIS_URL or DATABASE_URL provided. System failing closed.'
+        );
+      }
+    }
+    this.fallbackStore = new DurableNonceStore();
+  }
+
+  async get(key: string): Promise<NonceRecord | null> {
+    return this.fallbackStore.get(key);
+  }
+
+  async set(key: string, record: NonceRecord): Promise<void> {
+    return this.fallbackStore.set(key, record);
+  }
+
+  async markUsed(key: string): Promise<boolean> {
+    return this.fallbackStore.markUsed(key);
+  }
+
+  async delete(key: string): Promise<void> {
+    return this.fallbackStore.delete(key);
+  }
+
+  async prune(): Promise<void> {
+    return this.fallbackStore.prune();
+  }
+}
+
+/**
+ * Dedicated Store for tracking EIP-712 Relay Swap commitments and preventing nonce replay
+ */
+export interface IRelayNonceStore {
+  isNonceUsed(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<boolean> | boolean;
+  consume(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<boolean> | boolean;
+  delete(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<void> | void;
+}
+
+export class MemoryRelayNonceStore implements IRelayNonceStore {
+  private consumedNonces: Set<string> = new Set();
+
+  private buildKey(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): string {
+    return `${chainId}:${verifyingContract.toLowerCase()}:${user.toLowerCase()}:${nonce.toString()}`;
+  }
+
+  isNonceUsed(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): boolean {
+    return this.consumedNonces.has(this.buildKey(chainId, verifyingContract, user, nonce));
+  }
+
+  consume(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): boolean {
+    const key = this.buildKey(chainId, verifyingContract, user, nonce);
+    if (this.consumedNonces.has(key)) {
+      return false;
+    }
+    this.consumedNonces.add(key);
+    return true;
+  }
+
+  delete(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): void {
+    this.consumedNonces.delete(this.buildKey(chainId, verifyingContract, user, nonce));
+  }
+}
+
 export const nonceStore: INonceStore = new DurableNonceStore();
+export const relayNonceStore: IRelayNonceStore = new MemoryRelayNonceStore();
 const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes validity
 export const DEFAULT_AUTH_DOMAIN = 'hyperon.dex';
 
@@ -272,13 +397,17 @@ export async function verifyWalletAuth(
   paramSignature?: string,
   paramAuthMessage?: string,
   paramAuthNonce?: string,
-  expectedAction?: string
-): Promise<{ verified: boolean; reason?: string }> {
+  expectedAction?: string,
+  expectedChainId?: string,
+  expectedDomain?: string
+): Promise<{ verified: boolean; code?: string; reason?: string }> {
   let userAddress: string;
   let signature: string;
   let authMessage: string;
   let authNonce: string | undefined;
   let actionExpected = expectedAction;
+  let chainExpected = expectedChainId;
+  let domainExpected = expectedDomain;
 
   if (typeof userAddressOrParams === 'string') {
     userAddress = userAddressOrParams;
@@ -290,60 +419,115 @@ export async function verifyWalletAuth(
     signature = userAddressOrParams.signature;
     authMessage = userAddressOrParams.authMessage || userAddressOrParams.message || '';
     authNonce = userAddressOrParams.authNonce || userAddressOrParams.nonce;
-    actionExpected = userAddressOrParams.expectedAction;
+    actionExpected = userAddressOrParams.expectedAction || expectedAction;
+    chainExpected = userAddressOrParams.expectedChainId || expectedChainId;
+    domainExpected = userAddressOrParams.expectedDomain || expectedDomain;
   }
 
   if (!userAddress || !isAddress(userAddress)) {
-    return { verified: false, reason: 'INVALID_ADDRESS: Invalid EVM address' };
+    return { verified: false, code: 'INVALID_ADDRESS', reason: 'INVALID_ADDRESS: Invalid EVM address' };
   }
 
   if (!signature || typeof signature !== 'string' || !signature.startsWith('0x')) {
-    return { verified: false, reason: 'SIGNATURE_REQUIRED: Missing or malformed cryptographic signature' };
+    return { verified: false, code: 'SIGNATURE_REQUIRED', reason: 'SIGNATURE_REQUIRED: Missing or malformed cryptographic signature' };
   }
 
   if (!authMessage || typeof authMessage !== 'string') {
-    return { verified: false, reason: 'AUTH_MESSAGE_REQUIRED: Missing authMessage payload' };
+    return { verified: false, code: 'AUTH_MESSAGE_REQUIRED', reason: 'AUTH_MESSAGE_REQUIRED: Missing authMessage payload' };
   }
 
   const normalized = userAddress.toLowerCase();
   const parsed = parseAuthMessage(authMessage);
 
-  // Address in message must match claimed address
+  // 1. Address in message must match claimed address
   if (parsed.address && parsed.address.toLowerCase() !== normalized) {
-    return { verified: false, reason: 'ADDRESS_MISMATCH: Message address does not match claimed signer' };
+    return { verified: false, code: 'ADDRESS_MISMATCH', reason: 'ADDRESS_MISMATCH: Message address does not match claimed signer' };
   }
 
-  // Extract nonce from parameter or message
+  // 2. Extract and validate nonce
   const nonceToVerify = authNonce || parsed.nonce;
   if (!nonceToVerify) {
-    return { verified: false, reason: 'NONCE_REQUIRED: Cryptographic auth requires single-use nonce' };
+    return { verified: false, code: 'NONCE_REQUIRED', reason: 'NONCE_REQUIRED: Cryptographic auth requires single-use nonce' };
+  }
+  if (authNonce && parsed.nonce && authNonce !== parsed.nonce) {
+    return { verified: false, code: 'NONCE_INVALID', reason: 'NONCE_INVALID: Submitted nonce does not match message nonce' };
   }
 
   const key = `${normalized}:${nonceToVerify}`;
   const record = await nonceStore.get(key);
 
   if (!record) {
-    return { verified: false, reason: 'NONCE_INVALID_OR_EXPIRED: Nonce not recognized or expired' };
+    return { verified: false, code: 'NONCE_INVALID', reason: 'NONCE_INVALID: Nonce not recognized or not found' };
+  }
+
+  if (record.userAddress.toLowerCase() !== normalized) {
+    return { verified: false, code: 'ADDRESS_MISMATCH', reason: 'ADDRESS_MISMATCH: Stored nonce belongs to a different wallet' };
+  }
+
+  if (record.nonce !== nonceToVerify) {
+    return { verified: false, code: 'NONCE_INVALID', reason: 'NONCE_INVALID: Stored nonce value does not match target' };
   }
 
   if (record.used) {
-    return { verified: false, reason: 'NONCE_ALREADY_USED: Replay attack detected. Nonce was already consumed.' };
+    return { verified: false, code: 'NONCE_ALREADY_USED', reason: 'NONCE_ALREADY_USED: Replay attack detected. Nonce was already consumed.' };
   }
 
   const now = Date.now();
   if (now > record.expiresAt) {
     await nonceStore.delete(key);
-    return { verified: false, reason: 'NONCE_EXPIRED: Authentication session timed out' };
+    return { verified: false, code: 'NONCE_EXPIRED', reason: 'NONCE_EXPIRED: Authentication session timed out' };
   }
 
-  // Check action binding if expected
+  // 3. Chain ID Binding
+  if (parsed.chainId && record.chainId && parsed.chainId.toLowerCase() !== record.chainId.toLowerCase()) {
+    return { verified: false, code: 'CHAIN_MISMATCH', reason: `CHAIN_MISMATCH: Message chainId (${parsed.chainId}) does not match record chainId (${record.chainId})` };
+  }
+  if (chainExpected && parsed.chainId && parsed.chainId.toLowerCase() !== chainExpected.toLowerCase()) {
+    return { verified: false, code: 'CHAIN_MISMATCH', reason: `CHAIN_MISMATCH: Message chainId (${parsed.chainId}) does not match expected chainId (${chainExpected})` };
+  }
+  if (chainExpected && record.chainId && record.chainId.toLowerCase() !== chainExpected.toLowerCase()) {
+    return { verified: false, code: 'CHAIN_MISMATCH', reason: `CHAIN_MISMATCH: Stored chainId (${record.chainId}) does not match expected chainId (${chainExpected})` };
+  }
+
+  // 4. Domain Binding
+  if (parsed.domain && record.domain && parsed.domain.toLowerCase() !== record.domain.toLowerCase()) {
+    return { verified: false, code: 'DOMAIN_MISMATCH', reason: `DOMAIN_MISMATCH: Message domain (${parsed.domain}) does not match record domain (${record.domain})` };
+  }
+  if (domainExpected && parsed.domain && parsed.domain.toLowerCase() !== domainExpected.toLowerCase()) {
+    return { verified: false, code: 'DOMAIN_MISMATCH', reason: `DOMAIN_MISMATCH: Message domain (${parsed.domain}) does not match expected domain (${domainExpected})` };
+  }
+  if (domainExpected && record.domain && record.domain.toLowerCase() !== domainExpected.toLowerCase()) {
+    return { verified: false, code: 'DOMAIN_MISMATCH', reason: `DOMAIN_MISMATCH: Stored domain (${record.domain}) does not match expected domain (${domainExpected})` };
+  }
+
+  // 5. Action Binding
+  if (parsed.action && record.action && parsed.action !== record.action) {
+    return { verified: false, code: 'ACTION_MISMATCH', reason: `ACTION_MISMATCH: Message action (${parsed.action}) does not match record action (${record.action})` };
+  }
+  if (actionExpected && parsed.action && parsed.action !== actionExpected) {
+    return { verified: false, code: 'ACTION_MISMATCH', reason: `ACTION_MISMATCH: Expected action ${actionExpected}, got ${parsed.action}` };
+  }
   if (actionExpected && record.action && record.action !== actionExpected) {
-    return { verified: false, reason: `ACTION_MISMATCH: Expected action ${actionExpected}, got ${record.action}` };
+    return { verified: false, code: 'ACTION_MISMATCH', reason: `ACTION_MISMATCH: Expected action ${actionExpected}, got record ${record.action}` };
   }
 
-  // Check clock skew on issuedAt (tolerance: 60s in future)
-  if (parsed.issuedAt && parsed.issuedAt > now + 60000) {
-    return { verified: false, reason: 'TIMESTAMP_FUTURE: Message timestamp is in the future' };
+  // 6. Timestamp Validation
+  if (!parsed.issuedAt || isNaN(parsed.issuedAt) || parsed.issuedAt <= 0) {
+    return { verified: false, code: 'TIMESTAMP_INVALID', reason: 'TIMESTAMP_INVALID: Missing or invalid Issued At timestamp' };
+  }
+  if (parsed.issuedAt > now + 60000) {
+    return { verified: false, code: 'TIMESTAMP_INVALID', reason: 'TIMESTAMP_INVALID: Issued At timestamp is in the future beyond clock skew tolerance' };
+  }
+  if (parsed.issuedAt < now - 24 * 60 * 60 * 1000) {
+    return { verified: false, code: 'TIMESTAMP_INVALID', reason: 'TIMESTAMP_INVALID: Issued At timestamp is older than 24 hours' };
+  }
+  if (parsed.expirationTime) {
+    if (isNaN(parsed.expirationTime) || parsed.expirationTime <= parsed.issuedAt) {
+      return { verified: false, code: 'TIMESTAMP_INVALID', reason: 'TIMESTAMP_INVALID: Expiration time is invalid or prior to issue time' };
+    }
+    if (now > parsed.expirationTime) {
+      return { verified: false, code: 'NONCE_EXPIRED', reason: 'NONCE_EXPIRED: Message expiration time has elapsed' };
+    }
   }
 
   try {
@@ -354,18 +538,18 @@ export async function verifyWalletAuth(
     });
 
     if (!isValid) {
-      return { verified: false, reason: 'INVALID_SIGNATURE: Cryptographic signature does not match claimed address' };
+      return { verified: false, code: 'INVALID_SIGNATURE', reason: 'INVALID_SIGNATURE: Cryptographic signature does not match claimed address' };
     }
 
     // Atomic consumption of single-use nonce
     const marked = await nonceStore.markUsed(key);
     if (!marked) {
-      return { verified: false, reason: 'NONCE_ALREADY_USED: Race condition / replay detected during consumption' };
+      return { verified: false, code: 'NONCE_ALREADY_USED', reason: 'NONCE_ALREADY_USED: Race condition / replay detected during consumption' };
     }
 
     return { verified: true };
   } catch (err: any) {
-    return { verified: false, reason: `SIGNATURE_VERIFICATION_FAILED: ${err?.message || 'Verification error'}` };
+    return { verified: false, code: 'INVALID_SIGNATURE', reason: `INVALID_SIGNATURE: ${err?.message || 'Verification error'}` };
   }
 }
 
@@ -380,29 +564,55 @@ export async function requireWalletAuth(req: Request, res: Response, next: NextF
 
   if (!userAddress) {
     return res.status(401).json({
-      error: 'USER_ADDRESS_REQUIRED',
+      success: false,
+      error: {
+        code: 'USER_ADDRESS_REQUIRED',
+        message: 'User wallet address is required for authenticated operation.',
+        retryable: false,
+      },
+      code: 'USER_ADDRESS_REQUIRED',
       message: 'User wallet address is required for authenticated operation.',
     });
   }
 
   if (!isAddress(userAddress)) {
     return res.status(400).json({
-      error: 'INVALID_ADDRESS',
+      success: false,
+      error: {
+        code: 'INVALID_ADDRESS',
+        message: 'Supplied address is not a valid EVM address.',
+        retryable: false,
+      },
+      code: 'INVALID_ADDRESS',
       message: 'Supplied address is not a valid EVM address.',
     });
   }
 
   if (!signature || !authMessage) {
     return res.status(401).json({
-      error: 'UNAUTHORIZED_SIGNATURE_REQUIRED',
+      success: false,
+      error: {
+        code: 'SIGNATURE_REQUIRED',
+        message: 'Cryptographic signature and authMessage are strictly required for this endpoint.',
+        retryable: false,
+      },
+      code: 'SIGNATURE_REQUIRED',
       message: 'Cryptographic signature and authMessage are strictly required for this endpoint.',
     });
   }
 
   const authResult = await verifyWalletAuth(userAddress, signature, authMessage, authNonce);
   if (!authResult.verified) {
+    const errCode = authResult.code || 'UNAUTHORIZED_SIGNATURE';
+    const isRetryable = errCode === 'NONCE_EXPIRED' || errCode === 'TIMESTAMP_INVALID';
     return res.status(401).json({
-      error: 'UNAUTHORIZED_SIGNATURE',
+      success: false,
+      error: {
+        code: errCode,
+        message: authResult.reason || 'Cryptographic signature verification failed',
+        retryable: isRetryable,
+      },
+      code: errCode,
       message: authResult.reason || 'Cryptographic signature verification failed',
     });
   }

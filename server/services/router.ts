@@ -13,7 +13,7 @@
  * - Mathematical price impact calculated directly from pool state invariants.
  */
 
-import { formatUnits, parseUnits, Address, isAddress, keccak256 } from 'viem';
+import { formatUnits, parseUnits, Address, isAddress, keccak256, encodePacked } from 'viem';
 import crypto from 'crypto';
 import { getUsdPrice } from './priceFeed';
 import { DEX_SOURCES } from '../../src/lib/constants';
@@ -910,8 +910,24 @@ export async function relayTransaction(payload: RelayerPayload): Promise<Relayer
 
   let isEip712Valid = false;
   if (hasEip712 && payload.relaySwapParams && payload.eip712Signature) {
-    const { verifyRelaySwapSignature } = await import('../middleware/walletAuth');
+    const { verifyRelaySwapSignature, relayNonceStore } = await import('../middleware/walletAuth');
     const p = payload.relaySwapParams;
+
+    // Strict parameter validation
+    if (!p.user || !isAddress(p.user)) {
+      throw new Error('INVALID_ADDRESS: Invalid user address in relay swap params');
+    }
+    if (!p.recipient || !isAddress(p.recipient) || p.recipient === '0x0000000000000000000000000000000000000000') {
+      throw new Error('INVALID_ADDRESS: Recipient must be a valid non-zero EVM address');
+    }
+    if (BigInt(p.amountIn) <= 0n || BigInt(p.amountOutMinimum) <= 0n) {
+      throw new Error('INVALID_AMOUNT: amountIn and amountOutMinimum must be positive non-zero amounts');
+    }
+    const nowEpoch = BigInt(Math.floor(Date.now() / 1000));
+    if (BigInt(p.deadline) < nowEpoch) {
+      throw new Error('EXPIRED_DEADLINE: Relay swap intent deadline has expired');
+    }
+
     const routerConfig = getRouterConfig(payload.chainId || 'ethereum');
     const targetVerifyingContract = (p.verifyingContract && isAddress(p.verifyingContract)
       ? p.verifyingContract
@@ -939,6 +955,18 @@ export async function relayTransaction(payload: RelayerPayload): Promise<Relayer
     if (!res.verified) {
       throw new Error(`INVALID_EIP712_SIGNATURE: ${res.reason || 'Relayer signature rejected'}`);
     }
+
+    // Atomic consumption of relay nonce to guarantee replay prevention
+    const consumed = relayNonceStore.consume(
+      targetChainIdNum,
+      targetVerifyingContract,
+      p.user,
+      BigInt(p.nonce)
+    );
+    if (!consumed) {
+      throw new Error('NONCE_ALREADY_USED: EIP-712 relay nonce has already been consumed for this wallet and contract');
+    }
+
     isEip712Valid = true;
   }
 
@@ -967,11 +995,17 @@ export async function relayTransaction(payload: RelayerPayload): Promise<Relayer
     }
   } else if (hasEip712 && payload.relaySwapParams && payload.eip712Signature) {
     const p = payload.relaySwapParams;
-    const rawCommitment = `EIP712:${p.user}:${p.tokenIn}:${p.tokenOut}:${p.amountIn}:${p.nonce}:${payload.eip712Signature}`;
-    txHash = keccak256(Buffer.from(rawCommitment));
+    const rawCommitment = encodePacked(
+      ['string', 'address', 'address', 'address', 'uint256', 'uint256', 'uint256', 'string'],
+      ['EIP712_RELAY', p.user as Address, p.tokenIn as Address, p.tokenOut as Address, BigInt(p.amountIn), BigInt(p.amountOutMinimum), BigInt(p.nonce), payload.eip712Signature]
+    );
+    txHash = keccak256(rawCommitment);
   } else if (hasZk && payload.zkProof) {
-    const zkRaw = `ZK:${payload.zkProof.proofHash}:${payload.zkProof.nullifier}:${payload.routeHash || ''}`;
-    txHash = keccak256(Buffer.from(zkRaw));
+    const zkRaw = encodePacked(
+      ['string', 'string', 'string'],
+      ['ZK_RELAY', payload.zkProof.proofHash, payload.zkProof.nullifier]
+    );
+    txHash = keccak256(zkRaw);
   }
 
   if (!txHash) {

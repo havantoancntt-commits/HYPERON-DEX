@@ -587,6 +587,7 @@ async function runTests() {
     nonce: nonceObj.nonce,
   });
   assert(replayAttempt.verified === false, 'Replaying previously consumed nonce is strictly rejected');
+  assert(replayAttempt.code === 'NONCE_ALREADY_USED', 'Replay attempt returns explicit NONCE_ALREADY_USED code');
 
   // Forged Address Test: Address does not match signature
   const forgedNonce = issueWalletNonce('0x0000000000000000000000000000000000000001', 'ethereum');
@@ -597,6 +598,28 @@ async function runTests() {
     nonce: forgedNonce.nonce,
   });
   assert(forgedAttempt.verified === false, 'Forged address signature mismatch is strictly rejected');
+  assert(forgedAttempt.code === 'INVALID_SIGNATURE' || forgedAttempt.code === 'ADDRESS_MISMATCH', 'Forged attempt returns proper error code');
+
+  // Chain & Domain Mismatch Tests
+  const validNonceForMismatch = issueWalletNonce(userAddr, 'ethereum', 'LOGIN', 'hyperon.dex');
+  const mismatchSig = await testAccount.signMessage({ message: validNonceForMismatch.authMessage });
+  const chainMismatch = await verifyWalletAuth({
+    address: userAddr,
+    signature: mismatchSig,
+    message: validNonceForMismatch.authMessage,
+    nonce: validNonceForMismatch.nonce,
+    expectedChainId: 'arbitrum',
+  });
+  assert(chainMismatch.verified === false && chainMismatch.code === 'CHAIN_MISMATCH', 'Chain mismatch returns CHAIN_MISMATCH');
+
+  const domainMismatch = await verifyWalletAuth({
+    address: userAddr,
+    signature: mismatchSig,
+    message: validNonceForMismatch.authMessage,
+    nonce: validNonceForMismatch.nonce,
+    expectedDomain: 'malicious.phishing.io',
+  });
+  assert(domainMismatch.verified === false && domainMismatch.code === 'DOMAIN_MISMATCH', 'Domain mismatch returns DOMAIN_MISMATCH');
 
   // -------------------------------------------------------------
   // Test 18: EIP-712 Relay Swap Signature Verification & Parameter Binding
@@ -660,6 +683,39 @@ async function runTests() {
     chainId: 1,
   });
   assert(tamperedCheck.verified === false, 'Tampered swap parameters invalidate EIP-712 signature');
+
+  // Test Relay Replay Prevention via relayTransaction
+  const relayPayload = {
+    eip712Signature: eip712Sig,
+    relaySwapParams: {
+      user: relayMsg.user,
+      tokenIn: relayMsg.tokenIn,
+      tokenOut: relayMsg.tokenOut,
+      amountIn: relayMsg.amountIn.toString(),
+      amountOutMinimum: relayMsg.amountOutMinimum.toString(),
+      recipient: relayMsg.recipient,
+      feeTier: relayMsg.feeTier,
+      routeHash: relayMsg.routeHash,
+      deadline: relayMsg.deadline.toString(),
+      nonce: relayMsg.nonce.toString(),
+      verifyingContract: routerAddress,
+    },
+    chainId: 'ethereum',
+  };
+
+  const firstRelay = await relayTransaction(relayPayload);
+  assert(firstRelay.status === 'RELAYED_FLASHBOTS', 'First relay transaction succeeds');
+  assert(firstRelay.eip712Verified === true, 'First relay transaction verifies EIP-712');
+
+  let replayRelayBlocked = false;
+  try {
+    await relayTransaction(relayPayload);
+  } catch (err: any) {
+    if (err.message.includes('NONCE_ALREADY_USED')) {
+      replayRelayBlocked = true;
+    }
+  }
+  assert(replayRelayBlocked, 'Replay of consumed EIP-712 relay nonce is strictly rejected');
 
   // -------------------------------------------------------------
   // Test 19: Multi-Oracle Circuit Breaker Audited Reset & Cooldown

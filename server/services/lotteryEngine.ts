@@ -5,6 +5,7 @@
  */
 
 import { keccak256, encodePacked, toHex } from 'viem';
+import crypto from 'crypto';
 import {
   LotteryRound,
   LotteryTicket,
@@ -522,7 +523,8 @@ export function deriveWinningDigitsFromSeed(seedHex: string): number[] {
  * Generates 6 cryptographic random ticket digits
  */
 export function generateCryptographicTicketNumbers(userSeed: string = `${Date.now()}`): number[] {
-  const entropy = keccak256(encodePacked(['string', 'uint256'], [userSeed, BigInt(Date.now() + Math.floor(Math.random() * 1000000))]));
+  const saltHex = crypto.randomBytes(16).toString('hex');
+  const entropy = keccak256(encodePacked(['string', 'string', 'uint256'], [userSeed, saltHex, BigInt(Date.now())]));
   return deriveWinningDigitsFromSeed(entropy);
 }
 
