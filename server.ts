@@ -39,6 +39,7 @@ import {
   resetCircuitBreaker,
   getCircuitBreakerAuditLogs,
 } from './server/services/multiOracleAggregator';
+import { corsSecurityMiddleware } from './server/middleware/corsSecurity';
 
 const app = express();
 const PORT = 3000;
@@ -72,18 +73,8 @@ app.use(
 
 app.use(express.json({ limit: '1mb' }));
 
-// Tiered CORS Middleware: Public reads allow Web3 DApps/Oracles; Sensitive mutation routes validate headers
-app.use((req, res, next) => {
-  const origin = req.headers.origin || '*';
-  res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Wallet-Address, X-Auth-Message, X-Auth-Nonce');
-  res.setHeader('Access-Control-Max-Age', '86400');
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(204);
-  }
-  next();
-});
+// Enterprise Tiered CORS Middleware (P0 Hardening)
+app.use(corsSecurityMiddleware);
 
 // Basic Security & Telemetry Headers
 app.use((req, res, next) => {
@@ -141,7 +132,15 @@ const QuoteSchema = z
     toTokenSymbol: z.string().min(1).max(20).optional(),
     toTokenAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
     amount: z.union([z.number().positive(), z.string().regex(/^\d+(\.\d+)?$/)]),
-    slippage: z.union([z.number().min(0.01).max(50), z.string()]).optional(),
+    slippage: z
+      .union([
+        z.number().min(0.01).max(50),
+        z.string().regex(/^\d+(\.\d+)?$/).refine((v) => {
+          const n = parseFloat(v);
+          return n >= 0.01 && n <= 50;
+        }, { message: 'Slippage must be between 0.01% and 50.0%' }),
+      ])
+      .optional(),
     chainId: z.string().optional(),
   })
   .refine(
@@ -151,8 +150,64 @@ const QuoteSchema = z
     { message: 'Both source and destination token (symbol or address) must be provided.' }
   );
 
+const TokenSchema = z.object({
+  symbol: z.string().min(1).max(20),
+  name: z.string().min(1).max(100),
+  address: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  decimals: z.number().int().min(0).max(36),
+  chainId: z.string(),
+  logoUrl: z.string().optional(),
+  priceUsd: z.number().optional(),
+  change24h: z.number().optional(),
+  volume24h: z.number().optional(),
+  marketCapUsd: z.number().optional(),
+});
+
+const RouteSplitSchema = z.object({
+  dexName: z.string(),
+  percentage: z.number(),
+  fromToken: z.string(),
+  toToken: z.string(),
+  path: z.array(z.string()),
+  poolAddress: z.string().optional(),
+  feeTierBps: z.number().optional(),
+});
+
+const ZkProofSchema = z.object({
+  protocol: z.string(),
+  proofHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  nullifier: z.string().regex(/^0x[a-fA-F0-9]{32,64}$/),
+  publicSignals: z.any().optional(),
+});
+
+const SwapQuoteSchema = z.object({
+  id: z.string().min(1).max(200),
+  fromToken: TokenSchema,
+  toToken: TokenSchema,
+  fromAmount: z.number().positive(),
+  expectedOutput: z.number().nonnegative(),
+  minimumReceived: z.number().nonnegative(),
+  priceImpactPercent: z.number(),
+  slippagePercent: z.number(),
+  estimatedGasUsd: z.number(),
+  routingFeeUsd: z.number(),
+  executionPrice: z.number(),
+  sources: z.array(z.string()).optional().default([]),
+  routeSplits: z.array(RouteSplitSchema).optional().default([]),
+  timestamp: z.number(),
+  expiresInSec: z.number().optional().default(60),
+  isBestPrice: z.boolean().optional().default(true),
+  mevProtected: z.boolean().optional().default(true),
+  poolAddress: z.string().optional(),
+  protocol: z.string().optional(),
+  feeTierBps: z.number().optional(),
+  quoteHash: z.string().optional(),
+  routeHash: z.string().optional(),
+  zkProof: ZkProofSchema.optional(),
+});
+
 const SimulateSchema = z.object({
-  quote: z.any(),
+  quote: SwapQuoteSchema,
   userAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   chainId: z.string().optional(),
 });
@@ -195,27 +250,90 @@ const TokenScanSchema = z.object({
   chainId: z.string().optional(),
 });
 
+const PortfolioSummarySchema = z.object({
+  totalValueUsd: z.number().optional(),
+  totalValue: z.number().optional(),
+  balances: z.record(z.string(), z.union([z.number(), z.string()])).optional(),
+  assets: z
+    .array(
+      z.object({
+        symbol: z.string(),
+        balance: z.number(),
+        valueUsd: z.number().optional(),
+        allocationPercent: z.number().optional(),
+      })
+    )
+    .optional(),
+  healthFactor: z.number().optional(),
+  netApy: z.number().optional(),
+});
+
 const PortfolioCopilotSchema = z.object({
   message: z.string().min(1).max(1000),
-  portfolioSummary: z.any().optional(),
+  portfolioSummary: PortfolioSummarySchema.optional(),
 });
 
 // -------------------------------------------------------------
-// 1. Health & Status Endpoints
+// 1. Health, Liveness & Readiness Endpoints (Production P0)
 // -------------------------------------------------------------
-app.get('/api/health', async (req: Request, res: Response) => {
-  const blockRes = await getLiveBlockNumber('ethereum');
+app.get('/api/liveness', (_req: Request, res: Response) => {
   res.json({
-    status: 'ok',
+    status: 'healthy',
+    timestamp: Date.now(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    pid: process.pid,
+  });
+});
+
+app.get('/api/readiness', async (_req: Request, res: Response) => {
+  try {
+    const blockRes = await getLiveBlockNumber('ethereum');
+    const rpcHealthy = blockRes.status === 'SUCCESS' && blockRes.data !== null;
+    const priceCount = Object.keys(priceCache).length;
+    const oracleHealthy = priceCount > 0;
+    const cbTripped = isCircuitBreakerTripped('ETH');
+
+    const isReady = rpcHealthy && oracleHealthy && !cbTripped;
+    const status = isReady ? 'healthy' : rpcHealthy || oracleHealthy ? 'degraded' : 'unavailable';
+    const statusCode = isReady ? 200 : 503;
+
+    res.status(statusCode).json({
+      status,
+      timestamp: Date.now(),
+      checks: {
+        rpcConnectivity: rpcHealthy ? 'connected' : 'unreachable',
+        oracleQuorum: oracleHealthy ? 'available' : 'unavailable',
+        circuitBreaker: cbTripped ? 'tripped' : 'normal',
+      },
+    });
+  } catch (err) {
+    res.status(503).json({
+      status: 'unavailable',
+      timestamp: Date.now(),
+      error: 'Readiness probe failed',
+    });
+  }
+});
+
+app.get('/api/health', async (_req: Request, res: Response) => {
+  const blockRes = await getLiveBlockNumber('ethereum');
+  const rpcOperational = blockRes.status === 'SUCCESS' && blockRes.data !== null;
+  const oracleOperational = Object.keys(priceCache).length > 0;
+  const cbTripped = isCircuitBreakerTripped('ETH');
+
+  const overallStatus = cbTripped ? 'degraded' : rpcOperational && oracleOperational ? 'ok' : 'degraded';
+
+  res.json({
+    status: overallStatus,
     timestamp: Date.now(),
     app: 'HYPERON-DEX',
-    version: '4.0.0-production-hardened',
+    version: '4.1.0-production-hardened',
     latestBlock: blockRes.data ? Number(blockRes.data) : null,
     services: {
-      tradingEngine: 'operational',
+      tradingEngine: rpcOperational ? 'operational' : 'degraded',
       smartRouter: 'operational (BigInt Constant-Product + Curve Invariant)',
-      priceOracle: 'operational (Binance/DEX Multi-Source)',
-      riskScanner: 'operational (Viem RPC Bytecode Analysis)',
+      priceOracle: oracleOperational ? 'operational' : 'degraded',
+      riskScanner: rpcOperational ? 'operational' : 'degraded',
       aiEngine: 'operational (HYPERON Quantitative Engine)',
       mempoolScanner: 'operational (Flashbots Private RPC Relay)',
     },
@@ -385,7 +503,7 @@ app.get('/api/markets/indicators', async (req: Request, res: Response) => {
 // -------------------------------------------------------------
 // 4. Smart DEX Router & Quotes Engine
 // -------------------------------------------------------------
-app.post('/api/quotes', async (req: Request, res: Response) => {
+app.post(['/api/quotes', '/api/quote'], async (req: Request, res: Response) => {
   try {
     const parsed = QuoteSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -505,7 +623,7 @@ app.post('/api/quotes', async (req: Request, res: Response) => {
 // -------------------------------------------------------------
 // 5. Pre-Flight Transaction Simulation & Security Check
 // -------------------------------------------------------------
-app.post('/api/swaps/simulate', async (req: Request, res: Response) => {
+app.post(['/api/swaps/simulate', '/api/simulate-swap'], async (req: Request, res: Response) => {
   try {
     const parsed = SimulateSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -530,7 +648,7 @@ app.post('/api/swaps/simulate', async (req: Request, res: Response) => {
       );
     }
 
-    const simulation = await simulateSwapTransaction(quote, userAddress, chainId);
+    const simulation = await simulateSwapTransaction(quote as any, userAddress, chainId);
     // Apply strict schema validation to prevent internal simulation data leakage
     const validatedSimulation = SimulationOutputSchema.parse(simulation);
     res.json({ simulation: validatedSimulation });

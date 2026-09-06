@@ -69,6 +69,28 @@ export const PerpetualsView: React.FC = () => {
     }
   }, [selectedSignal, currentPrice]);
 
+  const [techIndicators, setTechIndicators] = useState<{ rsi: number; ma25?: number; ema99?: number } | null>(null);
+
+  // Fetch real market indicators
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/markets/indicators?symbol=${currentToken.symbol}&timeframe=15m`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (active && data) {
+          setTechIndicators({
+            rsi: data.rsi,
+            ma25: data.movingAverages?.sma20 || (data.bollingerBands?.middle),
+            ema99: data.movingAverages?.ema50,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [currentToken.symbol]);
+
   // Fetch active positions
   const fetchPositions = async () => {
     try {
@@ -239,9 +261,9 @@ export const PerpetualsView: React.FC = () => {
             {/* Interactive Visual Canvas Mock / Price Action */}
             <div className="h-72 rounded-xl bg-gradient-to-b from-[#0B1122] to-[#060A14] border border-white/5 p-4 flex flex-col justify-between relative overflow-hidden font-mono">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">MA(25): <strong className="text-amber-400">${(currentPrice * 0.995).toFixed(2)}</strong></span>
-                <span className="text-slate-400">EMA(99): <strong className="text-cyan-400">${(currentPrice * 0.982).toFixed(2)}</strong></span>
-                <span className="text-slate-400">RSI(14): <strong className="text-emerald-400">62.8</strong></span>
+                <span className="text-slate-400">MA(20): <strong className="text-amber-400">{techIndicators?.ma25 ? `$${techIndicators.ma25.toFixed(2)}` : '—'}</strong></span>
+                <span className="text-slate-400">EMA(50): <strong className="text-cyan-400">{techIndicators?.ema99 ? `$${techIndicators.ema99.toFixed(2)}` : '—'}</strong></span>
+                <span className="text-slate-400">RSI(14): <strong className="text-emerald-400">{techIndicators?.rsi ? techIndicators.rsi.toFixed(1) : '—'}</strong></span>
               </div>
 
               {/* Graphical Candlestick Simulation Wave */}

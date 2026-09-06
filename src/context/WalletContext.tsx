@@ -237,11 +237,36 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (err?.code === 4001) {
           throw new Error('User rejected the transaction signature request.');
         }
+        throw new Error(err?.message || 'Transaction submission failed on injected wallet.');
       }
     }
 
     if (!txHash) {
-      txHash = `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
+      if (walletType !== 'sandbox') {
+        throw new Error('Transaction submission failed: no valid transaction hash returned by wallet provider.');
+      }
+      // Deterministic sandbox transaction hash for local simulation testing
+      txHash = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')}`;
+    }
+
+    // Query live block number
+    let currentBlock = 0;
+    try {
+      if (typeof window !== 'undefined' && (window as any).ethereum) {
+        const blockHex = await (window as any).ethereum.request({ method: 'eth_blockNumber' });
+        currentBlock = parseInt(blockHex, 16);
+      }
+      if (!currentBlock) {
+        const healthRes = await fetch('/api/health');
+        if (healthRes.ok) {
+          const hData = await healthRes.json();
+          currentBlock = hData.latestBlock || 0;
+        }
+      }
+    } catch {
+      currentBlock = 0;
     }
 
     // Update state balances
@@ -275,7 +300,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       txHash,
       timestamp: Date.now(),
       status: 'confirmed',
-      blockNumber: 21948210 + Math.floor(Math.random() * 10),
+      blockNumber: currentBlock > 0 ? currentBlock : undefined,
       correlationId,
     };
 

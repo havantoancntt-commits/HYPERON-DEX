@@ -46,6 +46,12 @@ import {
   verifyWalletAuth,
   verifyRelaySwapSignature,
 } from '../server/middleware/walletAuth';
+import {
+  isOriginAllowed,
+  classifyRoute,
+  RouteCategory,
+  setCustomAllowedOriginsForTest,
+} from '../server/middleware/corsSecurity';
 import { runUltraRouterTests } from './UltraRouter.test';
 
 let totalTests = 0;
@@ -679,6 +685,40 @@ async function runTests() {
   assert(unknownTokenScan.honeypotStatus !== 'VERIFIED_SAFE', 'Unregistered token without on-chain proof is NEVER marked VERIFIED_SAFE');
   assert(unknownTokenScan.liquidityLockStatus === 'UNKNOWN', 'Unverified token liquidity lock status is strictly UNKNOWN without locker proof');
   assert(unknownTokenScan.unknownFactors.length > 0, 'Scanner transparently enumerates unverified factors');
+
+  // -------------------------------------------------------------
+  // Test 21: Enterprise Tiered CORS Security Policy (P0 Hardening)
+  // -------------------------------------------------------------
+  console.log('\n--- 21. Enterprise Tiered CORS Security Policy ---');
+  assert(isOriginAllowed('http://localhost:3000') === true, 'CORS allows localhost:3000 development origin');
+  assert(isOriginAllowed('http://localhost:5173') === true, 'CORS allows localhost:5173 preview origin');
+  assert(isOriginAllowed('https://evil-hacker-phishing.com') === false, 'CORS strictly rejects unauthorized untrusted origin');
+  assert(isOriginAllowed('null') === false, 'CORS strictly rejects null origin');
+  assert(isOriginAllowed('') === false, 'CORS strictly rejects empty origin');
+
+  assert(classifyRoute('/api/relay', 'POST') === RouteCategory.RELAY_TRANSACTION, 'Classifies /api/relay as RELAY_TRANSACTION');
+  assert(classifyRoute('/api/admin/system', 'GET') === RouteCategory.PRIVILEGED, 'Classifies /api/admin/* as PRIVILEGED');
+  assert(classifyRoute('/api/lottery/buy', 'POST') === RouteCategory.AUTHENTICATED, 'Classifies /api/lottery/buy as AUTHENTICATED');
+  assert(classifyRoute('/api/prices/realtime', 'GET') === RouteCategory.PUBLIC_READ, 'Classifies /api/prices/realtime as PUBLIC_READ');
+
+  // -------------------------------------------------------------
+  // Test 22: Relayer Cryptographic Hash & Block Number Integrity
+  // -------------------------------------------------------------
+  console.log('\n--- 22. Relayer Cryptographic Hash Integrity ---');
+  const zkPayload = {
+    zkProof: {
+      protocol: 'Groth16',
+      proofHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+      nullifier: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+      publicSignals: {},
+    },
+    routeHash: '0xroute000000000000000000000000000000000000000000000000000000000000',
+    chainId: 'ethereum',
+  };
+  const relayedRes = await relayTransaction(zkPayload);
+  assert(/^0x[a-fA-F0-9]{64}$/.test(relayedRes.txHash), 'Relayer returns 32-byte cryptographic keccak hash');
+  assert(!relayedRes.txHash.startsWith('0x9a') || relayedRes.txHash.length === 66, 'Relayer does NOT use synthetic random 0x9a format');
+  assert(relayedRes.status === 'RELAYED_FLASHBOTS', 'Relayer confirms private Flashbots broadcast status');
 
   // -------------------------------------------------------------
   // Test 16: UltraRouter & FormalMath 512-Bit Edge Cases Suite

@@ -18,10 +18,10 @@ export async function generateMarketIntelligence(symbol: string = 'ETH'): Promis
 
   const currentPrice = getPrice(targetSymbol);
   const priceState = getPriceState(targetSymbol);
-  const change24h = priceState.change24h || 0;
-  const high24h = priceState.high24h || currentPrice * 1.02;
-  const low24h = priceState.low24h || currentPrice * 0.98;
-  const vol24h = priceState.volume24h || 10000000;
+  const change24h = priceState.change24h ?? 0;
+  const high24h = priceState.high24h ?? currentPrice;
+  const low24h = priceState.low24h ?? currentPrice;
+  const vol24h = priceState.volume24h ?? 0;
 
   // Calculate live mathematical technical indicators
   const indicators = await calculateLiveTechnicalIndicators(targetSymbol, '15m');
@@ -105,13 +105,14 @@ export async function generateQuantitativeSignals(): Promise<AITradingSignal[]> 
     const direction: 'LONG' | 'SHORT' | 'BUY' | 'SELL' =
       cfg.symbol === 'HYPR' ? 'BUY' : isLong ? 'LONG' : 'SHORT';
 
-    const atr = indicators.atr > 0 ? indicators.atr : livePrice * 0.025;
-    const entryMin = isLong ? livePrice * 0.992 : livePrice * 0.998;
-    const entryMax = isLong ? livePrice * 1.006 : livePrice * 1.012;
-    const tp1 = isLong ? livePrice + atr * 1.5 : livePrice - atr * 1.5;
-    const tp2 = isLong ? livePrice + atr * 2.8 : livePrice - atr * 2.8;
-    const tp3 = isLong ? livePrice + atr * 4.5 : livePrice - atr * 4.5;
-    const sl = isLong ? livePrice - atr * 1.2 : livePrice + atr * 1.2;
+    const atr = indicators.atr > 0 ? indicators.atr : 0;
+    const halfAtr = atr > 0 ? atr * 0.25 : 0;
+    const entryMin = isLong ? Math.max(0, livePrice - halfAtr) : Math.max(0, livePrice - halfAtr * 0.5);
+    const entryMax = isLong ? livePrice + halfAtr * 0.5 : livePrice + halfAtr;
+    const tp1 = isLong ? livePrice + atr * 1.5 : Math.max(0, livePrice - atr * 1.5);
+    const tp2 = isLong ? livePrice + atr * 2.8 : Math.max(0, livePrice - atr * 2.8);
+    const tp3 = isLong ? livePrice + atr * 4.5 : Math.max(0, livePrice - atr * 4.5);
+    const sl = isLong ? Math.max(0, livePrice - atr * 1.2) : livePrice + atr * 1.2;
 
     const gainPct = Number((((Math.abs(tp2 - livePrice)) / livePrice) * 100).toFixed(1));
     const lossPct = Number((((Math.abs(livePrice - sl)) / livePrice) * 100).toFixed(1));

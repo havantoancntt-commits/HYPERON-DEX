@@ -123,119 +123,29 @@ export async function calculateClientSmartRouteQuote(params: ClientQuoteParams):
     throw new DexError(DEX_ERROR_CODES.INVALID_AMOUNT, 'Amount must be greater than zero.');
   }
 
-  // Generate ZK proof to shield swap intent
-  const expectedEst = (parseFloat(amount) * 2650).toString(); // baseline est
-  const zkProof = await generateZkRoutingProof(
-    fromTokenAddress,
-    toTokenAddress,
-    amount,
-    expectedEst
-  );
+  const res = await fetch('/api/quotes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fromTokenSymbol,
+      fromTokenAddress,
+      toTokenSymbol,
+      toTokenAddress,
+      amount,
+      slippage,
+      chainId,
+    }),
+  });
 
-  const parsedAmount = parseFloat(amount);
-  const baseRate = fromTokenSymbol === 'ETH' ? 2680.5 : fromTokenSymbol === 'WBTC' ? 64200.0 : 1.0;
-  const targetRate = toTokenSymbol === 'USDC' || toTokenSymbol === 'USDT' ? 1.0 : 2680.5;
-  const exchangeRate = baseRate / targetRate;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new DexError(
+      err.code || DEX_ERROR_CODES.NO_LIQUIDITY,
+      err.error || 'Decentralized routing failed to produce a valid on-chain path.'
+    );
+  }
 
-  const expectedOutputNum = parsedAmount * exchangeRate * 0.997; // 0.3% AMM fee
-  const minReceivedNum = expectedOutputNum * (1 - slippage / 100);
-
-  const splits: RouteSplit[] = [
-    {
-      dexName: 'Uniswap v3 (0.05%)',
-      percentage: 70,
-      fromToken: fromTokenSymbol,
-      toToken: toTokenSymbol,
-      path: [fromTokenAddress, toTokenAddress],
-      poolAddress: '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640',
-      feeTierBps: 5,
-    },
-    {
-      dexName: 'Curve Finance',
-      percentage: 30,
-      fromToken: fromTokenSymbol,
-      toToken: toTokenSymbol,
-      path: [fromTokenAddress, toTokenAddress],
-      poolAddress: '0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc',
-      feeTierBps: 4,
-    },
-  ];
-
-  const dexComparison: DexComparisonItem[] = [
-    {
-      dexName: 'Hyperon Ultra-Router (Split Routing + ZK)',
-      protocol: 'Hyperon Ultra-Router',
-      outputAmount: expectedOutputNum,
-      outputUsd: expectedOutputNum * targetRate,
-      diffPercent: 0.42,
-      diffUsd: expectedOutputNum * targetRate * 0.0042,
-      estimatedGasUsd: 4.85,
-      netOutputUsd: expectedOutputNum * targetRate - 4.85,
-      status: 'LIVE_QUOTE',
-      isBest: true,
-    },
-    {
-      dexName: 'Uniswap v3 (Single Venue)',
-      protocol: 'Uniswap v3',
-      outputAmount: expectedOutputNum * 0.995,
-      outputUsd: expectedOutputNum * 0.995 * targetRate,
-      diffPercent: -0.5,
-      diffUsd: -(expectedOutputNum * targetRate * 0.005),
-      estimatedGasUsd: 5.2,
-      netOutputUsd: expectedOutputNum * 0.995 * targetRate - 5.2,
-      status: 'LIVE_QUOTE',
-      isBest: false,
-    },
-  ];
-
-  return {
-    id: `client-quote-${Date.now()}`,
-    fromToken: {
-      symbol: fromTokenSymbol,
-      name: fromTokenSymbol,
-      address: fromTokenAddress as Address,
-      decimals: 18,
-      chainId: (chainId || 'ethereum') as ChainId,
-      priceUsd: baseRate,
-      change24h: 1.2,
-      volume24h: 150000000,
-      liquidityUsd: 400000000,
-      marketCapUsd: 320000000000,
-      logoUrl: '',
-      isVerified: true,
-      category: 'Layer 1',
-    },
-    toToken: {
-      symbol: toTokenSymbol,
-      name: toTokenSymbol,
-      address: toTokenAddress as Address,
-      decimals: 6,
-      chainId: (chainId || 'ethereum') as ChainId,
-      priceUsd: targetRate,
-      change24h: 0.01,
-      volume24h: 800000000,
-      liquidityUsd: 1200000000,
-      marketCapUsd: 35000000000,
-      logoUrl: '',
-      isVerified: true,
-      category: 'Stablecoin',
-    },
-    fromAmount: parsedAmount,
-    expectedOutput: expectedOutputNum,
-    minimumReceived: minReceivedNum,
-    priceImpactPercent: 0.08,
-    slippagePercent: slippage,
-    estimatedGasUsd: 4.85,
-    routingFeeUsd: 0,
-    executionPrice: exchangeRate * 0.997,
-    sources: [],
-    routeSplits: splits,
-    dexComparison,
-    timestamp: Date.now(),
-    expiresInSec: 60,
-    isBestPrice: true,
-    mevProtected: true,
-  };
+  return (await res.json()) as SwapQuote;
 }
 
 /**

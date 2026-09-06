@@ -128,6 +128,8 @@ export interface SwapQuote {
   feeTierBps?: number;
   calculationLatencyMs?: number;
   quoteHash?: string;
+  routeHash?: string;
+  zkProof?: any;
   mevProtectionStats?: {
     frontrunningRisk: 'IMMUNE' | 'LOW' | 'HIGH';
     sandwichRiskScore: number;

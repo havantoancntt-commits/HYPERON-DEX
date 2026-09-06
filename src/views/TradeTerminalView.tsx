@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
 import { VERIFIED_TOKENS } from '../lib/constants';
@@ -338,9 +338,21 @@ export const TradeTerminalView: React.FC = () => {
   // Calculate high and low from candles
   const candleHighs = candles.map((c) => c.high);
   const candleLows = candles.map((c) => c.low);
-  const maxPrice = candleHighs.length ? Math.max(...candleHighs, activePair.priceUsd * 1.01) : activePair.priceUsd * 1.05;
-  const minPrice = candleLows.length ? Math.min(...candleLows, activePair.priceUsd * 0.99) : activePair.priceUsd * 0.95;
+  const maxPrice = candleHighs.length ? Math.max(...candleHighs) : activePair.priceUsd;
+  const minPrice = candleLows.length ? Math.min(...candleLows) : activePair.priceUsd;
   const priceRange = maxPrice - minPrice || 1;
+
+  const closes = useMemo(() => candles.map((c) => c.close), [candles]);
+  const ema7 = useMemo(() => {
+    if (closes.length < 7) return null;
+    const k = 2 / (7 + 1);
+    return closes.reduce((acc, val) => (val - acc) * k + acc, closes[0]);
+  }, [closes]);
+  const ema25 = useMemo(() => {
+    if (closes.length < 25) return null;
+    const k = 2 / (25 + 1);
+    return closes.reduce((acc, val) => (val - acc) * k + acc, closes[0]);
+  }, [closes]);
 
   return (
     <div className="space-y-4 pb-12">
@@ -466,8 +478,8 @@ export const TradeTerminalView: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <span>EMA(7): <strong className="text-amber-400">${(activePair.priceUsd * 0.994).toFixed(2)}</strong></span>
-                  <span>EMA(25): <strong className="text-purple-400">${(activePair.priceUsd * 0.988).toFixed(2)}</strong></span>
+                  <span>EMA(7): <strong className="text-amber-400">{ema7 !== null ? `$${ema7.toFixed(2)}` : '—'}</strong></span>
+                  <span>EMA(25): <strong className="text-purple-400">{ema25 !== null ? `$${ema25.toFixed(2)}` : '—'}</strong></span>
                 </>
               )}
             </div>
@@ -548,12 +560,12 @@ export const TradeTerminalView: React.FC = () => {
           </div>
 
           <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between text-[11px] font-mono text-slate-400">
-            <span>24h Low: ${(activePair.priceUsd * 0.97).toFixed(2)}</span>
+            <span>24h Low: ${candleLows.length > 0 ? Math.min(...candleLows).toFixed(2) : activePair.priceUsd.toFixed(2)}</span>
             <span className="flex items-center gap-1.5 text-cyan-400 font-semibold">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
               Spread: {orderBook?.spreadPercent || '0.04'}%
             </span>
-            <span>24h High: ${(activePair.priceUsd * 1.03).toFixed(2)}</span>
+            <span>24h High: ${candleHighs.length > 0 ? Math.max(...candleHighs).toFixed(2) : activePair.priceUsd.toFixed(2)}</span>
           </div>
         </div>
 

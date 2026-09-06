@@ -498,8 +498,10 @@ export async function calculateLiveTechnicalIndicators(
   const volumes = candles.map((c) => c.volume);
 
   const lastClose = closes[closes.length - 1] || currentPrice;
-  const high24h = Math.max(...highs.slice(-24), lastClose * 1.01);
-  const low24h = Math.min(...lows.slice(-24), lastClose * 0.99);
+  const recentHighs = highs.slice(-24);
+  const recentLows = lows.slice(-24);
+  const high24h = recentHighs.length > 0 ? Math.max(...recentHighs) : lastClose;
+  const low24h = recentLows.length > 0 ? Math.min(...recentLows) : lastClose;
 
   // 1. RSI (14)
   const rsi = calculateRSI(closes, 14);

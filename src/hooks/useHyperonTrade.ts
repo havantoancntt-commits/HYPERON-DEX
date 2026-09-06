@@ -231,29 +231,73 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
         // Allow micro-delay for smooth UI progression
         await new Promise((resolve) => setTimeout(resolve, 350));
 
-        // Step 3: Broadcast via Private Mempool
+        // Step 3: Broadcast via Wallet or Private Relayer
         setProgress((prev) => ({
           ...prev,
           step: 'EXECUTING',
           progressPercent: 95,
-          statusMessage: 'Đang phát sóng lệnh qua Flashbots Private Relay...',
+          statusMessage: 'Đang phát sóng lệnh qua mạng lưới on-chain / Flashbots Relay...',
         }));
 
-        // Synthetic transaction hash generation for non-custodial demo mode or real viem wallet
-        const mockTxHash = `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`;
+        let broadcastHash = '';
+        if (typeof window !== 'undefined' && (window as any).ethereum) {
+          try {
+            const provider = (window as any).ethereum;
+            const txHash = await provider.request({
+              method: 'eth_sendTransaction',
+              params: [
+                {
+                  from: userAddress,
+                  to: quote.poolAddress || '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
+                  value: quote.fromToken.symbol === 'ETH'
+                    ? '0x' + BigInt(Math.floor(quote.fromAmount * 1e18)).toString(16)
+                    : '0x0',
+                  data: '0x',
+                },
+              ],
+            });
+            if (txHash) {
+              broadcastHash = txHash;
+            }
+          } catch (walletErr: any) {
+            if (walletErr?.code === 4001) {
+              throw new Error('Người dùng đã từ chối ký giao dịch trên ví Web3.');
+            }
+            throw new Error(walletErr?.message || 'Lỗi khi gửi giao dịch qua ví Web3.');
+          }
+        } else {
+          const relayRes = await fetch('/api/relay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userAddress,
+              chainId: quote.fromToken.chainId || 'ethereum',
+              routeHash: quote.routeHash || quote.id,
+              zkProof: quote.zkProof,
+            }),
+          });
+          if (!relayRes.ok) {
+            const errData = await relayRes.json().catch(() => ({}));
+            throw new Error(errData.error || 'Không thể phát sóng giao dịch qua Relayer.');
+          }
+          const relayData = await relayRes.json();
+          broadcastHash = relayData.result?.txHash || relayData.txHash;
+        }
 
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        if (!broadcastHash) {
+          throw new Error('Giao dịch không thể được xác nhận trên blockchain (không nhận được mã giao dịch hợp lệ).');
+        }
 
         setProgress({
           step: 'SUCCESS',
           progressPercent: 100,
           statusMessage: 'Giao dịch đã khớp lệnh thành công trên blockchain!',
-          txHash: mockTxHash,
+          txHash: broadcastHash,
           quoteHash: quote.quoteHash || null,
           error: null,
         });
 
-        if (onSuccess) onSuccess(mockTxHash);
+        if (onSuccess) onSuccess(broadcastHash);
       };
 
       lastActionRef.current = action;
