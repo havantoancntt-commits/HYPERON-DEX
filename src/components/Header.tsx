@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
+import { useI18n } from '../context/I18nContext';
 import { SUPPORTED_CHAINS, VERIFIED_TOKENS } from '../lib/constants';
 import { ChainId } from '../types';
 import { shortenAddress, formatCurrency } from '../lib/utils';
@@ -28,7 +29,11 @@ import {
   Copy,
   RefreshCw,
   Volume2,
-  VolumeX
+  VolumeX,
+  Sun,
+  Moon,
+  Terminal,
+  Languages
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -56,8 +61,12 @@ export const Header: React.FC = () => {
     addToast 
   } = useExchange();
 
+  const { language, setLanguage, languageMeta, supportedLanguages, t, theme, setTheme } = useI18n();
+
   const [showChainMenu, setShowChainMenu] = useState(false);
   const [showWalletMenu, setShowWalletMenu] = useState(false);
+  const [showLangMenu, setShowLangMenu] = useState(false);
+  const [showThemeMenu, setShowThemeMenu] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [copied, setCopied] = useState(false);
@@ -270,6 +279,123 @@ export const Header: React.FC = () => {
           >
             {soundActive ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
+
+          {/* Theme Switcher */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowThemeMenu(!showThemeMenu);
+                setShowLangMenu(false);
+                setShowChainMenu(false);
+              }}
+              className="p-2 rounded-xl border border-white/[0.08] bg-[#0D111A] hover:bg-[#131926] text-slate-300 hover:text-white transition-all cursor-pointer shadow-sm"
+              title={`Theme: ${theme === 'dark' ? 'Quantum Midnight' : theme === 'light' ? 'Titanium Light' : 'Cyberpunk'}`}
+            >
+              {theme === 'dark' ? (
+                <Moon className="w-4 h-4 text-cyan-400" />
+              ) : theme === 'light' ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Terminal className="w-4 h-4 text-emerald-400" />
+              )}
+            </button>
+
+            {showThemeMenu && (
+              <div 
+                className="absolute right-0 mt-2 w-48 rounded-2xl bg-[#0D111A] border border-white/10 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-100"
+                onClick={() => setShowThemeMenu(false)}
+              >
+                <div className="text-[10px] font-mono uppercase text-slate-400 px-2.5 py-1 font-bold">
+                  {t('theme.mode')}
+                </div>
+                <div className="space-y-1 mt-1">
+                  <button
+                    onClick={() => setTheme('dark')}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all cursor-pointer ${
+                      theme === 'dark' ? 'bg-cyan-500/15 text-cyan-300 font-bold border border-cyan-500/30' : 'text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Moon className="w-3.5 h-3.5 text-cyan-400" /> {t('theme.dark')}
+                    </span>
+                    {theme === 'dark' && <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400" />}
+                  </button>
+                  <button
+                    onClick={() => setTheme('light')}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all cursor-pointer ${
+                      theme === 'light' ? 'bg-amber-500/15 text-amber-300 font-bold border border-amber-500/30' : 'text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sun className="w-3.5 h-3.5 text-amber-400" /> {t('theme.light')}
+                    </span>
+                    {theme === 'light' && <CheckCircle2 className="w-3.5 h-3.5 text-amber-400" />}
+                  </button>
+                  <button
+                    onClick={() => setTheme('cyberpunk')}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all cursor-pointer ${
+                      theme === 'cyberpunk' ? 'bg-emerald-500/15 text-emerald-300 font-bold border border-emerald-500/30' : 'text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Terminal className="w-3.5 h-3.5 text-emerald-400" /> {t('theme.cyber')}
+                    </span>
+                    {theme === 'cyberpunk' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Internationalization Language Switcher */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowLangMenu(!showLangMenu);
+                setShowThemeMenu(false);
+                setShowChainMenu(false);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-2 bg-[#0D111A] hover:bg-[#131926] border border-white/[0.08] hover:border-blue-500/30 rounded-xl text-xs font-semibold text-slate-200 transition-all cursor-pointer shadow-sm"
+              title="Change Interface Language"
+            >
+              <span className="text-sm">{languageMeta.flag}</span>
+              <span className="font-mono text-xs uppercase text-slate-300">{language}</span>
+              <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${showLangMenu ? 'rotate-180' : ''}`} />
+            </button>
+
+            {showLangMenu && (
+              <div 
+                className="absolute right-0 mt-2 w-52 rounded-2xl bg-[#0D111A] border border-white/10 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-100"
+                onClick={() => setShowLangMenu(false)}
+              >
+                <div className="text-[10px] font-mono uppercase text-slate-400 px-2.5 py-1 font-bold flex items-center justify-between">
+                  <span>{t('lang.select')}</span>
+                  <span className="text-cyan-400 text-[9px]">GLOBAL i18n</span>
+                </div>
+                <div className="space-y-1 mt-1 max-h-64 overflow-y-auto pr-1">
+                  {supportedLanguages.map((lang) => (
+                    <button
+                      key={lang.code}
+                      onClick={() => setLanguage(lang.code)}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all cursor-pointer ${
+                        lang.code === language
+                          ? 'bg-blue-600/15 text-cyan-300 font-bold border border-blue-500/30'
+                          : 'text-slate-300 hover:bg-white/5'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <span className="text-base">{lang.flag}</span>
+                        <span className="font-sans">{lang.nativeName}</span>
+                      </span>
+                      {lang.code === language && (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Execution Chain Switcher */}
           <div className="relative">

@@ -1,50 +1,30 @@
 [
   {
-    "nonce": "hyp_c503b8d9d849aa24790cb710a966dedf",
-    "userAddress": "0x0000000000000000000000000000000000000001",
-    "expiresAt": 1788784123669,
-    "used": false,
-    "issuedAt": 1788783823669,
-    "chainId": "ethereum",
-    "domain": "hyperon.dex",
-    "action": "AUTHENTICATE_SESSION"
-  },
-  {
-    "nonce": "hyp_8d29b25e26e3a8cf51afb80469d81070",
+    "nonce": "hyp_d58c005e27e4b09546c10fedc795a4e2",
     "userAddress": "0x90f8bf6a479f320ead074411a4b0e7944ea8c9c1",
-    "expiresAt": 1788784123677,
-    "used": false,
-    "issuedAt": 1788783823677,
-    "chainId": "ethereum",
-    "domain": "LOGIN",
-    "action": "hyperon.dex"
-  },
-  {
-    "nonce": "hyp_979370a5b946f63d1b8160d1ab6e9bf7",
-    "userAddress": "0x90f8bf6a479f320ead074411a4b0e7944ea8c9c1",
-    "expiresAt": 1788784228896,
+    "expiresAt": 1788784917469,
     "used": true,
-    "issuedAt": 1788783928896,
+    "issuedAt": 1788784617469,
     "chainId": "ethereum",
     "domain": "hyperon.dex",
     "action": "AUTHENTICATE_SESSION"
   },
   {
-    "nonce": "hyp_1fa3c32650ddb3ab0b1a805dde597230",
+    "nonce": "hyp_a43f6d661039bab1fd42bac9f0ae4377",
     "userAddress": "0x0000000000000000000000000000000000000001",
-    "expiresAt": 1788784228909,
+    "expiresAt": 1788784917481,
     "used": false,
-    "issuedAt": 1788783928909,
+    "issuedAt": 1788784617481,
     "chainId": "ethereum",
     "domain": "hyperon.dex",
     "action": "AUTHENTICATE_SESSION"
   },
   {
-    "nonce": "hyp_03b1d30d7b4f415b19e63cd76040d1e3",
+    "nonce": "hyp_0f527af0299934ff953ee3a450693b1f",
     "userAddress": "0x90f8bf6a479f320ead074411a4b0e7944ea8c9c1",
-    "expiresAt": 1788784228913,
+    "expiresAt": 1788784917486,
     "used": false,
-    "issuedAt": 1788783928913,
+    "issuedAt": 1788784617486,
     "chainId": "ethereum",
     "domain": "LOGIN",
     "action": "hyperon.dex"

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
+import { useI18n } from '../context/I18nContext';
 import { Token, SwapQuote } from '../types';
 import { formatCurrency, formatCrypto } from '../lib/utils';
 import { TokenLogo, DexProtocolIcon } from '../components/CryptoIcon';
@@ -63,6 +64,7 @@ export const sanitizeAmountInput = (value: string, maxDecimals: number = 18): st
 export const SwapView: React.FC = () => {
   const { balances, isConnected, connectWallet, slippage, setSlippage, mevProtected, setMevProtected, address, chainId } = useWallet();
   const { selectedPair, setActiveSimulation, setActiveQuote, addToast, getLiveToken, liveTokens } = useExchange();
+  const { t } = useI18n();
 
   const [fromSymbol, setFromSymbol] = useState<string>(selectedPair.base?.symbol || 'ETH');
   const [toSymbol, setToSymbol] = useState<string>(selectedPair.quote?.symbol || 'USDC');
@@ -385,7 +387,7 @@ export const SwapView: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <Sliders className="w-4 h-4 text-cyan-400" />
-              <span className="text-xs font-bold text-white font-sans">Độ trượt giá chấp nhận (Slippage)</span>
+              <span className="text-xs font-bold text-white font-sans">{t('trade.slippage')}</span>
             </div>
             <button
               onClick={() => {
@@ -401,7 +403,7 @@ export const SwapView: React.FC = () => {
                   : 'bg-[#131926] text-slate-400 border border-white/[0.06]'
               }`}
             >
-              {autoSlippageActive ? '✓ Auto AI Tối Ưu' : 'Tùy Chỉnh'}
+              {autoSlippageActive ? '✓ AI Dynamic' : 'Custom'}
             </button>
           </div>
 
@@ -423,7 +425,7 @@ export const SwapView: React.FC = () => {
               </button>
             ))}
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#131926] border border-white/[0.06]">
-              <span className="text-xs text-slate-400 font-medium">Tự nhập:</span>
+              <span className="text-xs text-slate-400 font-medium">Custom:</span>
               <input
                 type="number"
                 value={slippage}
@@ -444,8 +446,8 @@ export const SwapView: React.FC = () => {
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <div>
-                <div className="text-xs font-bold text-white">Chống MEV Flashbots Private Relay</div>
-                <div className="text-[10px] text-slate-400">Tránh bị bot kẹp giá (sandwich attack) trên mempool công khai</div>
+                <div className="text-xs font-bold text-white">Flashbots MEV-Boost Private Relay</div>
+                <div className="text-[10px] text-slate-400">Protects against front-running and sandwich attacks on public mempool</div>
               </div>
             </div>
             <button
@@ -477,9 +479,9 @@ export const SwapView: React.FC = () => {
         {/* PAY BOX */}
         <div className="bg-[#131926] p-4 rounded-2xl border border-white/[0.06] hover:border-white/15 transition-all space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-400 font-sans">
-            <span className="font-semibold text-slate-300">Bạn Trả</span>
+            <span className="font-semibold text-slate-300">{t('trade.you_pay')}</span>
             <div className="flex items-center gap-1.5 font-mono">
-              <span>Khả dụng: <strong className="text-white">{fromBalance.toFixed(4)}</strong> {fromToken.symbol}</span>
+              <span>{t('wallet.balance')}: <strong className="text-white">{fromBalance.toFixed(4)}</strong> {fromToken.symbol}</span>
             </div>
           </div>
 
@@ -546,13 +548,13 @@ export const SwapView: React.FC = () => {
         <div className="bg-[#131926] p-4 rounded-2xl border border-white/[0.06] hover:border-white/15 transition-all space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-400 font-sans">
             <span className="font-semibold text-slate-300 flex items-center gap-1.5">
-              <span>Bạn Nhận (Ước Tính Tối Ưu)</span>
+              <span>{t('trade.you_receive')}</span>
               <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
                 BEST RATE
               </span>
             </span>
             <span className="font-mono text-slate-400">
-              Số dư: <strong className="text-white">{toBalance.toFixed(4)}</strong> {toToken.symbol}
+              {t('wallet.balance')}: <strong className="text-white">{toBalance.toFixed(4)}</strong> {toToken.symbol}
             </span>
           </div>
 
@@ -688,7 +690,7 @@ export const SwapView: React.FC = () => {
               className="w-full py-4 bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-cyan-900/25 transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               <Zap className="w-4 h-4 fill-white" />
-              <span>Kết Nối Ví Web3</span>
+              <span>{t('trade.connect_wallet')}</span>
             </button>
           ) : isUnverifiedToken ? (
             <button
@@ -703,7 +705,7 @@ export const SwapView: React.FC = () => {
               disabled
               className="w-full py-4 bg-white/[0.04] border border-white/[0.08] text-slate-500 font-bold text-sm rounded-2xl cursor-not-allowed"
             >
-              Nhập Số Lượng Hoán Đổi
+              {t('trade.swap')} (Enter Amount)
             </button>
           ) : isInsufficientBalance ? (
             <button
@@ -711,7 +713,7 @@ export const SwapView: React.FC = () => {
               className="w-full py-4 bg-rose-500/15 border border-rose-500/30 text-rose-400 font-bold text-sm rounded-2xl cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-rose-950/20"
             >
               <AlertCircle className="w-4 h-4 text-rose-400" />
-              <span>Số Dư Không Đủ (Insufficient Balance)</span>
+              <span>Insufficient {fromToken.symbol} Balance</span>
             </button>
           ) : !quote ? (
             <button
@@ -719,7 +721,7 @@ export const SwapView: React.FC = () => {
               className="w-full py-4 bg-white/[0.04] border border-white/[0.08] text-slate-500 font-bold text-sm rounded-2xl cursor-not-allowed flex items-center justify-center gap-2"
             >
               <AlertCircle className="w-4 h-4 text-slate-500" />
-              <span>{isFetchingQuote ? 'Đang Tính Toán Báo Giá...' : 'Không Có Thanh Khoản On-Chain Khả Dụng'}</span>
+              <span>{isFetchingQuote ? 'Computing Optimal Route...' : 'No On-Chain Liquidity Found'}</span>
             </button>
           ) : (
             <button
@@ -730,12 +732,12 @@ export const SwapView: React.FC = () => {
               {isSwapping ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                  <span>Đang Mô Phỏng Khớp Lệnh...</span>
+                  <span>{t('trade.simulate_first')}...</span>
                 </>
               ) : (
                 <>
                   <Zap className="w-4 h-4 fill-white" />
-                  <span>Mô Phỏng & Hoán Đổi Tức Thì</span>
+                  <span>{t('trade.instant_swap')}</span>
                 </>
               )}
             </button>

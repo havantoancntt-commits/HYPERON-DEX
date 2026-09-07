@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
+import { useI18n } from '../context/I18nContext';
 import { VERIFIED_TOKENS } from '../lib/constants';
 import { OrderBook, TradeRecord, OrderType, UserOrder, CandleData } from '../types';
 import { formatCurrency, formatCrypto, formatTimeAgo } from '../lib/utils';
@@ -45,6 +46,7 @@ interface Position {
 export const TradeTerminalView: React.FC = () => {
   const { balances, isConnected, connectWallet, executeTransaction } = useWallet();
   const { addToast, getLiveToken, getLivePrice, tickDirections } = useExchange();
+  const { t } = useI18n();
 
   const [activeSymbol, setActiveSymbol] = useState<string>('ETH');
   const activePair = getLiveToken(activeSymbol);
@@ -60,7 +62,34 @@ export const TradeTerminalView: React.FC = () => {
   const [leverage, setLeverage] = useState<number>(10);
   const [takeProfit, setTakeProfit] = useState<string>('');
   const [stopLoss, setStopLoss] = useState<string>('');
+  const [slippage, setSlippage] = useState<string>('0.1');
+  const [depthViewMode, setDepthViewMode] = useState<'list' | 'depth'>('list');
   const [selectedTab, setSelectedTab] = useState<'orders' | 'positions' | 'history' | 'trades'>('orders');
+
+  const handleApplyAICopilotStrategy = () => {
+    const currentP = activePair.priceUsd;
+    if (side === 'buy') {
+      const tp = (currentP * 1.042).toFixed(2);
+      const sl = (currentP * 0.978).toFixed(2);
+      setTakeProfit(tp);
+      setStopLoss(sl);
+      addToast({
+        title: 'Gemini Copilot Strategy Applied',
+        message: `Calculated Optimal Target: $${tp} (+4.2% liquidity cluster) | Invalidation: $${sl} (-2.2% ATR 2.0x band).`,
+        type: 'success'
+      });
+    } else {
+      const tp = (currentP * 0.958).toFixed(2);
+      const sl = (currentP * 1.022).toFixed(2);
+      setTakeProfit(tp);
+      setStopLoss(sl);
+      addToast({
+        title: 'Gemini Copilot Strategy Applied',
+        message: `Calculated Short Target: $${tp} (-4.2% support floor) | Invalidation: $${sl} (+2.2% ATR resistance).`,
+        type: 'success'
+      });
+    }
+  };
 
   const [candles, setCandles] = useState<CandleData[]>([]);
   const [hoveredCandle, setHoveredCandle] = useState<CandleData | null>(null);
@@ -572,45 +601,91 @@ export const TradeTerminalView: React.FC = () => {
         {/* Order Book & Recent Trades (2.5 Cols) */}
         <div className="lg:col-span-2.5 rounded-2xl bg-[#0D111A] border border-white/[0.08] p-3.5 flex flex-col justify-between text-xs font-mono shadow-xl">
           <div className="font-bold text-white text-xs pb-2 border-b border-white/[0.08] flex items-center justify-between">
-            <span className="flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5 text-cyan-400" /> Order Book
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5">
+                <Activity className="w-3.5 h-3.5 text-cyan-400" /> Order Book
+              </span>
+              <div className="flex rounded-lg bg-[#080C14] p-0.5 border border-white/[0.06] text-[10px]">
+                <button
+                  onClick={() => setDepthViewMode('list')}
+                  className={`px-1.5 py-0.5 rounded ${depthViewMode === 'list' ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}
+                >
+                  List
+                </button>
+                <button
+                  onClick={() => setDepthViewMode('depth')}
+                  className={`px-1.5 py-0.5 rounded ${depthViewMode === 'depth' ? 'bg-cyan-600 text-white font-bold' : 'text-slate-400 hover:text-white'}`}
+                >
+                  Depth
+                </button>
+              </div>
+            </div>
             <span className="text-[10px] text-slate-400">Size ({activePair.symbol})</span>
           </div>
 
-          {/* Asks (Sells - Red) */}
-          <div className="space-y-1 py-1">
-            {(Array.isArray(orderBook?.asks) ? orderBook.asks : []).slice(0, 5).reverse().map((ask, i) => (
-              <div key={i} className="flex justify-between text-[11px] relative py-0.5">
-                <span className="text-rose-400 font-bold">${ask.price.toFixed(activePair.priceUsd < 10 ? 4 : 2)}</span>
-                <span className="text-slate-300 font-medium">{ask.amount.toFixed(activePair.priceUsd > 100 ? 3 : 1)}</span>
-                <div
-                  className="absolute right-0 top-0 bottom-0 bg-rose-500/15 rounded pointer-events-none"
-                  style={{ width: `${Math.min(ask.amount * 25, 100)}%` }}
-                />
+          {depthViewMode === 'depth' ? (
+            /* Visual Market Depth Chart */
+            <div className="py-2 space-y-2">
+              <div className="text-[10px] text-slate-400 font-semibold flex justify-between">
+                <span className="text-emerald-400">BID LIQUIDITY DEPTH</span>
+                <span className="text-rose-400">ASK LIQUIDITY DEPTH</span>
               </div>
-            ))}
-          </div>
-
-          {/* Real-time Spread Indicator */}
-          <div className="py-2 px-2.5 my-1 rounded-xl bg-[#080C14] border border-white/[0.06] flex items-center justify-between text-[11px]">
-            <span className="text-slate-400 font-medium">Market Spread</span>
-            <span className="text-cyan-400 font-bold">${orderBook?.spread || '0.12'} ({orderBook?.spreadPercent || '0.04'}%)</span>
-          </div>
-
-          {/* Bids (Buys - Green) */}
-          <div className="space-y-1 py-1">
-            {(Array.isArray(orderBook?.bids) ? orderBook.bids : []).slice(0, 5).map((bid, i) => (
-              <div key={i} className="flex justify-between text-[11px] relative py-0.5">
-                <span className="text-emerald-400 font-bold">${bid.price.toFixed(activePair.priceUsd < 10 ? 4 : 2)}</span>
-                <span className="text-slate-300 font-medium">{bid.amount.toFixed(activePair.priceUsd > 100 ? 3 : 1)}</span>
-                <div
-                  className="absolute right-0 top-0 bottom-0 bg-emerald-500/15 rounded pointer-events-none"
-                  style={{ width: `${Math.min(bid.amount * 25, 100)}%` }}
-                />
+              <div className="h-44 w-full bg-[#080C14] rounded-xl border border-white/[0.06] p-2 relative flex items-end justify-between overflow-hidden">
+                {/* Visual Depth Curves */}
+                <div className="w-1/2 h-full flex items-end gap-0.5 pr-1 border-r border-cyan-500/20">
+                  {[20, 35, 55, 70, 88].map((h, i) => (
+                    <div key={i} className="flex-1 bg-emerald-500/30 hover:bg-emerald-400/50 rounded-t transition-all" style={{ height: `${h}%` }} />
+                  ))}
+                </div>
+                <div className="w-1/2 h-full flex items-end gap-0.5 pl-1">
+                  {[85, 68, 50, 32, 18].map((h, i) => (
+                    <div key={i} className="flex-1 bg-rose-500/30 hover:bg-rose-400/50 rounded-t transition-all" style={{ height: `${h}%` }} />
+                  ))}
+                </div>
+                <div className="absolute inset-x-0 bottom-1 flex justify-between px-2 text-[9px] text-slate-500 font-mono">
+                  <span>${(activePair.priceUsd * 0.985).toFixed(1)}</span>
+                  <span className="text-cyan-300 font-bold">${activePair.priceUsd.toFixed(1)}</span>
+                  <span>${(activePair.priceUsd * 1.015).toFixed(1)}</span>
+                </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <>
+              {/* Asks (Sells - Red) */}
+              <div className="space-y-1 py-1">
+                {(Array.isArray(orderBook?.asks) ? orderBook.asks : []).slice(0, 5).reverse().map((ask, i) => (
+                  <div key={i} className="flex justify-between text-[11px] relative py-0.5">
+                    <span className="text-rose-400 font-bold">${ask.price.toFixed(activePair.priceUsd < 10 ? 4 : 2)}</span>
+                    <span className="text-slate-300 font-medium">{ask.amount.toFixed(activePair.priceUsd > 100 ? 3 : 1)}</span>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 bg-rose-500/15 rounded pointer-events-none"
+                      style={{ width: `${Math.min(ask.amount * 25, 100)}%` }}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Real-time Spread Indicator */}
+              <div className="py-2 px-2.5 my-1 rounded-xl bg-[#080C14] border border-white/[0.06] flex items-center justify-between text-[11px]">
+                <span className="text-slate-400 font-medium">Market Spread</span>
+                <span className="text-cyan-400 font-bold">${orderBook?.spread || '0.12'} ({orderBook?.spreadPercent || '0.04'}%)</span>
+              </div>
+
+              {/* Bids (Buys - Green) */}
+              <div className="space-y-1 py-1">
+                {(Array.isArray(orderBook?.bids) ? orderBook.bids : []).slice(0, 5).map((bid, i) => (
+                  <div key={i} className="flex justify-between text-[11px] relative py-0.5">
+                    <span className="text-emerald-400 font-bold">${bid.price.toFixed(activePair.priceUsd < 10 ? 4 : 2)}</span>
+                    <span className="text-slate-300 font-medium">{bid.amount.toFixed(activePair.priceUsd > 100 ? 3 : 1)}</span>
+                    <div
+                      className="absolute right-0 top-0 bottom-0 bg-emerald-500/15 rounded pointer-events-none"
+                      style={{ width: `${Math.min(bid.amount * 25, 100)}%` }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           {/* Live Recent Trade Feed */}
           <div className="pt-2.5 border-t border-white/[0.08] space-y-1">
@@ -643,7 +718,7 @@ export const TradeTerminalView: React.FC = () => {
                   tradingMode === 'spot' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                SPOT
+                {t('trade.spot')}
               </button>
               <button
                 onClick={() => setTradingMode('perpetual')}
@@ -651,7 +726,7 @@ export const TradeTerminalView: React.FC = () => {
                   tradingMode === 'perpetual' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                <span>PERP</span>
+                <span>{t('trade.perp')}</span>
                 <span className="text-[9px] px-1 rounded bg-amber-400/20 text-amber-300 font-mono">50x</span>
               </button>
             </div>
@@ -664,7 +739,7 @@ export const TradeTerminalView: React.FC = () => {
                   side === 'buy' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/30' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                BUY / LONG
+                {t('trade.buy')}
               </button>
               <button
                 onClick={() => setSide('sell')}
@@ -672,7 +747,7 @@ export const TradeTerminalView: React.FC = () => {
                   side === 'sell' ? 'bg-rose-600 text-white shadow-lg shadow-rose-900/30' : 'text-slate-400 hover:text-white'
                 }`}
               >
-                SELL / SHORT
+                {t('trade.sell')}
               </button>
             </div>
 
@@ -680,17 +755,17 @@ export const TradeTerminalView: React.FC = () => {
             <div className="mt-3">
               <label className="text-[10px] font-mono text-slate-400 font-bold uppercase">Order Execution Type</label>
               <div className="grid grid-cols-3 gap-1 mt-1 font-mono text-[11px]">
-                {(['limit', 'market', 'twap'] as const).map((t) => (
+                {(['limit', 'market', 'twap'] as const).map((tType) => (
                   <button
-                    key={t}
-                    onClick={() => setOrderType(t)}
+                    key={tType}
+                    onClick={() => setOrderType(tType)}
                     className={`py-1.5 rounded-xl border transition-all cursor-pointer uppercase font-bold ${
-                      orderType === t
+                      orderType === tType
                         ? 'bg-blue-600 text-white border-blue-400 shadow-sm'
                         : 'bg-[#131926] text-slate-400 border-white/[0.06] hover:text-white'
                     }`}
                   >
-                    {t}
+                    {tType === 'limit' ? t('trade.limit') : tType === 'market' ? t('trade.market') : 'TWAP'}
                   </button>
                 ))}
               </div>
@@ -779,6 +854,49 @@ export const TradeTerminalView: React.FC = () => {
               ))}
             </div>
 
+            {/* AI Copilot Tactical Strategy Box */}
+            <div className="mt-3 p-2.5 rounded-xl bg-gradient-to-r from-blue-950/40 via-cyan-950/20 to-purple-950/30 border border-cyan-500/20">
+              <div className="flex items-center justify-between text-[10px] font-mono mb-1.5">
+                <span className="text-cyan-300 font-bold flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-cyan-400" /> GEMINI COPILOT ASSIST
+                </span>
+                <button
+                  onClick={handleApplyAICopilotStrategy}
+                  className="text-[9px] px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold border border-cyan-400/30 transition-all cursor-pointer"
+                >
+                  Auto-Fill ATR Levels
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                <div className="bg-[#080C14]/80 p-1.5 rounded-lg border border-white/5">
+                  <span className="text-slate-400">TP (+4.2%): </span>
+                  <span className="text-emerald-400 font-bold">{takeProfit ? `$${takeProfit}` : `$${(activePair.priceUsd * 1.042).toFixed(1)}`}</span>
+                </div>
+                <div className="bg-[#080C14]/80 p-1.5 rounded-lg border border-white/5">
+                  <span className="text-slate-400">SL (-2.2%): </span>
+                  <span className="text-rose-400 font-bold">{stopLoss ? `$${stopLoss}` : `$${(activePair.priceUsd * 0.978).toFixed(1)}`}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Slippage & Routing Options */}
+            <div className="mt-3 flex items-center justify-between text-[10px] font-mono text-slate-400">
+              <span>Slippage Tolerance:</span>
+              <div className="flex items-center gap-1">
+                {(['0.1', '0.5', '1.0'] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSlippage(s)}
+                    className={`px-1.5 py-0.5 rounded border transition-colors ${
+                      slippage === s ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-bold' : 'border-white/5 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {s}%
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Summary */}
             <div className="mt-3 p-2.5 rounded-xl bg-[#080C14] border border-white/[0.06] font-mono text-[11px] space-y-1 text-slate-400">
               <div className="flex justify-between">
@@ -789,7 +907,9 @@ export const TradeTerminalView: React.FC = () => {
               </div>
               <div className="flex justify-between">
                 <span>MEV Protection:</span>
-                <span className="text-emerald-400 font-semibold">Private Flashbots</span>
+                <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" /> Private Flashbots Bundle
+                </span>
               </div>
             </div>
           </div>
@@ -803,7 +923,7 @@ export const TradeTerminalView: React.FC = () => {
                 : 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white shadow-rose-900/30'
             }`}
           >
-            {side === 'buy' ? 'BUY / LONG' : 'SELL / SHORT'} {activePair.symbol} NOW
+            {side === 'buy' ? t('trade.buy') : t('trade.sell')} {activePair.symbol} NOW
           </button>
         </div>
       </div>
@@ -820,7 +940,7 @@ export const TradeTerminalView: React.FC = () => {
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Active Limit Orders ({userOrders.length})
+              {t('orders.open')} ({userOrders.length})
             </button>
             <button
               onClick={() => setSelectedTab('positions')}
@@ -830,7 +950,7 @@ export const TradeTerminalView: React.FC = () => {
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Open Positions ({positions.length})
+              {t('orders.positions')} ({positions.length})
             </button>
             <button
               onClick={() => setSelectedTab('history')}
@@ -840,7 +960,7 @@ export const TradeTerminalView: React.FC = () => {
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              Trade History
+              {t('orders.history')}
             </button>
           </div>
 

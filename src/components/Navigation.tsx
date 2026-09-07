@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useExchange, ProductView } from '../context/ExchangeContext';
+import { useI18n } from '../context/I18nContext';
 import {
   LayoutDashboard,
   ArrowLeftRight,
@@ -48,47 +49,48 @@ interface NavSection {
 
 export const Navigation: React.FC = () => {
   const { activeView, setActiveView } = useExchange();
+  const { t } = useI18n();
 
   const sections: NavSection[] = [
     {
       title: 'AI ALPHA & SIGNALS',
       items: [
-        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { id: 'ai-signals', label: 'AI Alpha Signals', icon: Sparkles, badge: '94% Win', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-        { id: 'onchain-radar', label: 'Whale Radar', icon: Activity, badge: 'Smart Money', badgeColor: 'bg-teal-500/10 text-teal-400 border-teal-500/20' },
-        { id: 'ai-intelligence', label: 'Market Sentiment', icon: Cpu },
-        { id: 'ai-risk-scanner', label: 'Token Risk Scanner', icon: ShieldAlert, badge: 'Audit', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-        { id: 'ai-copilot', label: 'Portfolio Copilot', icon: BrainCircuit },
-        { id: 'ai-agent', label: 'AI Trading Bot', icon: Bot, badge: 'Active', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+        { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
+        { id: 'ai-signals', label: t('nav.ai_signals'), icon: Sparkles, badge: '94% Win', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+        { id: 'onchain-radar', label: t('nav.whale_radar'), icon: Activity, badge: 'Smart Money', badgeColor: 'bg-teal-500/10 text-teal-400 border-teal-500/20' },
+        { id: 'ai-intelligence', label: t('nav.intelligence'), icon: Cpu },
+        { id: 'ai-risk-scanner', label: t('nav.risk_scanner'), icon: ShieldAlert, badge: 'Audit', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+        { id: 'ai-copilot', label: t('nav.copilot'), icon: BrainCircuit },
+        { id: 'ai-agent', label: t('nav.ai_agent'), icon: Bot, badge: 'Active', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
       ],
     },
     {
       title: 'TRADE & DERIVATIVES',
       items: [
-        { id: 'swap', label: 'DEX Aggregator', icon: ArrowLeftRight, badge: 'Best MEV', badgeColor: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' },
-        { id: 'perpetuals', label: 'Perpetuals Pro', icon: LineChart, badge: '50x', badgeColor: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
-        { id: 'trade', label: 'Spot Terminal', icon: TrendingUp },
-        { id: 'markets', label: 'Global Markets', icon: TrendingUp },
+        { id: 'swap', label: t('nav.swap'), icon: ArrowLeftRight, badge: 'Best MEV', badgeColor: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' },
+        { id: 'perpetuals', label: t('nav.perpetuals'), icon: LineChart, badge: '50x', badgeColor: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+        { id: 'trade', label: t('nav.trade'), icon: TrendingUp },
+        { id: 'markets', label: t('nav.markets'), icon: TrendingUp },
         { id: 'token-details', label: 'Token Explorer', icon: Coins },
       ],
     },
     {
       title: 'LAUNCHPAD & DEFI',
       items: [
-        { id: 'lottery', label: 'Mega VRF Lottery', icon: Trophy, badge: '$647K Pot', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/30' },
-        { id: 'launchpad', label: 'AI Fair Launchpad', icon: Rocket, badge: 'Anti-Rug', badgeColor: 'bg-pink-500/10 text-pink-400 border-pink-500/20' },
-        { id: 'lending', label: 'Smart Lending & Borrows', icon: Landmark, badge: 'AI Radar', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-        { id: 'staking', label: 'Staking & Restake', icon: Lock, badge: '35% APY', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-        { id: 'liquidity', label: 'Liquidity Pools', icon: Layers },
+        { id: 'lottery', label: t('nav.lottery'), icon: Trophy, badge: '$647K Pot', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/30' },
+        { id: 'launchpad', label: t('nav.launchpad'), icon: Rocket, badge: 'Anti-Rug', badgeColor: 'bg-pink-500/10 text-pink-400 border-pink-500/20' },
+        { id: 'lending', label: t('nav.lending'), icon: Landmark, badge: 'AI Radar', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+        { id: 'staking', label: t('nav.staking'), icon: Lock, badge: '35% APY', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+        { id: 'liquidity', label: t('nav.liquidity'), icon: Layers },
         { id: 'payments', label: 'Web3 Payments', icon: CreditCard, badge: '0% Slip', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-        { id: 'cross-chain', label: 'Cross-Chain Bridge', icon: GitFork },
+        { id: 'cross-chain', label: t('nav.bridge'), icon: GitFork },
       ],
     },
     {
       title: 'PORTFOLIO & ANALYTICS',
       items: [
-        { id: 'portfolio', label: 'Portfolio Ledger', icon: PieChart },
-        { id: 'transactions', label: 'Tx Explorer', icon: History },
+        { id: 'portfolio', label: t('nav.portfolio'), icon: PieChart },
+        { id: 'transactions', label: t('nav.explorer'), icon: History },
         { id: 'watchlist', label: 'Watchlist', icon: Star },
         { id: 'alerts', label: 'Price Alerts', icon: Bell },
       ],
@@ -96,10 +98,10 @@ export const Navigation: React.FC = () => {
     {
       title: 'SYSTEM & SECURITY',
       items: [
-        { id: 'security-center', label: 'Security Center', icon: ShieldCheck, badge: 'Zero-Trust', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-        { id: 'developer-api', label: 'Developer API & SDK', icon: Code2 },
+        { id: 'security-center', label: t('nav.security'), icon: ShieldCheck, badge: 'Zero-Trust', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+        { id: 'developer-api', label: t('nav.developer'), icon: Code2 },
         { id: 'admin-console', label: 'Admin Console', icon: SlidersHorizontal },
-        { id: 'settings', label: 'Settings', icon: Settings },
+        { id: 'settings', label: t('nav.settings'), icon: Settings },
       ],
     },
   ];

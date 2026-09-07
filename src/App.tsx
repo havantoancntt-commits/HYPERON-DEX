@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { WalletProvider } from './context/WalletContext';
 import { ExchangeProvider, useExchange } from './context/ExchangeContext';
+import { I18nProvider, useI18n } from './context/I18nContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { SimulationModal } from './components/SimulationModal';
@@ -40,6 +41,7 @@ import { SettingsView } from './views/SettingsView';
 
 const MainLayout: React.FC = () => {
   const { activeView, selectedPair } = useExchange();
+  const { t, theme } = useI18n();
 
   useEffect(() => {
     soundManager.playTick();
@@ -145,16 +147,16 @@ const MainLayout: React.FC = () => {
         <div className="flex items-center gap-6">
           <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            ALL QUANTUM CLUSTERS: HEALTHY
+            {t('app.status.healthy')}
           </span>
           <span className="text-slate-400">LATENCY: <strong className="text-white">12ms</strong></span>
           <span className="text-slate-400">GAS: <strong className="text-amber-400">14 GWEI</strong></span>
-          <span className="text-slate-400">RPC: <strong className="text-cyan-400">FLASHBOTS PRIVATE AUCTION</strong></span>
+          <span className="text-slate-400">RPC: <strong className="text-cyan-400">{t('app.rpc.flashbots')}</strong></span>
         </div>
         <div className="flex items-center gap-4 text-slate-400 font-medium">
           <span className="text-indigo-400 font-bold">HYPERON PRO v4.8</span>
           <span>|</span>
-          <span className="text-cyan-300">AI CO-PILOT ACTIVE</span>
+          <span className="text-cyan-300">{t('app.ai.active')}</span>
         </div>
       </footer>
 
@@ -169,11 +171,13 @@ const MainLayout: React.FC = () => {
 
 export default function App() {
   return (
-    <WalletProvider>
-      <ExchangeProvider>
-        <MainLayout />
-      </ExchangeProvider>
-    </WalletProvider>
+    <I18nProvider>
+      <WalletProvider>
+        <ExchangeProvider>
+          <MainLayout />
+        </ExchangeProvider>
+      </WalletProvider>
+    </I18nProvider>
   );
 }
 
