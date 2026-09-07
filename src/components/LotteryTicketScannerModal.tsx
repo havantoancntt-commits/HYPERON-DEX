@@ -286,7 +286,7 @@ export const LotteryTicketScannerModal: React.FC<LotteryTicketScannerModalProps>
                   <div className="bg-black/40 p-2.5 rounded-xl border border-white/[0.05]">
                     <div className="text-[10px] text-slate-400">Tiền Thưởng Ước Tính:</div>
                     <div className="text-base font-bold text-emerald-400 mt-0.5">
-                      ${scanResult.estimatedPrizeUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                      ${(scanResult.estimatedPrizeUsd ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
                     </div>
                   </div>
                 </div>

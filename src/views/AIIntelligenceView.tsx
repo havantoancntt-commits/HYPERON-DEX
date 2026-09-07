@@ -143,7 +143,7 @@ export const AIIntelligenceView: React.FC = () => {
                 <TokenLogo symbol={sym} className="w-4 h-4" />
                 <span>{sym}</span>
                 <span className={`text-[11px] ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>
-                  ${price < 10 ? price.toFixed(4) : price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {price != null ? `$${price < 10 ? price.toFixed(4) : price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                 </span>
               </button>
             );
@@ -321,7 +321,7 @@ export const AIIntelligenceView: React.FC = () => {
               <div className="text-right">
                 <div className="text-xs font-mono text-slate-400">LIVE SPOT ORACLE PRICE</div>
                 <div className="text-xl font-bold text-emerald-400 font-mono">
-                  ${indicators.currentPrice < 10 ? indicators.currentPrice.toFixed(4) : indicators.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {indicators.currentPrice != null ? `$${indicators.currentPrice < 10 ? indicators.currentPrice.toFixed(4) : indicators.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
                 </div>
               </div>
             </div>

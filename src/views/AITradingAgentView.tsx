@@ -267,7 +267,7 @@ export const AITradingAgentView: React.FC = () => {
                   </div>
 
                   <div className="text-xs text-slate-300 font-medium">
-                    Proposed Action: <strong className="text-emerald-400">{intent.action}</strong> ${intent.suggestedAmount.toLocaleString()} into <strong className="text-blue-400">{intent.targetPair}</strong>
+                    Proposed Action: <strong className="text-emerald-400">{intent.action}</strong> ${(intent.suggestedAmount ?? 0).toLocaleString()} into <strong className="text-blue-400">{intent.targetPair}</strong>
                   </div>
 
                   <p className="text-xs text-slate-400 leading-relaxed max-w-3xl">

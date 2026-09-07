@@ -136,13 +136,13 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Derived live tokens with real-time dynamic pricing
   const liveTokens: Token[] = VERIFIED_TOKENS.map((token) => {
     const live = livePrices[token.symbol];
-    if (live) {
+    if (live && typeof live.priceUsd === 'number' && !isNaN(live.priceUsd) && live.priceUsd > 0) {
       return {
         ...token,
         priceUsd: live.priceUsd,
-        change24h: live.change24h,
-        volume24h: live.volume24h,
-        marketCapUsd: live.marketCapUsd,
+        change24h: typeof live.change24h === 'number' ? live.change24h : token.change24h,
+        volume24h: typeof live.volume24h === 'number' ? live.volume24h : token.volume24h,
+        marketCapUsd: typeof live.marketCapUsd === 'number' ? live.marketCapUsd : token.marketCapUsd,
       };
     }
     return token;

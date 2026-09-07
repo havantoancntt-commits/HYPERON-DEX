@@ -105,16 +105,17 @@ export const SwapView: React.FC = () => {
   // Helper to determine optimal display decimals based on token type and value
   const getTokenDisplayDecimals = useCallback((tok: Token) => {
     if (tok.category === 'Stablecoin') return 4;
-    if (tok.priceUsd > 1000) return 6;
-    if (tok.priceUsd < 0.1) return 6;
+    const p = tok.priceUsd ?? 0;
+    if (p > 1000) return 6;
+    if (p > 0 && p < 0.1) return 6;
     return 4;
   }, []);
 
   const formatTokenDisplay = useCallback((val: number, tok: Token) => {
-    if (!val || isNaN(val) || val <= 0) return '0.00';
+    if (val === null || val === undefined || isNaN(val) || val <= 0) return '0.00';
     const dec = getTokenDisplayDecimals(tok);
     if (val >= 1000) {
-      return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: dec });
+      return (val ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: dec });
     }
     if (val < 0.0001) {
       return val.toExponential(4);
@@ -1065,9 +1066,11 @@ export const SwapView: React.FC = () => {
                       </div>
                     </div>
                     <div className="text-right font-mono">
-                      <div className="text-xs font-bold text-white">${token.priceUsd.toLocaleString(undefined, { minimumFractionDigits: token.priceUsd < 10 ? 4 : 2 })}</div>
-                      <div className={`text-[10px] font-bold ${token.change24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {token.change24h >= 0 ? '+' : ''}{token.change24h.toFixed(2)}%
+                      <div className="text-xs font-bold text-white">
+                        {token.priceUsd != null ? `$${token.priceUsd.toLocaleString(undefined, { minimumFractionDigits: token.priceUsd < 10 ? 4 : 2 })}` : '—'}
+                      </div>
+                      <div className={`text-[10px] font-bold ${(token.change24h ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {token.change24h != null ? `${token.change24h >= 0 ? '+' : ''}${token.change24h.toFixed(2)}%` : ''}
                       </div>
                     </div>
                   </button>

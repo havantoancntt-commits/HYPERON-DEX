@@ -143,7 +143,7 @@ export const AlertsView: React.FC = () => {
                 </div>
                 <div>
                   <div className="font-bold text-white">
-                    {alt.tokenSymbol} {alt.condition === 'ABOVE' ? '≥' : '≤'} {alt.tokenSymbol === 'GAS' ? `${alt.targetPrice} Gwei` : `$${alt.targetPrice.toLocaleString()}`}
+                    {alt.tokenSymbol} {alt.condition === 'ABOVE' ? '≥' : '≤'} {alt.tokenSymbol === 'GAS' ? `${alt.targetPrice} Gwei` : `$${(alt.targetPrice ?? 0).toLocaleString()}`}
                   </div>
                   <div className="text-[11px] text-slate-400">{alt.channel}</div>
                 </div>

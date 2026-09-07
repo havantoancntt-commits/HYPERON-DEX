@@ -175,7 +175,7 @@ export const OnChainRadarView: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <span className="font-extrabold text-white text-base font-sans">{tx.symbol}</span>
                       <span className="text-xs font-mono font-bold text-teal-300">
-                        {tx.amountTokens.toLocaleString()} {tx.symbol}
+                        {(tx.amountTokens ?? 0).toLocaleString()} {tx.symbol}
                       </span>
                       <span className="text-xs font-mono font-extrabold text-white">
                         (${formatCurrency(tx.valueUsd)})

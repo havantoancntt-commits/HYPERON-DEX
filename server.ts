@@ -26,7 +26,7 @@ import { DEX_ERROR_CODES, createDexError, ERROR_MESSAGES, DexErrorCode, DexError
 import { requireWalletAuth, issueWalletNonce } from './server/middleware/walletAuth';
 import { isAddress } from 'viem';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import {
   validateWebhookUrl,
   dispatchSecureWebhook,
@@ -43,6 +43,9 @@ import { corsSecurityMiddleware } from './server/middleware/corsSecurity';
 
 const app = express();
 const PORT = 3000;
+
+// Behind reverse proxy (Cloud Run / Nginx container ingress)
+app.set('trust proxy', 1);
 
 // Production Web Security Headers via Helmet (HSTS, strict CSP without unsafe-eval, X-Content-Type-Options)
 app.use(
@@ -83,36 +86,76 @@ app.use((req, res, next) => {
   next();
 });
 
-// Production Multi-Tier Rate Limiting
-const globalApiLimiter = rateLimit({
+// Production Multi-Tier Rate Limiting with Reverse-Proxy & Forwarded Header Support
+const getClientIp = (req: Request): string => {
+  // If Forwarded header is present (RFC 7239: for="192.0.2.60" or for=192.0.2.60)
+  const forwarded = req.headers.forwarded;
+  if (typeof forwarded === 'string') {
+    const match = forwarded.match(/for=(?:"?\[?)([^;,\s"\]]+)/i);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+
+  // If X-Forwarded-For is present
+  const xForwardedFor = req.headers['x-forwarded-for'];
+  if (typeof xForwardedFor === 'string') {
+    return xForwardedFor.split(',')[0].trim();
+  }
+  if (Array.isArray(xForwardedFor) && xForwardedFor.length > 0) {
+    return xForwardedFor[0].trim();
+  }
+
+  const rawIp = req.ip || req.socket?.remoteAddress || '127.0.0.1';
+  // Strip IPv4 port if present (e.g. 1.2.3.4:5678)
+  if (rawIp.includes(':') && !rawIp.includes('::')) {
+    const parts = rawIp.split(':');
+    if (parts.length === 2) return parts[0];
+  }
+  return rawIp;
+};
+
+const createRateLimiter = (options: {
+  windowMs: number;
+  max: number;
+  message: { error: string; message: string };
+}) =>
+  rateLimit({
+    windowMs: options.windowMs,
+    limit: options.max,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req: Request) => ipKeyGenerator(getClientIp(req)),
+    validate: {
+      xForwardedForHeader: false,
+      forwardedHeader: false,
+      trustProxy: false,
+      default: true,
+    },
+    message: options.message,
+  });
+
+const globalApiLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 300,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: 'TOO_MANY_REQUESTS', message: 'API request limit reached. Please try again in 1 minute.' },
 });
 
-const relayLimiter = rateLimit({
+const relayLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: 'TOO_MANY_REQUESTS', message: 'Relay submission rate limit exceeded. Please wait 1 minute.' },
 });
 
-const copilotLimiter = rateLimit({
+const copilotLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: 'TOO_MANY_REQUESTS', message: 'AI copilot rate limit exceeded. Please wait 1 minute.' },
 });
 
-const authNonceLimiter = rateLimit({
+const authNonceLimiter = createRateLimiter({
   windowMs: 60 * 1000,
   max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: 'TOO_MANY_REQUESTS', message: 'Auth nonce request rate limit exceeded.' },
 });
 

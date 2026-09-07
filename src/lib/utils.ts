@@ -25,6 +25,13 @@ export function formatCurrency(value: number, decimals: number = 2): string {
   return `$${value.toFixed(decimals)}`;
 }
 
+export function formatPriceUsd(value: number | null | undefined, fallback: string = "—"): string {
+  if (value === undefined || value === null || isNaN(value)) return fallback;
+  if (value < 0.0001 && value > 0) return `$${value.toExponential(4)}`;
+  const minDec = value < 10 ? 4 : 2;
+  return `$${value.toLocaleString("en-US", { minimumFractionDigits: minDec, maximumFractionDigits: minDec })}`;
+}
+
 export function formatCrypto(value: number, decimals: number = 4): string {
   if (value === undefined || value === null || isNaN(value)) return "0";
   if (value === 0) return "0.00";

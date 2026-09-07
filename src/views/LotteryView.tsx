@@ -597,19 +597,19 @@ export const LotteryView: React.FC = () => {
           <div className="mt-6 pt-6 border-t border-white/[0.08] grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
             <div className="bg-white/[0.03] p-3 rounded-2xl border border-white/[0.06] backdrop-blur-sm">
               <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">Tổng Thưởng Đã Trả</div>
-              <div className="text-base sm:text-lg font-bold text-emerald-400 font-mono mt-0.5">${stats.totalDistributedUsd.toLocaleString()}</div>
+              <div className="text-base sm:text-lg font-bold text-emerald-400 font-mono mt-0.5">${(stats.totalDistributedUsd ?? 0).toLocaleString()}</div>
             </div>
             <div className="bg-white/[0.03] p-3 rounded-2xl border border-white/[0.06] backdrop-blur-sm">
               <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">Vé Đã Phát Hành</div>
-              <div className="text-base sm:text-lg font-bold text-cyan-400 font-mono mt-0.5">{stats.totalTicketsBoughtAllTime.toLocaleString()}</div>
+              <div className="text-base sm:text-lg font-bold text-cyan-400 font-mono mt-0.5">{(stats.totalTicketsBoughtAllTime ?? 0).toLocaleString()}</div>
             </div>
             <div className="bg-white/[0.03] p-3 rounded-2xl border border-white/[0.06] backdrop-blur-sm">
               <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">HYPR Đã Đốt (Burn)</div>
-              <div className="text-base sm:text-lg font-bold text-amber-400 font-mono mt-0.5">${stats.totalBurnedHyprUsd.toLocaleString()}</div>
+              <div className="text-base sm:text-lg font-bold text-amber-400 font-mono mt-0.5">${(stats.totalBurnedHyprUsd ?? 0).toLocaleString()}</div>
             </div>
             <div className="bg-white/[0.03] p-3 rounded-2xl border border-white/[0.06] backdrop-blur-sm">
               <div className="text-[9px] sm:text-[10px] uppercase font-mono text-slate-400 font-medium">Jackpot Kỷ Lục Đơn</div>
-              <div className="text-base sm:text-lg font-bold text-yellow-300 font-mono mt-0.5">${stats.largestSingleJackpotUsd.toLocaleString()}</div>
+              <div className="text-base sm:text-lg font-bold text-yellow-300 font-mono mt-0.5">${(stats.largestSingleJackpotUsd ?? 0).toLocaleString()}</div>
             </div>
           </div>
         )}
@@ -672,7 +672,7 @@ export const LotteryView: React.FC = () => {
             <div>
               <div className="text-sm font-bold text-emerald-300">🎉 Chúc Mừng! Bạn Có Tiền Trúng Thưởng Chưa Rút!</div>
               <div className="text-2xl font-black text-white font-mono">
-                ${pendingPrizeUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
+                ${(pendingPrizeUsd ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} USD
               </div>
             </div>
           </div>
@@ -1320,7 +1320,7 @@ export const LotteryView: React.FC = () => {
                     </div>
                     <div className="text-right">
                       <div className="text-xs font-bold text-amber-400">
-                        ${tier.poolAmountUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${(tier.poolAmountUsd ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </div>
                       <div className="text-[10px] text-slate-400">
                         {tier.winnersCount > 0 ? `${tier.winnersCount} Người Trúng` : 'Chưa có người trúng'}
@@ -1356,7 +1356,7 @@ export const LotteryView: React.FC = () => {
 
                     <div className="text-right">
                       <div className="text-xs font-black text-emerald-400">
-                        +${win.prizeAmountUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        +${(win.prizeAmountUsd ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </div>
                       <div className="text-[10px] text-cyan-400 flex items-center justify-end gap-1">
                         <span>{shortenAddress(win.txHash)}</span>

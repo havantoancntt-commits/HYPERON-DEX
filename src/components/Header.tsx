@@ -144,10 +144,10 @@ export const Header: React.FC = () => {
                   <span className={`transition-colors font-medium ${
                     tick === 'up' ? 'text-emerald-400 font-bold' : tick === 'down' ? 'text-rose-400 font-bold' : 'text-slate-200'
                   }`}>
-                    ${t.priceUsd.toLocaleString(undefined, { minimumFractionDigits: t.priceUsd < 10 ? 4 : 2 })}
+                    {t.priceUsd != null ? `$${t.priceUsd.toLocaleString(undefined, { minimumFractionDigits: t.priceUsd < 10 ? 4 : 2 })}` : '—'}
                   </span>
-                  <span className={`text-[10px] flex items-center ${t.change24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {t.change24h >= 0 ? '+' : ''}{t.change24h.toFixed(1)}%
+                  <span className={`text-[10px] flex items-center ${(t.change24h ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {t.change24h != null ? `${t.change24h >= 0 ? '+' : ''}${t.change24h.toFixed(1)}%` : ''}
                   </span>
                 </button>
               );
@@ -332,7 +332,7 @@ export const Header: React.FC = () => {
                 <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shadow-sm" />
                 <span>{shortenAddress(address, 4)}</span>
                 <span className="hidden sm:inline text-blue-200 text-[11px] font-normal border-l border-blue-400/30 pl-2">
-                  ${totalWalletApprox.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  ${(totalWalletApprox ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </span>
                 <ChevronDown className="w-3.5 h-3.5 text-white/80" />
               </button>
@@ -364,21 +364,21 @@ export const Header: React.FC = () => {
                   <div className="py-3 space-y-2">
                     <div className="flex justify-between text-[10px] text-slate-400 font-mono uppercase tracking-wider font-bold">
                       <span>Live Balances</span>
-                      <span className="text-cyan-400">${totalWalletApprox.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
+                      <span className="text-cyan-400">${(totalWalletApprox ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
                     </div>
 
                     <div className="space-y-1 font-mono text-xs">
                       <div className="flex justify-between py-1.5 px-2.5 rounded-xl bg-[#080B12] border border-white/[0.06]">
                         <span className="text-slate-400">ETH Balance</span>
-                        <span className="text-white font-bold">{ethBalance.toFixed(4)} ETH (${(ethBalance * ethPrice).toFixed(2)})</span>
+                        <span className="text-white font-bold">{ethBalance.toFixed(4)} ETH (${((ethBalance ?? 0) * (ethPrice ?? 0)).toFixed(2)})</span>
                       </div>
                       <div className="flex justify-between py-1.5 px-2.5 rounded-xl bg-[#080B12] border border-white/[0.06]">
                         <span className="text-slate-400">USDC Liquidity</span>
-                        <span className="text-white font-bold">${usdcBalance.toLocaleString()}</span>
+                        <span className="text-white font-bold">${(usdcBalance ?? 0).toLocaleString()}</span>
                       </div>
                       <div className="flex justify-between py-1.5 px-2.5 rounded-xl bg-[#080B12] border border-white/[0.06]">
                         <span className="text-slate-400">HYPR Token</span>
-                        <span className="text-cyan-400 font-bold">{(balances.HYPR || balances.AETH || 2500).toLocaleString()} HYPR</span>
+                        <span className="text-cyan-400 font-bold">{((balances.HYPR ?? balances.AETH) ?? 2500).toLocaleString()} HYPR</span>
                       </div>
                     </div>
                   </div>
@@ -491,9 +491,11 @@ export const Header: React.FC = () => {
                     </div>
                   </div>
                   <div className="text-right font-mono">
-                    <div className="text-xs font-bold text-white">${token.priceUsd.toLocaleString(undefined, { minimumFractionDigits: token.priceUsd < 10 ? 4 : 2 })}</div>
-                    <div className={`text-[11px] font-semibold ${token.change24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {token.change24h >= 0 ? '+' : ''}{token.change24h.toFixed(2)}%
+                    <div className="text-xs font-bold text-white">
+                      {token.priceUsd != null ? `$${token.priceUsd.toLocaleString(undefined, { minimumFractionDigits: token.priceUsd < 10 ? 4 : 2 })}` : '—'}
+                    </div>
+                    <div className={`text-[11px] font-semibold ${(token.change24h ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {token.change24h != null ? `${token.change24h >= 0 ? '+' : ''}${token.change24h.toFixed(2)}%` : ''}
                     </div>
                   </div>
                 </button>

@@ -70,7 +70,7 @@ export const LotteryPrizeBreakdownModal: React.FC<LotteryPrizeBreakdownModalProp
             <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30">
               <div className="text-[10px] uppercase font-mono text-amber-400 font-bold">Tổng Quỹ Thưởng</div>
               <div className="text-lg sm:text-xl font-black font-mono text-white mt-0.5">
-                ${round.totalPotUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                ${(round.totalPotUsd ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </div>
             </div>
 
@@ -128,11 +128,11 @@ export const LotteryPrizeBreakdownModal: React.FC<LotteryPrizeBreakdownModalProp
                       <td className="p-3 font-bold">{tier.matchedDigits > 0 ? `${tier.matchedDigits}/6 số đầu` : 'Cơ chế Protocol'}</td>
                       <td className="p-3 text-emerald-400">{tier.allocationPercent}%</td>
                       <td className="p-3 font-bold text-amber-300">
-                        ${tier.poolAmountUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        ${(tier.poolAmountUsd ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </td>
                       <td className="p-3 text-cyan-400">{tier.oddsRatio}</td>
                       <td className="p-3 text-slate-300">
-                        {tier.guaranteedMinUsd ? `$${tier.guaranteedMinUsd.toLocaleString()}` : 'Theo tỷ lệ'}
+                        {tier.guaranteedMinUsd ? `$${(tier.guaranteedMinUsd ?? 0).toLocaleString()}` : 'Theo tỷ lệ'}
                       </td>
                     </tr>
                   ))}
