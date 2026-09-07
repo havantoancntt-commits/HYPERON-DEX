@@ -63,6 +63,9 @@ export const TradeTerminalView: React.FC = () => {
   const [takeProfit, setTakeProfit] = useState<string>('');
   const [stopLoss, setStopLoss] = useState<string>('');
   const [slippage, setSlippage] = useState<string>('0.1');
+  const [icebergSlicePercent, setIcebergSlicePercent] = useState<string>('20');
+  const [trailingDelta, setTrailingDelta] = useState<string>('2.0');
+  const [twapMinutes, setTwapMinutes] = useState<string>('30');
   const [depthViewMode, setDepthViewMode] = useState<'list' | 'depth'>('list');
   const [selectedTab, setSelectedTab] = useState<'orders' | 'positions' | 'history' | 'trades'>('orders');
 
@@ -324,6 +327,13 @@ export const TradeTerminalView: React.FC = () => {
         });
       }
     } else {
+      const isIceberg = orderType === 'iceberg';
+      const isTrailing = orderType === 'trailing_stop';
+      const isTwap = orderType === 'twap';
+      const slicePct = parseFloat(icebergSlicePercent) || 20;
+      const trailPct = parseFloat(trailingDelta) || 2.0;
+      const twapMins = parseInt(twapMinutes) || 30;
+
       const newOrder: UserOrder = {
         id: `ORD-${Date.now()}-${userOrders.length + 1}`,
         pair: `${activePair.symbol}/USDC`,
@@ -335,11 +345,16 @@ export const TradeTerminalView: React.FC = () => {
         status: 'open',
         createdAt: Date.now(),
         chainId: 'ethereum',
+        sliceSize: isIceberg ? Number(((parsedAmount * slicePct) / 100).toFixed(4)) : undefined,
+        trailingDeltaPercent: isTrailing ? trailPct : undefined,
+        twapDurationMinutes: isTwap ? twapMins : undefined,
       };
       setUserOrders((prev) => [newOrder, ...prev]);
+      
+      const orderTypeLabel = isIceberg ? 'Institutional Iceberg' : isTrailing ? 'Trailing Stop' : isTwap ? 'TWAP Algorithmic' : 'Limit';
       addToast({
-        title: 'Limit Order Placed',
-        message: `${side.toUpperCase()} order for ${parsedAmount} ${activePair.symbol} @ $${parsedPrice.toFixed(2)} broadcasted to mempool.`,
+        title: `${orderTypeLabel} Order Active`,
+        message: `${side.toUpperCase()} ${parsedAmount} ${activePair.symbol} @ $${parsedPrice.toFixed(2)} with private Flashbots routing.`,
         type: 'success',
       });
       setSelectedTab('orders');
@@ -753,23 +768,127 @@ export const TradeTerminalView: React.FC = () => {
 
             {/* Order Type Selector */}
             <div className="mt-3">
-              <label className="text-[10px] font-mono text-slate-400 font-bold uppercase">Order Execution Type</label>
-              <div className="grid grid-cols-3 gap-1 mt-1 font-mono text-[11px]">
-                {(['limit', 'market', 'twap'] as const).map((tType) => (
+              <label className="text-[10px] font-mono text-slate-400 font-bold uppercase flex items-center justify-between">
+                <span>Execution Type</span>
+                <span className="text-[9px] text-cyan-400 font-mono">Institutional Suite</span>
+              </label>
+              <div className="grid grid-cols-5 gap-1 mt-1 font-mono text-[10px]">
+                {(['limit', 'market', 'twap', 'iceberg', 'trailing_stop'] as const).map((tType) => (
                   <button
                     key={tType}
                     onClick={() => setOrderType(tType)}
-                    className={`py-1.5 rounded-xl border transition-all cursor-pointer uppercase font-bold ${
+                    className={`py-1.5 px-0.5 rounded-lg border transition-all cursor-pointer uppercase font-bold text-center ${
                       orderType === tType
                         ? 'bg-blue-600 text-white border-blue-400 shadow-sm'
                         : 'bg-[#131926] text-slate-400 border-white/[0.06] hover:text-white'
                     }`}
                   >
-                    {tType === 'limit' ? t('trade.limit') : tType === 'market' ? t('trade.market') : 'TWAP'}
+                    {tType === 'limit' ? t('trade.limit') : tType === 'market' ? t('trade.market') : tType === 'twap' ? 'TWAP' : tType === 'iceberg' ? 'ICEBERG' : 'TRAIL'}
                   </button>
                 ))}
               </div>
             </div>
+
+            {/* Specialized Institutional Algorithm Controls */}
+            {orderType === 'iceberg' && (
+              <div className="mt-3 p-2.5 rounded-xl bg-cyan-950/20 border border-cyan-500/20 space-y-1.5 font-mono text-xs">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-cyan-300 font-bold flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-cyan-400" /> ICEBERG VISIBLE SLICE
+                  </span>
+                  <span className="text-slate-400">Anti-Signaling</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      value={icebergSlicePercent}
+                      onChange={(e) => setIcebergSlicePercent(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-[#080C14] border border-cyan-500/30 rounded-lg text-white font-bold text-xs"
+                      placeholder="20"
+                    />
+                    <span className="absolute right-2.5 top-1.5 text-slate-400 text-[10px]">% / slice</span>
+                  </div>
+                  <div className="flex gap-1">
+                    {['10', '20', '33'].map((pct) => (
+                      <button
+                        key={pct}
+                        onClick={() => setIcebergSlicePercent(pct)}
+                        className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${
+                          icebergSlicePercent === pct ? 'bg-cyan-500/30 text-cyan-300 border-cyan-400' : 'bg-[#080C14] border-white/5 text-slate-400'
+                        }`}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[9px] text-slate-400 leading-tight">
+                  Discloses only {icebergSlicePercent}% on the public book. Automatically refills next slice upon partial execution.
+                </p>
+              </div>
+            )}
+
+            {orderType === 'trailing_stop' && (
+              <div className="mt-3 p-2.5 rounded-xl bg-purple-950/20 border border-purple-500/20 space-y-1.5 font-mono text-xs">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-purple-300 font-bold flex items-center gap-1">
+                    <Activity className="w-3 h-3 text-purple-400" /> TRAILING STOP DELTA
+                  </span>
+                  <span className="text-slate-400">Dynamic Peak Lock</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={trailingDelta}
+                      onChange={(e) => setTrailingDelta(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-[#080C14] border border-purple-500/30 rounded-lg text-white font-bold text-xs"
+                      placeholder="2.0"
+                    />
+                    <span className="absolute right-2.5 top-1.5 text-slate-400 text-[10px]">% callback</span>
+                  </div>
+                  <div className="flex gap-1">
+                    {['1.0', '1.5', '2.0', '3.0'].map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => setTrailingDelta(d)}
+                        className={`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${
+                          trailingDelta === d ? 'bg-purple-500/30 text-purple-300 border-purple-400' : 'bg-[#080C14] border-white/5 text-slate-400'
+                        }`}
+                      >
+                        {d}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {orderType === 'twap' && (
+              <div className="mt-3 p-2.5 rounded-xl bg-blue-950/20 border border-blue-500/20 space-y-1.5 font-mono text-xs">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-blue-300 font-bold flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-blue-400" /> TWAP EXECUTION HORIZON
+                  </span>
+                  <span className="text-slate-400">Zero Market Impact</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {['15', '30', '60', '240'].map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setTwapMinutes(m)}
+                      className={`py-1 rounded text-[10px] font-bold border transition-colors ${
+                        twapMinutes === m ? 'bg-blue-600 text-white border-blue-400 shadow-sm' : 'bg-[#080C14] border-white/5 text-slate-400'
+                      }`}
+                    >
+                      {parseInt(m) >= 60 ? `${parseInt(m) / 60}h` : `${m}m`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Leverage Slider (if Perpetual mode) */}
             {tradingMode === 'perpetual' && (
@@ -991,7 +1110,32 @@ export const TradeTerminalView: React.FC = () => {
                   <tr key={ord.id} className="hover:bg-white/[0.02] transition-colors">
                     <td className="py-3 px-3 text-slate-400 font-semibold">{ord.id}</td>
                     <td className="py-3 px-3 text-white font-bold">{ord.pair}</td>
-                    <td className="py-3 px-3 uppercase text-cyan-400 font-semibold">{ord.type}</td>
+                    <td className="py-3 px-3 uppercase text-cyan-400 font-semibold">
+                      {ord.type === 'iceberg' ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-cyan-300 font-bold">ICEBERG</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                            {ord.sliceSize ? `${ord.sliceSize}/slice` : '20% slice'}
+                          </span>
+                        </div>
+                      ) : ord.type === 'trailing_stop' ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-purple-300 font-bold">TRAIL</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                            Δ {ord.trailingDeltaPercent || 2.0}%
+                          </span>
+                        </div>
+                      ) : ord.type === 'twap' ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-blue-300 font-bold">TWAP</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                            {ord.twapDurationMinutes || 30}m
+                          </span>
+                        </div>
+                      ) : (
+                        ord.type
+                      )}
+                    </td>
                     <td className="py-3 px-3 uppercase font-bold">
                       <span className={ord.side === 'buy' ? 'text-emerald-400' : 'text-rose-400'}>{ord.side}</span>
                     </td>

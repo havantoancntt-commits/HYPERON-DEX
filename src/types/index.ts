@@ -273,7 +273,7 @@ export interface TechnicalIndicators {
   summary: string;
 }
 
-export type OrderType = 'market' | 'limit' | 'stop_limit' | 'take_profit' | 'twap';
+export type OrderType = 'market' | 'limit' | 'stop_limit' | 'take_profit' | 'twap' | 'iceberg' | 'trailing_stop';
 export type OrderStatus = 'open' | 'filled' | 'partially_filled' | 'cancelled' | 'expired';
 
 export interface UserOrder {
@@ -289,6 +289,9 @@ export interface UserOrder {
   createdAt: number;
   expiresAt?: number;
   chainId: ChainId;
+  sliceSize?: number;
+  trailingDeltaPercent?: number;
+  twapDurationMinutes?: number;
 }
 
 export interface TokenSecurityReport {
