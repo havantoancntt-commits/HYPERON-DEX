@@ -312,6 +312,30 @@ export class PostgresDistributedNonceStore implements INonceStore {
 }
 
 /**
+ * Fail-Closed Nonce Store for Multi-Instance Production.
+ * If Redis/PostgreSQL is unconfigured in production, authentication fails closed with explicit 503.
+ */
+export class FailClosedNonceStore implements INonceStore {
+  get(_key: string): NonceRecord | null {
+    throw new Error(
+      'NONCE_STORE_UNAVAILABLE: Multi-instance production requires a verified distributed persistent store (Redis via REDIS_URL or PostgreSQL via DATABASE_URL). Authentication fails closed.'
+    );
+  }
+  set(_key: string, _record: NonceRecord): void {
+    throw new Error(
+      'NONCE_STORE_UNAVAILABLE: Multi-instance production requires a verified distributed persistent store (Redis via REDIS_URL or PostgreSQL via DATABASE_URL). Authentication fails closed.'
+    );
+  }
+  markUsed(_key: string): boolean {
+    throw new Error(
+      'NONCE_STORE_UNAVAILABLE: Multi-instance production requires a verified distributed persistent store (Redis via REDIS_URL or PostgreSQL via DATABASE_URL). Authentication fails closed.'
+    );
+  }
+  delete(_key: string): void {}
+  prune(): void {}
+}
+
+/**
  * Distributed Nonce Store Adapter for multi-instance clusters.
  * Enforces strict fail-closed behavior when running in production.
  * In production: strictly requires REDIS_URL or DATABASE_URL; fails closed otherwise.
@@ -319,7 +343,7 @@ export class PostgresDistributedNonceStore implements INonceStore {
  */
 export class DistributedNonceStoreAdapter implements INonceStore {
   private activeStore: INonceStore;
-  public readonly mode: 'DISTRIBUTED_REDIS' | 'DISTRIBUTED_POSTGRES' | 'DEV_LOCAL_STORE';
+  public readonly mode: 'DISTRIBUTED_REDIS' | 'DISTRIBUTED_POSTGRES' | 'DEV_LOCAL_STORE' | 'FAIL_CLOSED';
 
   constructor(options?: { forceStore?: INonceStore }) {
     if (options?.forceStore) {
@@ -342,9 +366,9 @@ export class DistributedNonceStoreAdapter implements INonceStore {
       this.activeStore = new PostgresDistributedNonceStore(dbUrl);
       this.mode = 'DISTRIBUTED_POSTGRES';
     } else if (isProduction) {
-      throw new Error(
-        'FATAL_NONCE_STORE_UNAVAILABLE: Production requires a verified distributed persistent store (Redis via REDIS_URL or PostgreSQL via DATABASE_URL). Local JSON/Memory fallback is strictly forbidden in production.'
-      );
+      // Production without distributed store: fail-closed at runtime rather than crashing module import
+      this.activeStore = new FailClosedNonceStore();
+      this.mode = 'FAIL_CLOSED';
     } else {
       this.activeStore = new DurableNonceStore();
       this.mode = 'DEV_LOCAL_STORE';
@@ -407,6 +431,86 @@ export class MemoryRelayNonceStore implements IRelayNonceStore {
 }
 
 /**
+ * Redis-backed distributed store for EIP-712 relay nonces
+ */
+export class RedisRelayNonceStore implements IRelayNonceStore {
+  private redisUrl: string;
+  private localFallback = new MemoryRelayNonceStore();
+
+  constructor(redisUrl: string) {
+    this.redisUrl = redisUrl;
+  }
+
+  private buildKey(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): string {
+    return `relay:${chainId}:${verifyingContract.toLowerCase()}:${user.toLowerCase()}:${nonce.toString()}`;
+  }
+
+  async isNonceUsed(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<boolean> {
+    const key = this.buildKey(chainId, verifyingContract, user, nonce);
+    try {
+      if (this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://')) {
+        const res = await fetch(`${this.redisUrl}/get/${encodeURIComponent(key)}`, {
+          headers: { Authorization: `Bearer ${process.env.REDIS_TOKEN || ''}` },
+        });
+        if (!res.ok) return true; // fail closed
+        const data: any = await res.json();
+        return data.result !== null;
+      }
+      return this.localFallback.isNonceUsed(chainId, verifyingContract, user, nonce);
+    } catch {
+      return true; // fail closed
+    }
+  }
+
+  async consume(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<boolean> {
+    const key = this.buildKey(chainId, verifyingContract, user, nonce);
+    try {
+      if (this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://')) {
+        const res = await fetch(`${this.redisUrl}/set/${encodeURIComponent(key)}/1?nx&ex=86400`, {
+          headers: { Authorization: `Bearer ${process.env.REDIS_TOKEN || ''}` },
+        });
+        if (!res.ok) return false;
+        const data: any = await res.json();
+        return data.result === 'OK';
+      }
+      return this.localFallback.consume(chainId, verifyingContract, user, nonce);
+    } catch {
+      return false; // fail closed
+    }
+  }
+
+  async delete(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<void> {
+    const key = this.buildKey(chainId, verifyingContract, user, nonce);
+    try {
+      if (this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://')) {
+        await fetch(`${this.redisUrl}/del/${encodeURIComponent(key)}`, {
+          headers: { Authorization: `Bearer ${process.env.REDIS_TOKEN || ''}` },
+        });
+      } else {
+        this.localFallback.delete(chainId, verifyingContract, user, nonce);
+      }
+    } catch {
+      // Best-effort delete
+    }
+  }
+}
+
+/**
+ * Fail-Closed Relay Nonce Store for production without distributed backend
+ */
+export class FailClosedRelayNonceStore implements IRelayNonceStore {
+  isNonceUsed(_chainId: string | number, _verifyingContract: string, _user: string, _nonce: bigint): boolean {
+    return true; // fail closed: all nonces treated as consumed
+  }
+  consume(_chainId: string | number, _verifyingContract: string, _user: string, _nonce: bigint): boolean {
+    throw new Error(
+      'RELAY_NONCE_STORE_UNAVAILABLE: Production requires a verified distributed persistent store for relay nonces. Relaying fails closed.'
+    );
+  }
+  delete(_chainId: string | number, _verifyingContract: string, _user: string, _nonce: bigint): void {}
+}
+
+/**
  * Distributed Relay Nonce Store Adapter for multi-container production environments
  */
 export class DistributedRelayNonceStoreAdapter implements IRelayNonceStore {
@@ -425,13 +529,12 @@ export class DistributedRelayNonceStoreAdapter implements IRelayNonceStore {
     const redisUrl = process.env.REDIS_URL;
     const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
-    if (redisUrl || dbUrl) {
-      // Distributed backend active
+    if (redisUrl) {
+      this.activeStore = new RedisRelayNonceStore(redisUrl);
+    } else if (dbUrl) {
       this.activeStore = new MemoryRelayNonceStore();
     } else if (isProduction) {
-      throw new Error(
-        'FATAL_RELAY_NONCE_STORE_UNAVAILABLE: Production requires a verified distributed persistent store for relay nonces. In-memory fallback is strictly forbidden in production.'
-      );
+      this.activeStore = new FailClosedRelayNonceStore();
     } else {
       this.activeStore = new MemoryRelayNonceStore();
     }
@@ -665,7 +768,15 @@ export async function verifyWalletAuth(
   }
 
   const key = `${normalized}:${nonceToVerify}`;
-  const record = await nonceStore.get(key);
+  let record: NonceRecord | null;
+  try {
+    record = await nonceStore.get(key);
+  } catch (err: any) {
+    if (err?.message?.includes('NONCE_STORE_UNAVAILABLE')) {
+      return { verified: false, code: 'AUTH_STORE_UNAVAILABLE', reason: err.message };
+    }
+    throw err;
+  }
 
   if (!record) {
     return { verified: false, code: 'NONCE_INVALID', reason: 'NONCE_INVALID: Nonce not recognized or not found' };
@@ -753,13 +864,24 @@ export async function verifyWalletAuth(
     }
 
     // Atomic consumption of single-use nonce
-    const marked = await nonceStore.markUsed(key);
+    let marked: boolean;
+    try {
+      marked = await nonceStore.markUsed(key);
+    } catch (err: any) {
+      if (err?.message?.includes('NONCE_STORE_UNAVAILABLE')) {
+        return { verified: false, code: 'AUTH_STORE_UNAVAILABLE', reason: err.message };
+      }
+      throw err;
+    }
     if (!marked) {
       return { verified: false, code: 'NONCE_ALREADY_USED', reason: 'NONCE_ALREADY_USED: Race condition / replay detected during consumption' };
     }
 
     return { verified: true };
   } catch (err: any) {
+    if (err?.message?.includes('NONCE_STORE_UNAVAILABLE')) {
+      return { verified: false, code: 'AUTH_STORE_UNAVAILABLE', reason: err.message };
+    }
     return { verified: false, code: 'INVALID_SIGNATURE', reason: `INVALID_SIGNATURE: ${err?.message || 'Verification error'}` };
   }
 }
@@ -816,7 +938,8 @@ export async function requireWalletAuth(req: Request, res: Response, next: NextF
   if (!authResult.verified) {
     const errCode = authResult.code || 'UNAUTHORIZED_SIGNATURE';
     const isRetryable = errCode === 'NONCE_EXPIRED' || errCode === 'TIMESTAMP_INVALID';
-    return res.status(401).json({
+    const httpStatus = errCode === 'AUTH_STORE_UNAVAILABLE' ? 503 : 401;
+    return res.status(httpStatus).json({
       success: false,
       error: {
         code: errCode,

@@ -957,11 +957,13 @@ export async function relayTransaction(payload: RelayerPayload): Promise<Relayer
     }
 
     // Atomic consumption of relay nonce to guarantee replay prevention
-    const consumed = relayNonceStore.consume(
-      targetChainIdNum,
-      targetVerifyingContract,
-      p.user,
-      BigInt(p.nonce)
+    const consumed = await Promise.resolve(
+      relayNonceStore.consume(
+        targetChainIdNum,
+        targetVerifyingContract,
+        p.user,
+        BigInt(p.nonce)
+      )
     );
     if (!consumed) {
       throw new Error('NONCE_ALREADY_USED: EIP-712 relay nonce has already been consumed for this wallet and contract');

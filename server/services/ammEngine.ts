@@ -504,16 +504,19 @@ export class CurveAdapter implements IDexAdapter {
     const amountOutRaw = dyWithFeeNorm / scaleOut;
     const feePaidRaw = (amountInRaw * feeBps) / BPS_DENOMINATOR;
 
-    const inFloat = Number(formatUnits(amountInRaw, decimalsIn));
-    const outFloat = Number(formatUnits(amountOutRaw, decimalsOut));
-    const executionPrice = inFloat > 0 ? outFloat / inFloat : 1.0;
+    const scaleFactorIn = 10n ** BigInt(decimalsIn);
+    const scaleFactorOut = 10n ** BigInt(decimalsOut);
+    const spotPriceScaled = ONE_ETHER; // 1.0 in 1e18
+    const execPriceScaled = (amountOutRaw * scaleFactorIn * ONE_ETHER) / (amountInRaw * scaleFactorOut);
+    const executionPrice = Number(formatUnits(execPriceScaled, 18));
     const spotPriceBefore = 1.0;
 
     let priceImpactPercent = 0;
     let priceImpactBps = 0;
-    if (spotPriceBefore > executionPrice) {
-      priceImpactPercent = ((spotPriceBefore - executionPrice) / spotPriceBefore) * 100;
-      priceImpactBps = Math.round(priceImpactPercent * 100);
+    if (spotPriceScaled > execPriceScaled && spotPriceScaled > 0n) {
+      const diff = spotPriceScaled - execPriceScaled;
+      priceImpactBps = Number((diff * 10000n) / spotPriceScaled);
+      priceImpactPercent = priceImpactBps / 100;
     }
 
     return {

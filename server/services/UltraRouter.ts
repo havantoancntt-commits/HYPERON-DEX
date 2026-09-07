@@ -11,6 +11,7 @@ import { FormalMath, KFactorProof } from './FormalMath';
 import { poolDiscovery } from './poolDiscovery';
 import { tokenResolver } from './tokenResolver';
 import { UniswapV2Adapter, UniswapV3Adapter, CurveAdapter, BalancerAdapter } from './ammEngine';
+import { getUsdPrice } from './priceFeed';
 
 export interface LiquidityEdge {
   poolId: string;
@@ -410,11 +411,23 @@ export class UltraRouter {
     const spotOutput = singleVenueResults[0].output;
     const priceImpactBps = FormalMath.calculatePriceImpactBps(spotOutput, bestOutput);
 
-    // Gas estimations
+    // Dynamic Gas estimations using live native currency price
     const isSplit = bestSplits.length > 1;
     const totalGasUnits = isSplit ? 185_000 : 135_000;
-    const gasCostUsd = isSplit ? 4.25 : 2.85;
-    const netSavingsUsd = isSplit ? 1.85 : 0.45;
+    const nativeSymbol = chainId === 56 ? 'BNB' : chainId === 137 ? 'POL' : 'ETH';
+    const nativePriceUsd = getUsdPrice(nativeSymbol) || 2500;
+    const gasPriceGwei = 25;
+    const gasCostUsd = Number(((totalGasUnits * gasPriceGwei * 1e-9) * nativePriceUsd).toFixed(2));
+    const tokenOutPriceUsd = getUsdPrice(tokenOutSymbol) || (tokenOutSymbol.includes('USD') ? 1.0 : 0);
+
+    let netSavingsUsd = 0;
+    if (isSplit && bestOutput > singleVenueResults[0].output) {
+      const extraTokensOut = bestOutput - singleVenueResults[0].output;
+      const extraTokensOutFloat = Number(formatUnits(extraTokensOut, tokenOutObj.decimals));
+      const extraOutputUsd = tokenOutPriceUsd > 0 ? extraTokensOutFloat * tokenOutPriceUsd : 0;
+      const extraGasCostUsd = (50_000 * gasPriceGwei * 1e-9) * nativePriceUsd;
+      netSavingsUsd = Math.max(0, Number((extraOutputUsd - extraGasCostUsd).toFixed(2)));
+    }
 
     // MEV Protection Bundle Configuration
     const randomizedDelay = Math.floor(Math.random() * 250) + 50; // 50ms - 300ms jitter
