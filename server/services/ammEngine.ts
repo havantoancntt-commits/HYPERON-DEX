@@ -13,6 +13,9 @@
 
 import { formatUnits, parseUnits } from 'viem';
 import { FormalMath } from './FormalMath';
+import { simulateUniswapV3Swap, type V3Tick, TickMath, SqrtPriceMath, SwapMath } from './uniswapV3Math';
+
+export { type V3Tick, TickMath, SqrtPriceMath, SwapMath, simulateUniswapV3Swap };
 
 export interface PoolReserves {
   reserve0: bigint;
@@ -34,6 +37,7 @@ export interface V3PoolState {
   token1Decimals: number;
   token0Symbol: string;
   token1Symbol: string;
+  ticks?: V3Tick[];
 }
 
 export interface CurvePoolState {
@@ -226,40 +230,21 @@ export class UniswapV3Adapter implements IDexAdapter {
       };
     }
 
-    const feeBps = BigInt(poolState.feeTierBps || 5);
-    const amountInWithFee = (amountInRaw * (BPS_DENOMINATOR - feeBps)) / BPS_DENOMINATOR;
-    const feePaidRaw = (amountInRaw * feeBps) / BPS_DENOMINATOR;
+    const feePips = (poolState.feeTierBps || 5) * 100;
+    const simResult = simulateUniswapV3Swap({
+      sqrtPriceX96: poolState.sqrtPriceX96,
+      liquidity: poolState.liquidity,
+      tick: poolState.tick,
+      feePips,
+      amountIn: amountInRaw,
+      zeroForOne,
+      ticks: poolState.ticks || [],
+    });
 
-    const L = poolState.liquidity;
+    const amountOutRaw = simResult.amountOut;
+    const feePaidRaw = simResult.feePaid;
+    const nextSqrtP = simResult.endSqrtPriceX96;
     const sqrtP = poolState.sqrtPriceX96;
-
-    let amountOutRaw = 0n;
-    let nextSqrtP = sqrtP;
-
-    if (zeroForOne) {
-      // Selling token0 for token1
-      // Exact full precision: sqrtP_next = (L * Q96 * sqrtP) / (L * Q96 + amountInWithFee * sqrtP)
-      const num1 = L * Q96;
-      const denom1 = num1 + (amountInWithFee * sqrtP);
-      if (denom1 > 0n) {
-        nextSqrtP = (num1 * sqrtP) / denom1;
-        // amountOut = L * (sqrtP - nextSqrtP) / Q96
-        const priceDiff = sqrtP > nextSqrtP ? sqrtP - nextSqrtP : 0n;
-        amountOutRaw = (L * priceDiff) / Q96;
-      }
-    } else {
-      // Selling token1 for token0
-      // Exact full precision: sqrtP_next = sqrtP + (amountInWithFee * Q96) / L
-      const priceDelta = (amountInWithFee * Q96) / L;
-      nextSqrtP = sqrtP + priceDelta;
-      // amountOut = (L * (nextSqrtP - sqrtP) * Q96) / (nextSqrtP * sqrtP)
-      const priceDiff = nextSqrtP - sqrtP;
-      const num = L * priceDiff * Q96;
-      const den = nextSqrtP * sqrtP;
-      if (den > 0n) {
-        amountOutRaw = num / den;
-      }
-    }
 
     // Spot Price before swap from sqrtPriceX96
     // price0in1 = (sqrtPriceX96 / 2^96)^2

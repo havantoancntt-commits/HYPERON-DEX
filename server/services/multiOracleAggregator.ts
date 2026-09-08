@@ -402,16 +402,43 @@ export function aggregateMultiSourcePrice(
     }
   }
 
-  const consolidatedPriceRaw = getConsolidatedPrice(validSources);
-  const consolidatedPriceUsd = parseFloat(formatUnits(consolidatedPriceRaw, PRICE_DECIMALS));
+  // Verify surviving quorum after outlier removal (FAIL-CLOSED)
+  if (sourcesUsed.length < 2) {
+    return {
+      symbol: sym,
+      consolidatedPriceRaw: 0n,
+      consolidatedPriceUsd: 0,
+      sourcesCount: sourcesUsed.length,
+      sourcesUsed,
+      outliersRejected,
+      volumeFilteredSources,
+      medianPriceRaw: medianPrice,
+      circuitBreaker: { symbol: sym, isTripped: false },
+      timestamp: now,
+      confidenceScore: 0,
+      status: 'INSUFFICIENT_SOURCES',
+    };
+  }
+
+  // Calculate consolidated price strictly on non-outlier surviving sources
+  const nonOutlierSources = validSources.filter(
+    (s) => !outliersRejected.some((o) => o.name === s.name)
+  );
+  const rawPrice = getConsolidatedPrice(nonOutlierSources);
 
   // Evaluate circuit breaker on the consolidated price
-  const circuitBreaker = recordPriceSnapshot(sym, consolidatedPriceRaw);
+  const circuitBreaker = recordPriceSnapshot(sym, rawPrice);
+
+  // FAIL-CLOSED: If circuit breaker is tripped, trusted execution price must be 0n / 0 USD
+  const consolidatedPriceRaw = circuitBreaker.isTripped ? 0n : rawPrice;
+  const consolidatedPriceUsd = circuitBreaker.isTripped
+    ? 0
+    : parseFloat(formatUnits(consolidatedPriceRaw, PRICE_DECIMALS));
 
   // Dynamic confidence score (0 to 10000 bps)
   let confidenceScore = 0;
   if (!circuitBreaker.isTripped && consolidatedPriceRaw > 0n) {
-    const countBonus = Math.min(validSources.length * 2000, 6000);
+    const countBonus = Math.min(sourcesUsed.length * 2000, 6000);
     const outlierPenalty = outliersRejected.length * 1500;
     confidenceScore = Math.max(2000, Math.min(9900, 3500 + countBonus - outlierPenalty));
   }

@@ -72,6 +72,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     error UntrustedVault(address vault);
     error InvalidSignature();
     error InvalidNonce(uint256 provided, uint256 expected);
+    error RouteCommitmentMismatch(bytes32 provided, bytes32 expected);
 
     // --- Modifiers ---
     modifier whenNotHalted() {
@@ -136,6 +137,54 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         return nonces[user];
     }
 
+    function computeSingleRouteHash(
+        address tokenIn,
+        address tokenOut,
+        uint24 feeTier,
+        uint256 amountIn,
+        uint256 amountOutMinimum,
+        address recipient,
+        uint256 deadline
+    ) public view returns (bytes32) {
+        return keccak256(
+            abi.encodePacked(
+                block.chainid,
+                address(this),
+                tokenIn,
+                tokenOut,
+                feeTier,
+                amountIn,
+                amountOutMinimum,
+                recipient,
+                deadline
+            )
+        );
+    }
+
+    function computeMultiHopRouteHash(
+        bytes calldata path,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOutMinimum,
+        address recipient,
+        uint256 deadline
+    ) public view returns (bytes32) {
+        return keccak256(
+            abi.encodePacked(
+                block.chainid,
+                address(this),
+                tokenIn,
+                tokenOut,
+                keccak256(path),
+                amountIn,
+                amountOutMinimum,
+                recipient,
+                deadline
+            )
+        );
+    }
+
     // --- Core Swap Interfaces ---
 
     struct SingleSwapParams {
@@ -157,6 +206,21 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     ) external payable nonReentrant whenNotHalted checkDeadline(params.deadline) returns (uint256 amountOut) {
         if (params.amountIn == 0) revert InvalidAmount();
         if (params.recipient == address(0)) revert InvalidAddress();
+
+        if (params.routeHash != bytes32(0)) {
+            bytes32 expected = computeSingleRouteHash(
+                params.tokenIn,
+                params.tokenOut,
+                params.feeTier,
+                params.amountIn,
+                params.amountOutMinimum,
+                params.recipient,
+                params.deadline
+            );
+            if (params.routeHash != expected) {
+                revert RouteCommitmentMismatch(params.routeHash, expected);
+            }
+        }
 
         _checkOracleSafety(params.tokenIn);
         _checkOracleSafety(params.tokenOut);
@@ -215,6 +279,21 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     ) external payable nonReentrant whenNotHalted checkDeadline(params.deadline) returns (uint256 amountOut) {
         if (params.amountIn == 0) revert InvalidAmount();
         if (params.recipient == address(0)) revert InvalidAddress();
+
+        if (params.routeHash != bytes32(0)) {
+            bytes32 expected = computeMultiHopRouteHash(
+                params.path,
+                params.tokenIn,
+                params.tokenOut,
+                params.amountIn,
+                params.amountOutMinimum,
+                params.recipient,
+                params.deadline
+            );
+            if (params.routeHash != expected) {
+                revert RouteCommitmentMismatch(params.routeHash, expected);
+            }
+        }
 
         _checkOracleSafety(params.tokenIn);
         _checkOracleSafety(params.tokenOut);
@@ -386,6 +465,22 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         // Verify cryptographic EIP-712 signature
         _verifyRelaySignature(params, signature);
 
+        // Strict Route Commitment Verification
+        if (params.routeHash != bytes32(0)) {
+            bytes32 expectedRouteHash = computeSingleRouteHash(
+                params.tokenIn,
+                params.tokenOut,
+                params.feeTier,
+                params.amountIn,
+                params.amountOutMinimum,
+                params.recipient,
+                params.deadline
+            );
+            if (params.routeHash != expectedRouteHash) {
+                revert RouteCommitmentMismatch(params.routeHash, expectedRouteHash);
+            }
+        }
+
         // Pre-swap oracle safety check
         _checkOracleSafety(params.tokenIn);
         _checkOracleSafety(params.tokenOut);
@@ -461,6 +556,10 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     function _checkOracleSafety(address token) internal view {
         if (address(oracleAggregator) != address(0)) {
             if (oracleAggregator.isCircuitBreakerTripped(token)) {
+                revert OracleCircuitBreakerTriggered(token);
+            }
+            IERC7528PriceOracle.PriceData memory data = oracleAggregator.getAssetPriceData(token);
+            if (data.isCircuitBreakerActive) {
                 revert OracleCircuitBreakerTriggered(token);
             }
         }

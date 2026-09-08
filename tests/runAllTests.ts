@@ -53,6 +53,7 @@ import {
   setCustomAllowedOriginsForTest,
 } from '../server/middleware/corsSecurity';
 import { runUltraRouterTests } from './UltraRouter.test';
+import { runUniswapV3Suite } from './uniswapV3Verification';
 
 let totalTests = 0;
 let passedTests = 0;
@@ -783,6 +784,14 @@ async function runTests() {
   totalTests += ultraRes.total;
   passedTests += ultraRes.passed;
   failedTests += ultraRes.failed;
+
+  // -------------------------------------------------------------
+  // Test 17: Uniswap V3 Bit-Exact Math & Tick Crossing Suite
+  // -------------------------------------------------------------
+  const v3Res = await runUniswapV3Suite();
+  totalTests += v3Res.total;
+  passedTests += v3Res.passed;
+  failedTests += v3Res.failed;
 
   // Summary
   console.log('\n======================================================');
