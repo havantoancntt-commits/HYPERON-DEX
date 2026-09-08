@@ -115,7 +115,7 @@ export class FormalMath {
   }
 
   /**
-   * Safe full-precision mulDiv: (a * b) / denominator
+   * Safe full-precision mulDiv: (a * b) / denominator (Round DOWN)
    * Calculates intermediate product up to 512-bit before dividing,
    * avoiding intermediate precision loss or premature 256-bit overflow.
    */
@@ -125,6 +125,83 @@ export class FormalMath {
     }
     const intermediate = this.mul512(a, b);
     return intermediate / denominator;
+  }
+
+  /**
+   * Explicit Round DOWN mulDiv: floor((a * b) / denominator).
+   * Standard for output amounts and minimum received values.
+   */
+  public static mulDivDown(a: bigint, b: bigint, denominator: bigint): bigint {
+    return this.mulDiv512(a, b, denominator);
+  }
+
+  /**
+   * Explicit Round UP mulDiv: ceil((a * b) / denominator).
+   * Standard for required input amounts and protocol-safe fees.
+   */
+  public static mulDivUp(a: bigint, b: bigint, denominator: bigint): bigint {
+    if (denominator === 0n) {
+      throw new FormalMathError('Denominator cannot be zero in mulDivUp', 'DIVISION_BY_ZERO');
+    }
+    const prod = this.mul512(a, b);
+    if (prod === 0n) return 0n;
+    return (prod - 1n) / denominator + 1n;
+  }
+
+  /**
+   * Exact Decimal Parser.
+   * Parses string representation of a decimal number directly into exact BigInt scaled by `decimals`.
+   * Completely eliminates floating-point precision loss and JavaScript Number representation limits.
+   */
+  public static parseExactDecimal(valueStr: string, decimals: number): bigint {
+    if (decimals < 0 || decimals > 36) {
+      throw new FormalMathError(`Invalid decimals: ${decimals}`, 'INVALID_DECIMALS');
+    }
+    const trimmed = (valueStr || '').trim();
+    if (!trimmed || !/^\d+(\.\d+)?$/.test(trimmed)) {
+      throw new FormalMathError(`Invalid decimal string: '${valueStr}'`, 'INVALID_DECIMAL_FORMAT');
+    }
+
+    const [integerPart, fractionalPart = ''] = trimmed.split('.');
+    const cleanInteger = BigInt(integerPart);
+    const scale = 10n ** BigInt(decimals);
+
+    if (fractionalPart.length === 0) {
+      return this.mul512(cleanInteger, scale);
+    }
+
+    let adjustedFraction = fractionalPart;
+    if (fractionalPart.length > decimals) {
+      // Truncate excess digits past decimal scale (Round DOWN)
+      adjustedFraction = fractionalPart.slice(0, decimals);
+    } else if (fractionalPart.length < decimals) {
+      // Pad with trailing zeros to reach full decimal scale
+      adjustedFraction = fractionalPart.padEnd(decimals, '0');
+    }
+
+    const fractionVal = BigInt(adjustedFraction);
+    return this.add512(this.mul512(cleanInteger, scale), fractionVal);
+  }
+
+  /**
+   * Exact Decimal Formatter.
+   * Converts BigInt raw value into exact standard decimal string representation without float conversion.
+   */
+  public static formatExactDecimal(raw: bigint, decimals: number): string {
+    if (decimals < 0 || decimals > 36) {
+      throw new FormalMathError(`Invalid decimals: ${decimals}`, 'INVALID_DECIMALS');
+    }
+    if (decimals === 0) {
+      return raw.toString();
+    }
+    const scale = 10n ** BigInt(decimals);
+    const integerPart = raw / scale;
+    const remainder = raw % scale;
+    if (remainder === 0n) {
+      return integerPart.toString();
+    }
+    const remainderStr = remainder.toString().padStart(decimals, '0').replace(/0+$/, '');
+    return `${integerPart}.${remainderStr}`;
   }
 
   /**

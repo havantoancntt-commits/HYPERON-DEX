@@ -130,7 +130,25 @@ export function decodeRevertReason(revertData: string | undefined | null): strin
       return `Reverted with EVM Panic(0x${code.toString(16)}): ${panicDescriptions[code] || 'Panic exception'}`;
     }
 
-    // 3. Known Uniswap / DEX error codes
+    // 3. Known 4-byte custom error selectors (OpenZeppelin v5, Uniswap, HyperonRouter)
+    const selector = revertData.substring(0, 10).toLowerCase();
+    const knownCustomSelectors: Record<string, string> = {
+      '0xe450d38c': 'ERC20InsufficientBalance: Account balance is less than required swap amount',
+      '0xfb8f41b2': 'ERC20InsufficientAllowance: Spender allowance is less than required amount',
+      '0xf4d678b8': 'InsufficientOutputAmount: Output received is below minimum acceptable slippage threshold',
+      '0x19277f28': 'EmergencyHalted: Protocol router is in Emergency Halt mode',
+      '0x608e5616': 'ExpiredDeadline: Swap transaction deadline has expired',
+      '0x82b42900': 'Unauthorized: Caller is not authorized to execute this operation',
+      '0xbb55fd27': 'InvalidAmount: Positive non-zero amount required for swap',
+      '0x241ea960': 'ReentrancyGuardReentrantCall: Reentrancy protection triggered',
+      '0x96c6fd1e': 'ERC20InvalidSender: Transfer from the zero address is rejected',
+      '0xec447034': 'ERC20InvalidReceiver: Transfer to the zero address is rejected',
+    };
+    if (knownCustomSelectors[selector]) {
+      return `Reverted with ${knownCustomSelectors[selector]}`;
+    }
+
+    // 4. Known Uniswap / DEX error codes (ASCII encoded in revert bytes)
     const hexSlice = revertData.slice(2);
     if (hexSlice.includes('535446')) {
       return 'Reverted with STF (SafeTransferFailed): Insufficient token balance or approval';
@@ -145,7 +163,7 @@ export function decodeRevertReason(revertData: string | undefined | null): strin
       return 'Reverted with INSUFFICIENT_OUTPUT_AMOUNT: Slippage limit exceeded';
     }
 
-    return `Reverted with custom error: ${revertData.substring(0, 34)}...`;
+    return `Reverted with custom error selector ${selector}...`;
   } catch (err: any) {
     return `Revert data: ${revertData.substring(0, 34)}... (${err?.message || 'Unknown'})`;
   }

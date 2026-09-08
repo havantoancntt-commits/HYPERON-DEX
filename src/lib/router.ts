@@ -30,7 +30,7 @@ export interface ClientQuoteParams {
   userAddress?: string;
 }
 
-export interface ZkRoutingProof {
+export interface RouteCommitment {
   protocol: 'groth16' | 'sha256-merkle';
   proofHash: string;
   nullifier: string;
@@ -41,6 +41,9 @@ export interface ZkRoutingProof {
     routeTimestamp: number;
   };
 }
+
+export type CryptographicRouteCommitment = RouteCommitment;
+export type ZkRoutingProof = RouteCommitment;
 
 /**
  * Gets a client-side public RPC client for direct on-chain querying.
@@ -65,16 +68,17 @@ export function getClientPublicRpc(chainId: string = 'ethereum') {
 }
 
 /**
- * Generates a privacy-preserving Zero-Knowledge Proof hash for route execution.
- * Prevents relayers and searchers from analyzing user intent or extracting MEV.
+ * Generates a Cryptographic Route Commitment (SHA-256 Merkle Commitment & Nullifier)
+ * for private transaction execution.
+ * Binds routing intent parameters cryptographically to prevent frontrunning and unauthorized tampering.
  */
-export async function generateZkRoutingProof(
+export async function generateRouteCommitment(
   tokenIn: string,
   tokenOut: string,
   amountIn: string,
   amountOutMin: string,
   secretNonce?: string
-): Promise<ZkRoutingProof> {
+): Promise<RouteCommitment> {
   let nonce = secretNonce;
   if (!nonce) {
     if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
@@ -113,6 +117,9 @@ export async function generateZkRoutingProof(
     },
   };
 }
+
+export const generateZkRoutingProof = generateRouteCommitment;
+export const generateCryptographicRouteCommitment = generateRouteCommitment;
 
 /**
  * Calculates a decentralized swap quote directly in the client environment.

@@ -887,9 +887,11 @@ export interface RelayerResult {
 export function verifyZkProof(zkProof: RelayerPayload['zkProof']): boolean {
   if (!zkProof) return false;
   if (!zkProof.proofHash || !zkProof.nullifier) return false;
-  // Verify 32-byte hex hash formatting
-  return /^0x[a-fA-F0-9]{64}$/.test(zkProof.proofHash);
+  // Verify cryptographic route commitment hash and nullifier formatting
+  return /^0x[a-fA-F0-9]{64}$/.test(zkProof.proofHash) && /^0x[a-fA-F0-9]{32,64}$/.test(zkProof.nullifier);
 }
+
+export const verifyRouteCommitment = verifyZkProof;
 
 export async function relayTransaction(payload: RelayerPayload): Promise<RelayerResult> {
   const hasZk = !!payload.zkProof;

@@ -12,6 +12,7 @@
  */
 
 import { formatUnits, parseUnits } from 'viem';
+import { FormalMath } from './FormalMath';
 
 export interface PoolReserves {
   reserve0: bigint;
@@ -98,15 +99,20 @@ export class UniswapV2Adapter implements IDexAdapter {
     decimalsIn: number,
     decimalsOut: number,
     reserves?: PoolReserves,
-    feeBpsOverride?: number
+    feeBpsOverride?: number,
+    isToken0In?: boolean
   ): AMMQuoteResult {
     if (!reserves || reserves.reserve0 <= 0n || reserves.reserve1 <= 0n || amountInRaw <= 0n) {
       return this.buildNoLiquidityQuote(amountInRaw, decimalsIn);
     }
 
     const feeBps = BigInt(feeBpsOverride ?? reserves.feeBps ?? 30);
-    const reserveIn = reserves.reserve0;
-    const reserveOut = reserves.reserve1;
+    // Explicit token orientation: token0 as input vs token1 as input
+    const isZeroIn = isToken0In !== undefined
+      ? isToken0In
+      : (reserves.token0Decimals === decimalsIn && reserves.token1Decimals === decimalsOut);
+    const reserveIn = isZeroIn ? reserves.reserve0 : reserves.reserve1;
+    const reserveOut = isZeroIn ? reserves.reserve1 : reserves.reserve0;
 
     // Exact input math: amountInWithFee = amountIn * (10000 - feeBps)
     const amountInWithFee = amountInRaw * (BPS_DENOMINATOR - feeBps);
@@ -232,18 +238,18 @@ export class UniswapV3Adapter implements IDexAdapter {
 
     if (zeroForOne) {
       // Selling token0 for token1
-      // sqrtP_next = (L * sqrtP) / (L + (amountInWithFee * sqrtP) / Q96)
-      const deltaL = (amountInWithFee * sqrtP) / Q96;
-      const denom = L + deltaL;
-      if (denom > 0n) {
-        nextSqrtP = (L * sqrtP) / denom;
+      // Exact full precision: sqrtP_next = (L * Q96 * sqrtP) / (L * Q96 + amountInWithFee * sqrtP)
+      const num1 = L * Q96;
+      const denom1 = num1 + (amountInWithFee * sqrtP);
+      if (denom1 > 0n) {
+        nextSqrtP = (num1 * sqrtP) / denom1;
         // amountOut = L * (sqrtP - nextSqrtP) / Q96
         const priceDiff = sqrtP > nextSqrtP ? sqrtP - nextSqrtP : 0n;
         amountOutRaw = (L * priceDiff) / Q96;
       }
     } else {
       // Selling token1 for token0
-      // sqrtP_next = sqrtP + (amountInWithFee * Q96) / L
+      // Exact full precision: sqrtP_next = sqrtP + (amountInWithFee * Q96) / L
       const priceDelta = (amountInWithFee * Q96) / L;
       nextSqrtP = sqrtP + priceDelta;
       // amountOut = (L * (nextSqrtP - sqrtP) * Q96) / (nextSqrtP * sqrtP)
@@ -448,13 +454,10 @@ export class CurveAdapter implements IDexAdapter {
 
     const feeBps = 4n; // Curve default 0.04%
 
-    // Scale all balances to 18 decimals for StableSwap invariant computation
-    const scaleIn = 10n ** BigInt(18 - decimalsIn);
-    const scaleOut = 10n ** BigInt(18 - decimalsOut);
-
-    const normBal0 = reserves.reserve0 * scaleIn;
-    const normBal1 = reserves.reserve1 * scaleOut;
-    const normAmountIn = amountInRaw * scaleIn;
+    // Scale all balances to uniform 18 decimals using FormalMath for StableSwap invariant computation
+    const normBal0 = FormalMath.normalizeTo18(reserves.reserve0, decimalsIn);
+    const normBal1 = FormalMath.normalizeTo18(reserves.reserve1, decimalsOut);
+    const normAmountIn = FormalMath.normalizeTo18(amountInRaw, decimalsIn);
 
     const balances = [normBal0, normBal1];
     const D = this.computeD(balances, A_param);
@@ -501,7 +504,7 @@ export class CurveAdapter implements IDexAdapter {
     const rawDyNorm = normBal1 - newY;
     // Deduct swap fee: dyWithFee = dy * (10000 - feeBps) / 10000
     const dyWithFeeNorm = (rawDyNorm * (BPS_DENOMINATOR - feeBps)) / BPS_DENOMINATOR;
-    const amountOutRaw = dyWithFeeNorm / scaleOut;
+    const amountOutRaw = FormalMath.denormalizeFrom18(dyWithFeeNorm, decimalsOut);
     const feePaidRaw = (amountInRaw * feeBps) / BPS_DENOMINATOR;
 
     const scaleFactorIn = 10n ** BigInt(decimalsIn);

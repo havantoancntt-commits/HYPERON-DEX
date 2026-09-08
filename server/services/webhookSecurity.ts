@@ -228,14 +228,45 @@ export function validateWebhookUrl(
 }
 
 /**
+ * Resolves the active webhook HMAC secret.
+ * Enforces strict fail-closed validation in production:
+ * If WEBHOOK_SECRET is missing when NODE_ENV === 'production', throws an explicit security error.
+ * In development, falls back with a prominent security warning.
+ */
+export function resolveWebhookSecret(explicitSecret?: string): string {
+  if (explicitSecret && explicitSecret.trim().length > 0) {
+    return explicitSecret.trim();
+  }
+
+  const envSecret = process.env.WEBHOOK_SECRET;
+  if (envSecret && envSecret.trim().length > 0) {
+    return envSecret.trim();
+  }
+
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction) {
+    throw new Error(
+      'CRITICAL_SECURITY_ERROR: WEBHOOK_SECRET environment variable is strictly required in production mode. Refusing to dispatch unsigned or weakly-keyed institutional webhooks.'
+    );
+  }
+
+  console.warn(
+    '[SECURITY WARNING] WEBHOOK_SECRET is not configured in development mode. Falling back to development dummy secret. This is strictly prohibited in production environments.'
+  );
+  return 'hyperon-development-insecure-secret';
+}
+
+/**
  * Dispatches an event payload to a validated webhook destination with HMAC signature.
  */
 export async function dispatchSecureWebhook(
   targetUrl: string,
   event: string,
   payload: Record<string, unknown>,
-  secret: string = process.env.WEBHOOK_SECRET || 'hyperon-default-secret'
+  secret?: string
 ): Promise<{ success: boolean; statusCode?: number; error?: string }> {
+  const activeSecret = resolveWebhookSecret(secret);
+
   const validation = validateWebhookUrl(targetUrl);
   if (!validation.isValid || !validation.sanitizedUrl) {
     return { success: false, error: validation.reason };
@@ -247,7 +278,7 @@ export async function dispatchSecureWebhook(
     data: payload,
   });
 
-  const signature = crypto.createHmac('sha256', secret).update(bodyString).digest('hex');
+  const signature = crypto.createHmac('sha256', activeSecret).update(bodyString).digest('hex');
 
   try {
     const controller = new AbortController();

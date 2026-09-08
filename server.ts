@@ -48,19 +48,28 @@ const PORT = 3000;
 app.set('trust proxy', 1);
 
 // Production Web Security Headers via Helmet (HSTS, strict CSP without unsafe-eval, X-Content-Type-Options)
+// Security Architecture Note regarding 'unsafe-inline':
+// 1. scriptSrc: 'unsafe-inline' is currently permitted because Vite dev server middleware and
+//    preview client bootstraps inject dynamic client initialization scripts.
+//    TODO (Production Hardening): In isolated static standalone production SSR, migrate to
+//    per-request cryptographic nonces (res.locals.cspNonce) to completely eliminate 'unsafe-inline'.
+// 2. styleSrc: 'unsafe-inline' is required for Tailwind CSS v4 dynamic client theme injection
+//    and dynamic CSS custom properties.
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"], // Removed unsafe-eval
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        scriptSrc: ["'self'", "'unsafe-inline'"], // Removed 'unsafe-eval'; requires 'unsafe-inline' for Vite dev client preamble
+        scriptSrcAttr: ["'none'"], // Disallow inline event handlers (e.g. onclick=)
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], // Required for Tailwind v4 runtime and Google Fonts
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
         imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
         connectSrc: ["'self'", 'https:', 'wss:', 'http://localhost:*'],
         frameAncestors: ["'self'", 'https:', 'http:'],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
+        formAction: ["'self'"],
       },
     },
     frameguard: false, // Frame ancestors in CSP manages iframe embedding safely for preview
@@ -82,7 +91,7 @@ app.use(corsSecurityMiddleware);
 // Basic Security & Telemetry Headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Dex-Engine', 'HYPERON-DEX Core v4.1.0-Institutional');
+  res.setHeader('X-Dex-Engine', 'HYPERON-DEX Core v4.2.0-Institutional');
   next();
 });
 

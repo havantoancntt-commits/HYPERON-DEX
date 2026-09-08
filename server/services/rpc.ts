@@ -18,6 +18,22 @@ export interface RpcTelemetryResponse<T> {
   error?: string;
 }
 
+function resolveRpcEndpoints(envKeys: string[], publicFallbacks: string[]): string[] {
+  for (const envKey of envKeys) {
+    const envVal = process.env[envKey];
+    if (envVal && envVal.trim().length > 0) {
+      const customUrls = envVal
+        .split(',')
+        .map((u) => u.trim())
+        .filter((u) => u.startsWith('http://') || u.startsWith('https://'));
+      if (customUrls.length > 0) {
+        return [...customUrls, ...publicFallbacks];
+      }
+    }
+  }
+  return publicFallbacks;
+}
+
 const createRobustTransport = (urls: string[]) =>
   fallback(
     urls.map((url) =>
@@ -33,52 +49,64 @@ const createRobustTransport = (urls: string[]) =>
 export const CHAIN_CLIENTS: Record<ChainId, PublicClient> = {
   ethereum: createPublicClient({
     chain: mainnet,
-    transport: createRobustTransport([
-      'https://cloudflare-eth.com',
-      'https://rpc.ankr.com/eth',
-      'https://ethereum-rpc.publicnode.com',
-      'https://eth.meowrpc.com',
-    ]),
+    transport: createRobustTransport(
+      resolveRpcEndpoints(['ETH_RPC_URLS', 'ETHEREUM_RPC_URLS'], [
+        'https://cloudflare-eth.com',
+        'https://rpc.ankr.com/eth',
+        'https://ethereum-rpc.publicnode.com',
+        'https://eth.meowrpc.com',
+      ])
+    ),
   }) as PublicClient,
   base: createPublicClient({
     chain: base,
-    transport: createRobustTransport([
-      'https://mainnet.base.org',
-      'https://base.publicnode.com',
-      'https://base-rpc.publicnode.com',
-    ]),
+    transport: createRobustTransport(
+      resolveRpcEndpoints(['BASE_RPC_URLS'], [
+        'https://mainnet.base.org',
+        'https://base.publicnode.com',
+        'https://base-rpc.publicnode.com',
+      ])
+    ),
   }) as PublicClient,
   arbitrum: createPublicClient({
     chain: arbitrum,
-    transport: createRobustTransport([
-      'https://arb1.arbitrum.io/rpc',
-      'https://arbitrum-one-rpc.publicnode.com',
-      'https://rpc.ankr.com/arbitrum',
-    ]),
+    transport: createRobustTransport(
+      resolveRpcEndpoints(['ARBITRUM_RPC_URLS'], [
+        'https://arb1.arbitrum.io/rpc',
+        'https://arbitrum-one-rpc.publicnode.com',
+        'https://rpc.ankr.com/arbitrum',
+      ])
+    ),
   }) as PublicClient,
   optimism: createPublicClient({
     chain: optimism,
-    transport: createRobustTransport([
-      'https://mainnet.optimism.io',
-      'https://optimism-rpc.publicnode.com',
-      'https://rpc.ankr.com/optimism',
-    ]),
+    transport: createRobustTransport(
+      resolveRpcEndpoints(['OPTIMISM_RPC_URLS'], [
+        'https://mainnet.optimism.io',
+        'https://optimism-rpc.publicnode.com',
+        'https://rpc.ankr.com/optimism',
+      ])
+    ),
   }) as PublicClient,
   bsc: createPublicClient({
     chain: bsc,
-    transport: createRobustTransport([
-      'https://binance.ankr.com',
-      'https://bsc-dataseed.binance.org',
-      'https://bsc-rpc.publicnode.com',
-    ]),
+    transport: createRobustTransport(
+      resolveRpcEndpoints(['BSC_RPC_URLS', 'BINANCE_RPC_URLS'], [
+        'https://binance.ankr.com',
+        'https://bsc-dataseed.binance.org',
+        'https://bsc-rpc.publicnode.com',
+      ])
+    ),
   }) as PublicClient,
   polygon: createPublicClient({
     chain: polygon,
-    transport: createRobustTransport([
-      'https://polygon-rpc.com',
-      'https://polygon-bor-rpc.publicnode.com',
-      'https://rpc.ankr.com/polygon',
-    ]),
+    transport: createRobustTransport(
+      resolveRpcEndpoints(['POLYGON_RPC_URLS', 'MATIC_RPC_URLS'], [
+        'https://polygon-rpc.com',
+        'https://polygon-bor-rpc.publicnode.com',
+        'https://rpc.ankr.com/polygon',
+      ])
+    ),
   }) as PublicClient,
 };
 

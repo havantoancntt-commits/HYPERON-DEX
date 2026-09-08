@@ -31,6 +31,8 @@ export interface INonceStore {
   prune(): Promise<void> | void;
 }
 
+export type IDistributedNonceStore = INonceStore;
+
 /**
  * Thread-safe atomic in-memory nonce store.
  * Provides atomic CAS (check-and-set) operations and automatic expiration pruning.
