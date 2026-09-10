@@ -9,13 +9,18 @@ function findImports(importPath: string) {
       return { contents: fs.readFileSync(fullPath, 'utf8') };
     }
   }
-  const localPath = path.resolve('contracts/src', importPath.replace(/^\.\//, ''));
-  if (fs.existsSync(localPath)) {
-    return { contents: fs.readFileSync(localPath, 'utf8') };
-  }
-  const relPath = path.resolve(importPath);
-  if (fs.existsSync(relPath)) {
-    return { contents: fs.readFileSync(relPath, 'utf8') };
+  const candidatePaths = [
+    path.resolve('contracts', importPath),
+    path.resolve('contracts/src', importPath),
+    path.resolve('contracts/src', importPath.replace(/^(\.\.\/src\/|\.\/src\/|src\/)/, '')),
+    path.resolve('contracts/src', importPath.replace(/^\.\//, '')),
+    path.resolve('contracts/test', importPath),
+    path.resolve(importPath),
+  ];
+  for (const candidate of candidatePaths) {
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+      return { contents: fs.readFileSync(candidate, 'utf8') };
+    }
   }
   return { error: `File not found: ${importPath}` };
 }
@@ -37,6 +42,9 @@ export function compileSolidityContracts() {
     },
     'interfaces/IERC7528PriceOracle.sol': {
       content: fs.readFileSync(path.resolve('contracts/src/interfaces/IERC7528PriceOracle.sol'), 'utf8'),
+    },
+    'HyperonRouter.t.sol': {
+      content: fs.readFileSync(path.resolve('contracts/test/HyperonRouter.t.sol'), 'utf8'),
     },
   };
 

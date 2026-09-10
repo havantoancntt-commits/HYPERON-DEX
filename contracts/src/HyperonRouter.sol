@@ -73,6 +73,9 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     error InvalidSignature();
     error InvalidNonce(uint256 provided, uint256 expected);
     error RouteCommitmentMismatch(bytes32 provided, bytes32 expected);
+    error RouteCommitmentRequired();
+    error InvalidPathLength();
+    error PathEndpointsMismatch(address expectedIn, address expectedOut, address actualIn, address actualOut);
 
     // --- Modifiers ---
     modifier whenNotHalted() {
@@ -156,7 +159,8 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
                 amountIn,
                 amountOutMinimum,
                 recipient,
-                deadline
+                deadline,
+                bytes32("SINGLE_SWAP")
             )
         );
     }
@@ -180,9 +184,82 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
                 amountIn,
                 amountOutMinimum,
                 recipient,
-                deadline
+                deadline,
+                bytes32("MULTI_HOP_SWAP")
             )
         );
+    }
+
+    function computeCurveRouteHash(
+        address curvePool,
+        address tokenIn,
+        address tokenOut,
+        int128 i,
+        int128 j,
+        uint256 amountIn,
+        uint256 minAmountOut,
+        address recipient
+    ) public view returns (bytes32) {
+        return keccak256(
+            abi.encodePacked(
+                block.chainid,
+                address(this),
+                curvePool,
+                tokenIn,
+                tokenOut,
+                i,
+                j,
+                amountIn,
+                minAmountOut,
+                recipient,
+                bytes32("CURVE_SWAP")
+            )
+        );
+    }
+
+    function computeRelayRouteHash(
+        address user,
+        address tokenIn,
+        address tokenOut,
+        uint24 feeTier,
+        uint256 amountIn,
+        uint256 amountOutMinimum,
+        address recipient,
+        uint256 deadline,
+        uint256 nonce
+    ) public view returns (bytes32) {
+        return keccak256(
+            abi.encodePacked(
+                block.chainid,
+                address(this),
+                user,
+                tokenIn,
+                tokenOut,
+                feeTier,
+                amountIn,
+                amountOutMinimum,
+                recipient,
+                deadline,
+                nonce,
+                bytes32("RELAY_SWAP")
+            )
+        );
+    }
+
+    function _verifyPathEndpoints(bytes calldata path, address tokenIn, address tokenOut) internal pure {
+        if (path.length < 43 || (path.length - 20) % 23 != 0) {
+            revert InvalidPathLength();
+        }
+        address firstToken;
+        address lastToken;
+        assembly {
+            firstToken := shr(96, calldataload(path.offset))
+            let lastOffset := add(path.offset, sub(path.length, 20))
+            lastToken := shr(96, calldataload(lastOffset))
+        }
+        if (firstToken != tokenIn || lastToken != tokenOut) {
+            revert PathEndpointsMismatch(tokenIn, tokenOut, firstToken, lastToken);
+        }
     }
 
     // --- Core Swap Interfaces ---
@@ -207,19 +284,18 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         if (params.amountIn == 0) revert InvalidAmount();
         if (params.recipient == address(0)) revert InvalidAddress();
 
-        if (params.routeHash != bytes32(0)) {
-            bytes32 expected = computeSingleRouteHash(
-                params.tokenIn,
-                params.tokenOut,
-                params.feeTier,
-                params.amountIn,
-                params.amountOutMinimum,
-                params.recipient,
-                params.deadline
-            );
-            if (params.routeHash != expected) {
-                revert RouteCommitmentMismatch(params.routeHash, expected);
-            }
+        if (params.routeHash == bytes32(0)) revert RouteCommitmentRequired();
+        bytes32 expected = computeSingleRouteHash(
+            params.tokenIn,
+            params.tokenOut,
+            params.feeTier,
+            params.amountIn,
+            params.amountOutMinimum,
+            params.recipient,
+            params.deadline
+        );
+        if (params.routeHash != expected) {
+            revert RouteCommitmentMismatch(params.routeHash, expected);
         }
 
         _checkOracleSafety(params.tokenIn);
@@ -280,19 +356,19 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         if (params.amountIn == 0) revert InvalidAmount();
         if (params.recipient == address(0)) revert InvalidAddress();
 
-        if (params.routeHash != bytes32(0)) {
-            bytes32 expected = computeMultiHopRouteHash(
-                params.path,
-                params.tokenIn,
-                params.tokenOut,
-                params.amountIn,
-                params.amountOutMinimum,
-                params.recipient,
-                params.deadline
-            );
-            if (params.routeHash != expected) {
-                revert RouteCommitmentMismatch(params.routeHash, expected);
-            }
+        if (params.routeHash == bytes32(0)) revert RouteCommitmentRequired();
+        _verifyPathEndpoints(params.path, params.tokenIn, params.tokenOut);
+        bytes32 expected = computeMultiHopRouteHash(
+            params.path,
+            params.tokenIn,
+            params.tokenOut,
+            params.amountIn,
+            params.amountOutMinimum,
+            params.recipient,
+            params.deadline
+        );
+        if (params.routeHash != expected) {
+            revert RouteCommitmentMismatch(params.routeHash, expected);
         }
 
         _checkOracleSafety(params.tokenIn);
@@ -351,7 +427,20 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     ) external nonReentrant whenNotHalted returns (uint256 amountOut) {
         if (params.amountIn == 0) revert InvalidAmount();
         if (params.recipient == address(0) || params.curvePool == address(0)) revert InvalidAddress();
-        if (!isTrustedCurvePool[params.curvePool]) revert UntrustedPool(params.curvePool);
+        if (params.routeHash == bytes32(0)) revert RouteCommitmentRequired();
+        bytes32 expected = computeCurveRouteHash(
+            params.curvePool,
+            params.tokenIn,
+            params.tokenOut,
+            params.i,
+            params.j,
+            params.amountIn,
+            params.minAmountOut,
+            params.recipient
+        );
+        if (params.routeHash != expected) {
+            revert RouteCommitmentMismatch(params.routeHash, expected);
+        }
 
         _checkOracleSafety(params.tokenIn);
         _checkOracleSafety(params.tokenOut);
@@ -466,19 +555,20 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         _verifyRelaySignature(params, signature);
 
         // Strict Route Commitment Verification
-        if (params.routeHash != bytes32(0)) {
-            bytes32 expectedRouteHash = computeSingleRouteHash(
-                params.tokenIn,
-                params.tokenOut,
-                params.feeTier,
-                params.amountIn,
-                params.amountOutMinimum,
-                params.recipient,
-                params.deadline
-            );
-            if (params.routeHash != expectedRouteHash) {
-                revert RouteCommitmentMismatch(params.routeHash, expectedRouteHash);
-            }
+        if (params.routeHash == bytes32(0)) revert RouteCommitmentRequired();
+        bytes32 expectedRouteHash = computeRelayRouteHash(
+            params.user,
+            params.tokenIn,
+            params.tokenOut,
+            params.feeTier,
+            params.amountIn,
+            params.amountOutMinimum,
+            params.recipient,
+            params.deadline,
+            params.nonce
+        );
+        if (params.routeHash != expectedRouteHash) {
+            revert RouteCommitmentMismatch(params.routeHash, expectedRouteHash);
         }
 
         // Pre-swap oracle safety check

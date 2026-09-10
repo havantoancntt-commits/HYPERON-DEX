@@ -16,7 +16,12 @@ import {
   verifyZkProof,
   getEip1559MovingAverageGasPriceGwei,
 } from '../server/services/router';
-import { generateZkRoutingProof } from '../src/lib/router';
+import {
+  generateZkRoutingProof,
+  computeSingleRouteHash,
+  computeMultiHopRouteHash,
+  computeRelayRouteHash,
+} from '../src/lib/router';
 import { scanTokenSecurity, scanBytecodeOpcodes } from '../server/services/scanner';
 import { getPriceState, getUsdPrice } from '../server/services/priceFeed';
 import {
@@ -776,6 +781,265 @@ async function runTests() {
   assert(/^0x[a-fA-F0-9]{64}$/.test(relayedRes.txHash), 'Relayer returns 32-byte cryptographic keccak hash');
   assert(!relayedRes.txHash.startsWith('0x9a') || relayedRes.txHash.length === 66, 'Relayer does NOT use synthetic random 0x9a format');
   assert(relayedRes.status === 'RELAYED_FLASHBOTS', 'Relayer confirms private Flashbots broadcast status');
+
+  // -------------------------------------------------------------
+  // Test 23: Exhaustive Cryptographic Route Commitment Anti-Tamper Verification
+  // -------------------------------------------------------------
+  console.log('\n--- 23. Exhaustive Route Commitment Anti-Tamper Verification ---');
+  const sampleRouter = '0x1111111111111111111111111111111111111111' as `0x${string}`;
+  const tokenInAddr = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' as `0x${string}`;
+  const tokenOutAddr = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' as `0x${string}`;
+  const recipientAddr = '0x9999999999999999999999999999999999999999' as `0x${string}`;
+  const userAddrCommit = '0x8888888888888888888888888888888888888888' as `0x${string}`;
+  const deadlineCommit = 1750000000n;
+  const amountInCommit = 1000000000000000000n;
+  const amountOutMinCommit = 2600000000n;
+  const feeTierCommit = 3000;
+  const chainIdCommit = 1;
+
+  const baseRouteHash = computeSingleRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    feeTier: feeTierCommit,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+  });
+
+  assert(/^0x[a-fA-F0-9]{64}$/.test(baseRouteHash), 'Route hash is a valid 32-byte cryptographic keccak256 hash');
+  assert(baseRouteHash !== '0x0000000000000000000000000000000000000000000000000000000000000000', 'Route hash is strictly non-zero');
+
+  // Tamper tokenIn
+  const tamperedTokenIn = computeSingleRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    tokenIn: '0x0000000000000000000000000000000000000001' as `0x${string}`,
+    tokenOut: tokenOutAddr,
+    feeTier: feeTierCommit,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+  });
+  assert(baseRouteHash !== tamperedTokenIn, 'Tamper tokenIn invalidates route commitment');
+
+  // Tamper tokenOut
+  const tamperedTokenOut = computeSingleRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    tokenIn: tokenInAddr,
+    tokenOut: '0x0000000000000000000000000000000000000002' as `0x${string}`,
+    feeTier: feeTierCommit,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+  });
+  assert(baseRouteHash !== tamperedTokenOut, 'Tamper tokenOut invalidates route commitment');
+
+  // Tamper amountIn
+  const tamperedAmountIn = computeSingleRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    feeTier: feeTierCommit,
+    amountIn: amountInCommit + 1n,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+  });
+  assert(baseRouteHash !== tamperedAmountIn, 'Tamper amountIn invalidates route commitment');
+
+  // Tamper amountOutMinimum
+  const tamperedAmountOutMin = computeSingleRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    feeTier: feeTierCommit,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit - 1n,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+  });
+  assert(baseRouteHash !== tamperedAmountOutMin, 'Tamper amountOutMinimum invalidates route commitment');
+
+  // Tamper recipient
+  const tamperedRecipient = computeSingleRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    feeTier: feeTierCommit,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: '0x6666666666666666666666666666666666666666' as `0x${string}`,
+    deadline: deadlineCommit,
+  });
+  assert(baseRouteHash !== tamperedRecipient, 'Tamper recipient invalidates route commitment');
+
+  // Tamper deadline
+  const tamperedDeadline = computeSingleRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    feeTier: feeTierCommit,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit + 1n,
+  });
+  assert(baseRouteHash !== tamperedDeadline, 'Tamper deadline invalidates route commitment');
+
+  // Tamper feeTier
+  const tamperedFeeTier = computeSingleRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    feeTier: 500,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+  });
+  assert(baseRouteHash !== tamperedFeeTier, 'Tamper feeTier invalidates route commitment');
+
+  // Tamper chainId
+  const tamperedChainId = computeSingleRouteHash({
+    chainId: 42161, // Arbitrum
+    routerAddress: sampleRouter,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    feeTier: feeTierCommit,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+  });
+  assert(baseRouteHash !== tamperedChainId, 'Tamper chainId invalidates route commitment');
+
+  // Tamper router
+  const tamperedRouter = computeSingleRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: '0x7777777777777777777777777777777777777777' as `0x${string}`,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    feeTier: feeTierCommit,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+  });
+  assert(baseRouteHash !== tamperedRouter, 'Tamper router address invalidates route commitment');
+
+  // Tamper Relay Nonce
+  const baseRelayHash = computeRelayRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    user: userAddrCommit,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    feeTier: feeTierCommit,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+    nonce: 1n,
+  });
+  const tamperedNonceHash = computeRelayRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    user: userAddrCommit,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    feeTier: feeTierCommit,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+    nonce: 2n,
+  });
+  assert(baseRelayHash !== tamperedNonceHash, 'Tamper relay nonce invalidates route commitment');
+
+  // Tamper MultiHop Path
+  const samplePath1 = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2000bb8A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' as `0x${string}`;
+  const samplePath2 = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc20001f4A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' as `0x${string}`;
+  const baseMultiHopHash = computeMultiHopRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    path: samplePath1,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+  });
+  const tamperedPathHash = computeMultiHopRouteHash({
+    chainId: chainIdCommit,
+    routerAddress: sampleRouter,
+    tokenIn: tokenInAddr,
+    tokenOut: tokenOutAddr,
+    path: samplePath2,
+    amountIn: amountInCommit,
+    amountOutMinimum: amountOutMinCommit,
+    recipient: recipientAddr,
+    deadline: deadlineCommit,
+  });
+  assert(baseMultiHopHash !== tamperedPathHash, 'Tamper encoded path invalidates route commitment');
+
+  // -------------------------------------------------------------
+  // Test 24: Oracle Aggregator Adversarial, Stale & Outlier Resistance Suite
+  // -------------------------------------------------------------
+  console.log('\n--- 24. Oracle Aggregator Adversarial & Outlier Resistance ---');
+  const nowTs = Date.now();
+
+  // Test 24.1: Outlier Rejection - Rogue feed reporting 20x price while 3 valid feeds report normal
+  const normalFeeds: PriceSource[] = [
+    { name: 'CHAINLINK', price: 260000000000n, timestamp: nowTs, weight: 1.0 }, // $2600 (8 dec)
+    { name: 'PYTH', price: 260100000000n, timestamp: nowTs, weight: 1.0 },      // $2601
+    { name: 'UNISWAP_TWAP', price: 259900000000n, timestamp: nowTs, weight: 1.0 }, // $2599
+  ];
+  const rogueFeeds: PriceSource[] = [
+    ...normalFeeds,
+    { name: 'ROGUE_MALICIOUS_NODE', price: 5200000000000n, timestamp: nowTs, weight: 1.0 }, // $52,000 (20x outlier!)
+  ];
+
+  const normalAgg = aggregateMultiSourcePrice('ETH_NORMAL', normalFeeds);
+  const rogueAgg = aggregateMultiSourcePrice('ETH_ROGUE', rogueFeeds);
+  assert(normalAgg.status === 'HEALTHY', 'Consensus established on valid oracle feeds (HEALTHY)');
+  assert(rogueAgg.status === 'DEGRADED', 'Consensus established with rogue outlier filtered (DEGRADED)');
+  assert(rogueAgg.outliersRejected.length === 1, 'Outlier is successfully identified and rejected');
+  assert(rogueAgg.outliersRejected[0].name === 'ROGUE_MALICIOUS_NODE', 'Outlier is specifically ROGUE_MALICIOUS_NODE');
+  // Consensus price with rogue feed must not be skewed by 20x outlier
+  assert(
+    Math.abs(rogueAgg.consolidatedPriceUsd - normalAgg.consolidatedPriceUsd) / normalAgg.consolidatedPriceUsd < 0.01,
+    'Median consensus filters out rogue 20x price manipulation'
+  );
+
+  // Test 24.2: Stale Data Rejection - Data exceeding 120s max age must be rejected
+  const staleFeeds: PriceSource[] = [
+    { name: 'CHAINLINK_STALE', price: 260000000000n, timestamp: nowTs - (400 * 1000), weight: 1.0 }, // 400s old
+    { name: 'PYTH_STALE', price: 260000000000n, timestamp: nowTs - (500 * 1000), weight: 1.0 },      // 500s old
+  ];
+  const staleAgg = aggregateMultiSourcePrice('ETH_STALE', staleFeeds);
+  assert(staleAgg.status === 'INSUFFICIENT_SOURCES', 'Stale price feeds are strictly rejected (fails closed)');
+  assert(staleAgg.consolidatedPriceRaw === 0n, 'Stale price feeds return 0 raw price');
+
+  // Test 24.3: Negative/Zero Price Rejection
+  const invalidPriceFeeds: PriceSource[] = [
+    { name: 'FEED_ZERO', price: 0n, timestamp: nowTs, weight: 1.0 },
+    { name: 'FEED_NEGATIVE', price: -100n, timestamp: nowTs, weight: 1.0 },
+  ];
+  const invalidPriceAgg = aggregateMultiSourcePrice('ETH_INVALID', invalidPriceFeeds);
+  assert(invalidPriceAgg.status === 'INSUFFICIENT_SOURCES', 'Zero or negative price feeds are rejected without skewing consensus');
+  assert(invalidPriceAgg.consolidatedPriceRaw === 0n, 'Invalid prices result in fail-closed 0n price');
 
   // -------------------------------------------------------------
   // Test 16: UltraRouter & FormalMath 512-Bit Edge Cases Suite

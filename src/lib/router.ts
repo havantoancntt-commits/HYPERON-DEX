@@ -7,7 +7,7 @@
  * completely unrelated and unaffiliated with HyperDX.
  */
 
-import { formatUnits, parseUnits, Address, createPublicClient, http } from 'viem';
+import { formatUnits, parseUnits, Address, createPublicClient, http, encodePacked, keccak256, stringToHex, Hex } from 'viem';
 import { mainnet, arbitrum, base, bsc, polygon } from 'viem/chains';
 import { DEX_SOURCES, SUPPORTED_CHAINS } from './constants';
 import { DEX_ERROR_CODES, DexError } from './errorCodes';
@@ -187,3 +187,110 @@ export async function submitRelayedSwap(payload: {
 
   return response.json();
 }
+
+/**
+ * Computes on-chain compliant cryptographic route commitment hash for Single Hop swaps.
+ * Strictly binds chainId, routerAddress, tokens, amounts, recipient, deadline, and domain.
+ */
+export function computeSingleRouteHash(params: {
+  chainId: bigint | number;
+  routerAddress: Address;
+  tokenIn: Address;
+  tokenOut: Address;
+  feeTier: number;
+  amountIn: bigint;
+  amountOutMinimum: bigint;
+  recipient: Address;
+  deadline: bigint;
+}): Hex {
+  return keccak256(
+    encodePacked(
+      ['uint256', 'address', 'address', 'address', 'uint24', 'uint256', 'uint256', 'address', 'uint256', 'bytes32'],
+      [
+        BigInt(params.chainId),
+        params.routerAddress,
+        params.tokenIn,
+        params.tokenOut,
+        params.feeTier,
+        params.amountIn,
+        params.amountOutMinimum,
+        params.recipient,
+        params.deadline,
+        stringToHex('SINGLE_SWAP', { size: 32 }),
+      ]
+    )
+  );
+}
+
+/**
+ * Computes on-chain compliant cryptographic route commitment hash for Multi Hop swaps.
+ * Strictly binds chainId, routerAddress, tokens, path hash, amounts, recipient, deadline, and domain.
+ */
+export function computeMultiHopRouteHash(params: {
+  chainId: bigint | number;
+  routerAddress: Address;
+  tokenIn: Address;
+  tokenOut: Address;
+  path: Hex;
+  amountIn: bigint;
+  amountOutMinimum: bigint;
+  recipient: Address;
+  deadline: bigint;
+}): Hex {
+  return keccak256(
+    encodePacked(
+      ['uint256', 'address', 'address', 'address', 'bytes32', 'uint256', 'uint256', 'address', 'uint256', 'bytes32'],
+      [
+        BigInt(params.chainId),
+        params.routerAddress,
+        params.tokenIn,
+        params.tokenOut,
+        keccak256(params.path),
+        params.amountIn,
+        params.amountOutMinimum,
+        params.recipient,
+        params.deadline,
+        stringToHex('MULTI_HOP_SWAP', { size: 32 }),
+      ]
+    )
+  );
+}
+
+/**
+ * Computes on-chain compliant cryptographic route commitment hash for Relay swaps.
+ * Strictly binds chainId, routerAddress, user, tokens, amounts, recipient, deadline, nonce, and domain.
+ */
+export function computeRelayRouteHash(params: {
+  chainId: bigint | number;
+  routerAddress: Address;
+  user: Address;
+  tokenIn: Address;
+  tokenOut: Address;
+  feeTier: number;
+  amountIn: bigint;
+  amountOutMinimum: bigint;
+  recipient: Address;
+  deadline: bigint;
+  nonce: bigint;
+}): Hex {
+  return keccak256(
+    encodePacked(
+      ['uint256', 'address', 'address', 'address', 'address', 'uint24', 'uint256', 'uint256', 'address', 'uint256', 'uint256', 'bytes32'],
+      [
+        BigInt(params.chainId),
+        params.routerAddress,
+        params.user,
+        params.tokenIn,
+        params.tokenOut,
+        params.feeTier,
+        params.amountIn,
+        params.amountOutMinimum,
+        params.recipient,
+        params.deadline,
+        params.nonce,
+        stringToHex('RELAY_SWAP', { size: 32 }),
+      ]
+    )
+  );
+}
+

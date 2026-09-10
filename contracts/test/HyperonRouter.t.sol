@@ -61,18 +61,337 @@ contract HyperonRouterTest {
     function test_FuzzSingleSwapInvariant(uint256 amountIn) public {
         if (amountIn == 0 || amountIn > 1000 * 1e18) return;
 
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMinimum = (amountIn * 995) / 1000;
+        bytes32 routeHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMinimum,
+            user,
+            deadline
+        );
+
         HyperonRouter.SingleSwapParams memory params = HyperonRouter.SingleSwapParams({
             tokenIn: address(tokenA),
             tokenOut: address(tokenB),
             feeTier: 3000,
             recipient: user,
-            deadline: block.timestamp + 300,
+            deadline: deadline,
             amountIn: amountIn,
-            amountOutMinimum: (amountIn * 995) / 1000, // 0.5% max slippage
-            routeHash: bytes32(0)
+            amountOutMinimum: amountOutMinimum,
+            routeHash: routeHash
         });
 
         assert(params.amountOutMinimum <= params.amountIn);
+        assert(params.routeHash != bytes32(0));
+    }
+
+    // --- PHASE 9: Route Commitment Integrity & Anti-Tamper Tests ---
+
+    function test_RouteCommitment_ZeroHashReverts() public {
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        HyperonRouter.SingleSwapParams memory params = HyperonRouter.SingleSwapParams({
+            tokenIn: address(tokenA),
+            tokenOut: address(tokenB),
+            feeTier: 3000,
+            recipient: user,
+            deadline: deadline,
+            amountIn: amountIn,
+            amountOutMinimum: (amountIn * 995) / 1000,
+            routeHash: bytes32(0) // Zero hash MUST be rejected
+        });
+
+        tokenA.mint(address(this), amountIn);
+        tokenA.approve(address(router), amountIn);
+
+        bool caught = false;
+        try router.swapExactInputSingle(params) {
+            caught = false;
+        } catch {
+            caught = true;
+        }
+        assert(caught == true);
+    }
+
+    function test_RouteCommitment_TamperTokenIn() public {
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMin = (amountIn * 995) / 1000;
+
+        bytes32 originalHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+
+        bytes32 tamperedHash = router.computeSingleRouteHash(
+            address(0xdead), // Tampered tokenIn
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+        assert(originalHash != tamperedHash);
+    }
+
+    function test_RouteCommitment_TamperTokenOut() public {
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMin = (amountIn * 995) / 1000;
+
+        bytes32 originalHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+
+        bytes32 tamperedHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(0xdead), // Tampered tokenOut
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+        assert(originalHash != tamperedHash);
+    }
+
+    function test_RouteCommitment_TamperAmountIn() public {
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMin = (amountIn * 995) / 1000;
+
+        bytes32 originalHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+
+        bytes32 tamperedHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn + 1, // Tampered amountIn
+            amountOutMin,
+            user,
+            deadline
+        );
+        assert(originalHash != tamperedHash);
+    }
+
+    function test_RouteCommitment_TamperAmountOutMinimum() public {
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMin = (amountIn * 995) / 1000;
+
+        bytes32 originalHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+
+        bytes32 tamperedHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin - 1, // Tampered amountOutMinimum
+            user,
+            deadline
+        );
+        assert(originalHash != tamperedHash);
+    }
+
+    function test_RouteCommitment_TamperRecipient() public {
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMin = (amountIn * 995) / 1000;
+
+        bytes32 originalHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+
+        bytes32 tamperedHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            address(0xdead), // Tampered recipient
+            deadline
+        );
+        assert(originalHash != tamperedHash);
+    }
+
+    function test_RouteCommitment_TamperDeadline() public {
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMin = (amountIn * 995) / 1000;
+
+        bytes32 originalHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+
+        bytes32 tamperedHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline + 10 // Tampered deadline
+        );
+        assert(originalHash != tamperedHash);
+    }
+
+    function test_RouteCommitment_TamperFeeTier() public {
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMin = (amountIn * 995) / 1000;
+
+        bytes32 originalHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+
+        bytes32 tamperedHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            500, // Tampered feeTier (0.05% instead of 0.3%)
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+        assert(originalHash != tamperedHash);
+    }
+
+    function test_RouteCommitment_TamperRelayNonce() public {
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMin = (amountIn * 995) / 1000;
+
+        bytes32 originalHash = router.computeRelayRouteHash(
+            user,
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline,
+            1 // Nonce 1
+        );
+
+        bytes32 tamperedHash = router.computeRelayRouteHash(
+            user,
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline,
+            2 // Tampered Nonce 2
+        );
+        assert(originalHash != tamperedHash);
+    }
+
+    function test_RouteCommitment_TamperPath() public {
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMin = (amountIn * 995) / 1000;
+
+        bytes memory path1 = abi.encodePacked(address(tokenA), uint24(3000), address(tokenB));
+        bytes memory path2 = abi.encodePacked(address(tokenA), uint24(500), address(tokenB));
+
+        bytes32 hash1 = router.computeMultiHopRouteHash(
+            path1,
+            address(tokenA),
+            address(tokenB),
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+
+        bytes32 hash2 = router.computeMultiHopRouteHash(
+            path2,
+            address(tokenA),
+            address(tokenB),
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+        assert(hash1 != hash2);
+    }
+
+    function test_RouteCommitment_TamperRouter() public {
+        HyperonRouter router2 = new HyperonRouter(address(mockUni), address(oracle), owner);
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMin = (amountIn * 995) / 1000;
+
+        bytes32 hash1 = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+
+        bytes32 hash2 = router2.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+        assert(hash1 != hash2);
     }
 
     function test_CircuitBreakerDoesNotAutoClear() public {
