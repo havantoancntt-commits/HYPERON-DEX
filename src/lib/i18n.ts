@@ -60,12 +60,32 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'nav.watchlist': 'Watchlist',
     'nav.alerts': 'Price Alerts',
     'nav.security_center': 'Security Center',
+    'nav.security': 'Security Center',
     'nav.developer_api': 'Developer API & SDK',
+    'nav.developer': 'Developer API & SDK',
+    'nav.whale_radar': 'Whale Radar',
+    'nav.intelligence': 'Market Sentiment',
+    'nav.risk_scanner': 'Token Risk Scanner',
+    'nav.copilot': 'Portfolio Copilot',
+    'nav.bridge': 'Cross-Chain Bridge',
+    'nav.explorer': 'Tx Explorer',
     'nav.admin_console': 'Admin Console',
     'nav.settings': 'Settings',
 
+    // Wallet & Accounts
+    'wallet.balance': 'Balance',
+    'wallet.connected': 'Connected',
+    'wallet.disconnected': 'Disconnected',
+    'wallet.address': 'Wallet Address',
+
     // Trading & Actions
     'trade.swap': 'Swap',
+    'trade.spot': 'Spot',
+    'trade.perp': 'Perpetuals',
+    'trade.buy': 'Buy',
+    'trade.sell': 'Sell',
+    'trade.limit': 'Limit',
+    'trade.market': 'Market',
     'trade.best_route': 'Best Split Route',
     'trade.you_pay': 'You Pay',
     'trade.you_receive': 'You Receive',
@@ -88,6 +108,11 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'trade.order_book': 'Real-Time Order Book',
     'trade.depth_chart': 'Market Depth',
     'trade.recent_trades': 'Execution Stream',
+
+    // Orders & Positions
+    'orders.open': 'Open Orders',
+    'orders.positions': 'Positions',
+    'orders.history': 'Order History',
 
     // Themes & Settings
     'theme.mode': 'Theme',
@@ -137,12 +162,32 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'nav.watchlist': 'Danh Sách Theo Dõi',
     'nav.alerts': 'Cảnh Báo Biến Động',
     'nav.security_center': 'Trung Tâm An Ninh',
+    'nav.security': 'Trung Tâm An Ninh',
     'nav.developer_api': 'API & SDK Lập Trình Viên',
+    'nav.developer': 'API & SDK Lập Trình Viên',
+    'nav.whale_radar': 'Radar Cá Voi',
+    'nav.intelligence': 'Tâm Lý Thị Trường',
+    'nav.risk_scanner': 'Quét Rủi Ro Token',
+    'nav.copilot': 'AI Copilot Quản Lý Vốn',
+    'nav.bridge': 'Cầu Nối Đa Chuỗi',
+    'nav.explorer': 'Lịch Sử Giao Dịch',
     'nav.admin_console': 'Bảng Quản Trị Hệ Thống',
     'nav.settings': 'Cài Đặt Hệ Thống',
 
+    // Wallet & Accounts
+    'wallet.balance': 'Số dư ví',
+    'wallet.connected': 'Đã kết nối',
+    'wallet.disconnected': 'Chưa kết nối',
+    'wallet.address': 'Địa chỉ ví',
+
     // Trading & Actions
     'trade.swap': 'Hoán Đổi',
+    'trade.spot': 'Giao ngay',
+    'trade.perp': 'Hợp đồng vô kỳ',
+    'trade.buy': 'Mua',
+    'trade.sell': 'Bán',
+    'trade.limit': 'Giới hạn',
+    'trade.market': 'Thị trường',
     'trade.best_route': 'Lộ Trình Tách Lệnh Tối Ưu',
     'trade.you_pay': 'Bạn Trả',
     'trade.you_receive': 'Bạn Nhận',
@@ -165,6 +210,11 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'trade.order_book': 'Sổ Lệnh Thời Gian Thực',
     'trade.depth_chart': 'Biểu Đồ Độ Sâu Thanh Khoản',
     'trade.recent_trades': 'Luồng Khớp Lệnh Trực Tiếp',
+
+    // Orders & Positions
+    'orders.open': 'Lệnh Chờ Khớp',
+    'orders.positions': 'Vị Thế Mở',
+    'orders.history': 'Lịch Sử Lệnh',
 
     // Themes & Settings
     'theme.mode': 'Giao Diện',
@@ -214,12 +264,32 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'nav.watchlist': '自选关注列表',
     'nav.alerts': '异动预警通知',
     'nav.security_center': '安全防护中心',
+    'nav.security': '安全防护中心',
     'nav.developer_api': '开发者 API 与 SDK',
+    'nav.developer': '开发者 API 与 SDK',
+    'nav.whale_radar': '链上巨鲸雷达',
+    'nav.intelligence': '全网情绪分析',
+    'nav.risk_scanner': '代币风险审计',
+    'nav.copilot': 'AI 投资组合副驾',
+    'nav.bridge': '全链跨链桥',
+    'nav.explorer': '交易历史记录',
     'nav.admin_console': '管理控制台',
     'nav.settings': '偏好设置',
 
+    // Wallet & Accounts
+    'wallet.balance': '钱包余额',
+    'wallet.connected': '已连接',
+    'wallet.disconnected': '未连接',
+    'wallet.address': '钱包地址',
+
     // Trading & Actions
     'trade.swap': '快速兑换',
+    'trade.spot': '现货',
+    'trade.perp': '永续合约',
+    'trade.buy': '买入',
+    'trade.sell': '卖出',
+    'trade.limit': '限价',
+    'trade.market': '市价',
     'trade.best_route': '最优拆单路由',
     'trade.you_pay': '您支付',
     'trade.you_receive': '您获得',
@@ -242,6 +312,11 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'trade.order_book': '实时委托订单薄',
     'trade.depth_chart': '市场深度图',
     'trade.recent_trades': '最新撮合成交',
+
+    // Orders & Positions
+    'orders.open': '当前委托',
+    'orders.positions': '持仓',
+    'orders.history': '历史委托',
 
     // Themes & Settings
     'theme.mode': '主题外观',
@@ -291,12 +366,32 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'nav.watchlist': 'ウォッチリスト',
     'nav.alerts': 'アラート通知',
     'nav.security_center': 'セキュリティセンター',
+    'nav.security': 'セキュリティセンター',
     'nav.developer_api': '開発者 API & SDK',
+    'nav.developer': '開発者 API & SDK',
+    'nav.whale_radar': 'クジラレーダー',
+    'nav.intelligence': '市場センチメント',
+    'nav.risk_scanner': 'トークンリスク診断',
+    'nav.copilot': 'ポートフォリオコパイロット',
+    'nav.bridge': 'クロスチェーンブリッジ',
+    'nav.explorer': 'トランザクション履歴',
     'nav.admin_console': '管理者コンソール',
     'nav.settings': '設定',
 
+    // Wallet & Accounts
+    'wallet.balance': 'ウォレット残高',
+    'wallet.connected': '接続済み',
+    'wallet.disconnected': '未接続',
+    'wallet.address': 'ウォレットアドレス',
+
     // Trading & Actions
     'trade.swap': 'スワップ',
+    'trade.spot': '現物',
+    'trade.perp': '無期限先物',
+    'trade.buy': '購入',
+    'trade.sell': '売却',
+    'trade.limit': '指値',
+    'trade.market': '成行',
     'trade.best_route': '最適分割ルーティング',
     'trade.you_pay': '支払額',
     'trade.you_receive': '受取額',
@@ -319,6 +414,11 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'trade.order_book': 'リアルタイム板情報',
     'trade.depth_chart': 'デプスチャート',
     'trade.recent_trades': '歩み値 (約定履歴)',
+
+    // Orders & Positions
+    'orders.open': '未約定注文',
+    'orders.positions': 'ポジション',
+    'orders.history': '注文履歴',
 
     // Themes & Settings
     'theme.mode': 'テーマ設定',
@@ -368,12 +468,32 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'nav.watchlist': '관심 목록',
     'nav.alerts': '가격 변동 알림',
     'nav.security_center': '보안 센터',
+    'nav.security': '보안 센터',
     'nav.developer_api': '개발자 API 및 SDK',
+    'nav.developer': '개발자 API 및 SDK',
+    'nav.whale_radar': '고래 레이더',
+    'nav.intelligence': '시장 심리 지수',
+    'nav.risk_scanner': '토큰 리스크 검사',
+    'nav.copilot': '포트폴리오 코파일럿',
+    'nav.bridge': '크로스체인 브릿지',
+    'nav.explorer': '트랜잭션 기록',
     'nav.admin_console': '관리자 콘솔',
     'nav.settings': '환경 설정',
 
+    // Wallet & Accounts
+    'wallet.balance': '지갑 잔액',
+    'wallet.connected': '연결됨',
+    'wallet.disconnected': '연결 해제',
+    'wallet.address': '지갑 주소',
+
     // Trading & Actions
     'trade.swap': '스왑 (교환)',
+    'trade.spot': '스팟',
+    'trade.perp': '무기한 선물',
+    'trade.buy': '매수',
+    'trade.sell': '매도',
+    'trade.limit': '지정가',
+    'trade.market': '시장가',
     'trade.best_route': '최적 분할 라우팅',
     'trade.you_pay': '지불 금액',
     'trade.you_receive': '수령 금액',
@@ -396,6 +516,11 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'trade.order_book': '실시간 호가창',
     'trade.depth_chart': '호가 깊이 차트',
     'trade.recent_trades': '실시간 체결 내역',
+
+    // Orders & Positions
+    'orders.open': '미체결 주문',
+    'orders.positions': '포지션',
+    'orders.history': '주문 내역',
 
     // Themes & Settings
     'theme.mode': '테마 설정',
@@ -445,12 +570,32 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'nav.watchlist': 'Lista de Seguimiento',
     'nav.alerts': 'Alertas de Precios',
     'nav.security_center': 'Centro de Seguridad',
+    'nav.security': 'Centro de Seguridad',
     'nav.developer_api': 'API y SDK para Desarrolladores',
+    'nav.developer': 'API y SDK para Desarrolladores',
+    'nav.whale_radar': 'Radar de Ballenas',
+    'nav.intelligence': 'Sentimiento de Mercado',
+    'nav.risk_scanner': 'Auditoría de Riesgo',
+    'nav.copilot': 'Copiloto de Portafolio',
+    'nav.bridge': 'Puente Cross-Chain',
+    'nav.explorer': 'Historial de Transacciones',
     'nav.admin_console': 'Consola de Administración',
     'nav.settings': 'Configuración',
 
+    // Wallet & Accounts
+    'wallet.balance': 'Saldo de Billetera',
+    'wallet.connected': 'Conectado',
+    'wallet.disconnected': 'Desconectado',
+    'wallet.address': 'Dirección de Billetera',
+
     // Trading & Actions
     'trade.swap': 'Intercambiar',
+    'trade.spot': 'Spot',
+    'trade.perp': 'Perpetuos',
+    'trade.buy': 'Comprar',
+    'trade.sell': 'Vender',
+    'trade.limit': 'Límite',
+    'trade.market': 'Mercado',
     'trade.best_route': 'Ruta Dividida Óptima',
     'trade.you_pay': 'Usted Paga',
     'trade.you_receive': 'Usted Recibe',
@@ -473,6 +618,11 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'trade.order_book': 'Libro de Órdenes en Vivo',
     'trade.depth_chart': 'Profundidad de Mercado',
     'trade.recent_trades': 'Operaciones Recientes',
+
+    // Orders & Positions
+    'orders.open': 'Órdenes Abiertas',
+    'orders.positions': 'Posiciones',
+    'orders.history': 'Historial de Órdenes',
 
     // Themes & Settings
     'theme.mode': 'Tema Visual',
@@ -522,12 +672,32 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'nav.watchlist': 'قائمة المراقبة',
     'nav.alerts': 'تنبيهات الأسعار',
     'nav.security_center': 'مركز الأمان والحماية',
+    'nav.security': 'مركز الأمان والحماية',
     'nav.developer_api': 'واجهة المطورين البرمجية',
+    'nav.developer': 'واجهة المطورين البرمجية',
+    'nav.whale_radar': 'رادار الحيتان',
+    'nav.intelligence': 'معنويات السوق',
+    'nav.risk_scanner': 'فاحص مخاطر العملات',
+    'nav.copilot': 'مساعد المحفظة الاستثمارية',
+    'nav.bridge': 'جسر المعاملات عبر الشبكات',
+    'nav.explorer': 'سجل المعاملات',
     'nav.admin_console': 'لوحة تحكم المشرف',
     'nav.settings': 'إعدادات المنصة',
 
+    // Wallet & Accounts
+    'wallet.balance': 'رصيد المحفظة',
+    'wallet.connected': 'متصل',
+    'wallet.disconnected': 'غير متصل',
+    'wallet.address': 'عنوان المحفظة',
+
     // Trading & Actions
     'trade.swap': 'تبديل فوري',
+    'trade.spot': 'فوري',
+    'trade.perp': 'دائم',
+    'trade.buy': 'شراء',
+    'trade.sell': 'بيع',
+    'trade.limit': 'محدد',
+    'trade.market': 'سوق',
     'trade.best_route': 'أفضل مسار توجيه مقسم',
     'trade.you_pay': 'تدفع',
     'trade.you_receive': 'تستلم',
@@ -551,6 +721,11 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'trade.depth_chart': 'عمق السوق',
     'trade.recent_trades': 'التداولات الأخيرة',
 
+    // Orders & Positions
+    'orders.open': 'الأوامر المفتوحة',
+    'orders.positions': 'المراكز',
+    'orders.history': 'سجل الأوامر',
+
     // Themes & Settings
     'theme.mode': 'المظهر المرئي',
     'theme.dark': 'الوضع الليلي الكمي (Dark)',
@@ -560,7 +735,121 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
   },
 };
 
+/**
+ * Bi-directional key aliases map: maps shortened keys to full keys and vice-versa
+ */
+const KEY_ALIASES: Record<string, string> = {
+  'nav.whale_radar': 'nav.onchain_radar',
+  'nav.onchain_radar': 'nav.whale_radar',
+  'nav.intelligence': 'nav.ai_intelligence',
+  'nav.ai_intelligence': 'nav.intelligence',
+  'nav.risk_scanner': 'nav.ai_risk_scanner',
+  'nav.ai_risk_scanner': 'nav.risk_scanner',
+  'nav.copilot': 'nav.ai_copilot',
+  'nav.ai_copilot': 'nav.copilot',
+  'nav.bridge': 'nav.cross_chain',
+  'nav.cross_chain': 'nav.bridge',
+  'nav.explorer': 'nav.transactions',
+  'nav.transactions': 'nav.explorer',
+  'nav.security': 'nav.security_center',
+  'nav.security_center': 'nav.security',
+  'nav.developer': 'nav.developer_api',
+  'nav.developer_api': 'nav.developer',
+  'trade.limit': 'trade.limit_order',
+  'trade.limit_order': 'trade.limit',
+  'trade.market': 'trade.market_order',
+  'trade.market_order': 'trade.market',
+};
+
+/**
+ * Universal fallback dictionary for critical keys
+ */
+const UNIVERSAL_FALLBACKS: Record<string, { en: string; vi: string }> = {
+  'wallet.balance': { en: 'Balance', vi: 'Số dư ví' },
+  'trade.spot': { en: 'Spot', vi: 'Giao ngay' },
+  'trade.perp': { en: 'Perpetuals', vi: 'Hợp đồng vô kỳ' },
+  'trade.buy': { en: 'Buy', vi: 'Mua' },
+  'trade.sell': { en: 'Sell', vi: 'Bán' },
+  'trade.limit': { en: 'Limit', vi: 'Giới hạn' },
+  'trade.market': { en: 'Market', vi: 'Thị trường' },
+  'orders.open': { en: 'Open Orders', vi: 'Lệnh Chờ Khớp' },
+  'orders.positions': { en: 'Positions', vi: 'Vị Thế Mở' },
+  'orders.history': { en: 'Order History', vi: 'Lịch Sử Lệnh' },
+  'nav.whale_radar': { en: 'Whale Radar', vi: 'Radar Cá Voi' },
+  'nav.intelligence': { en: 'Market Sentiment', vi: 'Tâm Lý Thị Trường' },
+  'nav.risk_scanner': { en: 'Token Risk Scanner', vi: 'Quét Rủi Ro Token' },
+  'nav.copilot': { en: 'Portfolio Copilot', vi: 'AI Copilot Quản Lý Vốn' },
+  'nav.bridge': { en: 'Cross-Chain Bridge', vi: 'Cầu Nối Đa Chuỗi' },
+  'nav.explorer': { en: 'Tx Explorer', vi: 'Lịch Sử Giao Dịch' },
+  'nav.security': { en: 'Security Center', vi: 'Trung Tâm An Ninh' },
+  'nav.developer': { en: 'Developer API & SDK', vi: 'API & SDK Lập Trình Viên' },
+};
+
+/**
+ * Smart Anti-Dot Humanizer:
+ * Converts any unmapped dot-separated key (e.g. "wallet.balance", "trade.spot")
+ * into a clean, capitalized human-readable string, strictly eliminating raw dot output.
+ */
+function humanizeDotKey(rawKey: string): string {
+  if (!rawKey) return '';
+  if (!rawKey.includes('.')) return rawKey;
+
+  const parts = rawKey.split('.');
+  const lastPart = parts[parts.length - 1];
+  const namespace = parts[0].toLowerCase();
+
+  if (namespace === 'wallet' && lastPart.toLowerCase() === 'balance') return 'Balance';
+  if (namespace === 'orders') {
+    const capitalized = lastPart.charAt(0).toUpperCase() + lastPart.slice(1).toLowerCase();
+    return `${capitalized} Orders`;
+  }
+  if (namespace === 'trade') {
+    return lastPart.charAt(0).toUpperCase() + lastPart.slice(1).toLowerCase();
+  }
+
+  return lastPart
+    .split(/[_\-]+/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export const getTranslation = (lang: SupportedLanguage, key: string): string => {
+  if (!key) return '';
+
   const table = TRANSLATIONS[lang] || TRANSLATIONS.en;
-  return table[key] || TRANSLATIONS.en[key] || key;
+
+  // 1. Direct match in requested language
+  if (table[key]) return table[key];
+
+  // 2. Direct match in fallback English
+  if (TRANSLATIONS.en[key]) return TRANSLATIONS.en[key];
+
+  // 3. Case-insensitive match in requested language
+  const lowerKey = key.toLowerCase();
+  if (table[lowerKey]) return table[lowerKey];
+  if (TRANSLATIONS.en[lowerKey]) return TRANSLATIONS.en[lowerKey];
+
+  // 4. Alias lookup
+  const alias = KEY_ALIASES[key] || KEY_ALIASES[lowerKey];
+  if (alias) {
+    if (table[alias]) return table[alias];
+    if (TRANSLATIONS.en[alias]) return TRANSLATIONS.en[alias];
+  }
+
+  // 5. Universal fallbacks map
+  const universal = UNIVERSAL_FALLBACKS[lowerKey] || (alias ? UNIVERSAL_FALLBACKS[alias.toLowerCase()] : undefined);
+  if (universal) {
+    if (lang === 'vi' && universal.vi) return universal.vi;
+    return universal.en;
+  }
+
+  // 6. Fail-Safe Anti-Dot Formatter:
+  // If the key contains a dot (e.g. "wallet.balance"), NEVER return raw key with dot.
+  // Transform it into clean human text.
+  if (key.includes('.')) {
+    return humanizeDotKey(key);
+  }
+
+  return key;
 };

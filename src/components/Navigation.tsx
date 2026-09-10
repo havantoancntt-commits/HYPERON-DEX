@@ -53,7 +53,7 @@ export const Navigation: React.FC = () => {
 
   const sections: NavSection[] = [
     {
-      title: 'AI ALPHA & SIGNALS',
+      title: t('nav.section.ai'),
       items: [
         { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
         { id: 'ai-signals', label: t('nav.ai_signals'), icon: Sparkles, badge: '94% Win', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
@@ -65,42 +65,42 @@ export const Navigation: React.FC = () => {
       ],
     },
     {
-      title: 'TRADE & DERIVATIVES',
+      title: t('nav.section.trade'),
       items: [
         { id: 'swap', label: t('nav.swap'), icon: ArrowLeftRight, badge: 'Best MEV', badgeColor: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' },
         { id: 'perpetuals', label: t('nav.perpetuals'), icon: LineChart, badge: '50x', badgeColor: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
         { id: 'trade', label: t('nav.trade'), icon: TrendingUp },
         { id: 'markets', label: t('nav.markets'), icon: TrendingUp },
-        { id: 'token-details', label: 'Token Explorer', icon: Coins },
+        { id: 'token-details', label: t('nav.token_details'), icon: Coins },
       ],
     },
     {
-      title: 'LAUNCHPAD & DEFI',
+      title: t('nav.section.defi'),
       items: [
         { id: 'lottery', label: t('nav.lottery'), icon: Trophy, badge: '$647K Pot', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/30' },
         { id: 'launchpad', label: t('nav.launchpad'), icon: Rocket, badge: 'Anti-Rug', badgeColor: 'bg-pink-500/10 text-pink-400 border-pink-500/20' },
         { id: 'lending', label: t('nav.lending'), icon: Landmark, badge: 'AI Radar', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
         { id: 'staking', label: t('nav.staking'), icon: Lock, badge: '35% APY', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
         { id: 'liquidity', label: t('nav.liquidity'), icon: Layers },
-        { id: 'payments', label: 'Web3 Payments', icon: CreditCard, badge: '0% Slip', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
+        { id: 'payments', label: t('nav.payments'), icon: CreditCard, badge: '0% Slip', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
         { id: 'cross-chain', label: t('nav.bridge'), icon: GitFork },
       ],
     },
     {
-      title: 'PORTFOLIO & ANALYTICS',
+      title: t('nav.section.portfolio'),
       items: [
         { id: 'portfolio', label: t('nav.portfolio'), icon: PieChart },
         { id: 'transactions', label: t('nav.explorer'), icon: History },
-        { id: 'watchlist', label: 'Watchlist', icon: Star },
-        { id: 'alerts', label: 'Price Alerts', icon: Bell },
+        { id: 'watchlist', label: t('nav.watchlist'), icon: Star },
+        { id: 'alerts', label: t('nav.alerts'), icon: Bell },
       ],
     },
     {
-      title: 'SYSTEM & SECURITY',
+      title: t('nav.section.system'),
       items: [
         { id: 'security-center', label: t('nav.security'), icon: ShieldCheck, badge: 'Zero-Trust', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
         { id: 'developer-api', label: t('nav.developer'), icon: Code2 },
-        { id: 'admin-console', label: 'Admin Console', icon: SlidersHorizontal },
+        { id: 'admin-console', label: t('nav.admin_console'), icon: SlidersHorizontal },
         { id: 'settings', label: t('nav.settings'), icon: Settings },
       ],
     },
