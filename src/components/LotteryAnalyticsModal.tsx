@@ -26,7 +26,7 @@ interface LotteryAnalyticsModalProps {
 const ZODIAC_SIGNS = [
   { name: 'Bạch Dương (Aries)', icon: '♈', lucky: [7, 9, 3, 1, 8, 4] },
   { name: 'Kim Ngưu (Taurus)', icon: '♉', lucky: [6, 2, 8, 4, 0, 7] },
-  { name: 'Song Tử (Gemini)', icon: '♊', lucky: [5, 3, 7, 1, 9, 2] },
+  { name: 'Song Tử (Twins)', icon: '♊', lucky: [5, 3, 7, 1, 9, 2] },
   { name: 'Cự Giải (Cancer)', icon: '♋', lucky: [2, 7, 4, 8, 6, 3] },
   { name: 'Sư Tử (Leo)', icon: '♌', lucky: [1, 9, 5, 8, 7, 3] },
   { name: 'Xử Nữ (Virgo)', icon: '♍', lucky: [5, 2, 8, 6, 0, 4] },

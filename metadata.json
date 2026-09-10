@@ -1,6 +1,6 @@
 {
   "name": "HYPERON-DEX",
-  "description": "Next-generation institutional AI-native Web3 super exchange with DEX aggregation, provably fair Chainlink VRF 2.5 Mega Lottery & Jackpot, multi-chain smart routing, quantitative AI market intelligence, token risk scanner, portfolio copilot, and non-custodial trading terminal.",
+  "description": "Institutional-grade decentralized exchange (DEX) aggregator and Web3 trading terminal with smart multi-chain routing, provably fair Chainlink VRF 2.5 Mega Lottery, quantitative market analytics, token risk scanner, and non-custodial execution.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

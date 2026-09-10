@@ -1,12 +1,10 @@
 /**
- * HYPERON-DEX PREDICTIVE INTELLIGENCE & SENTIMENT ENGINE
- * Powered by Google GenAI (Gemini 2.5 / 3.8 Flash SDK)
+ * HYPERON-DEX QUANTITATIVE INTELLIGENCE & SENTIMENT ENGINE
+ * 100% Decentralized On-Chain Market Analytics & Risk Engine
  *
  * Provides real-time predictive routing evaluation, whale flow sentiment analysis,
  * volatility risk estimation, and route execution confidence scoring (0-100).
  */
-
-import { GoogleGenAI } from '@google/genai';
 
 export interface PredictiveRouteInput {
   tokenInSymbol: string;
@@ -28,97 +26,15 @@ export interface PredictiveAnalysisResult {
   aiInsights: string;
   recommendedAction: 'EXECUTE_IMMEDIATELY' | 'SPLIT_ORDER' | 'USE_PRIVATE_RELAY';
   analyzedAt: number;
-  source: 'GEMINI_GENAI_PRO' | 'QUANTITATIVE_FALLBACK';
-}
-
-let geminiClient: GoogleGenAI | null = null;
-
-function getGeminiClient(): GoogleGenAI | null {
-  if (!geminiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey && apiKey.trim() !== '') {
-      geminiClient = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
-      });
-    }
-  }
-  return geminiClient;
+  source: 'QUANTITATIVE_ENGINE' | 'QUANTITATIVE_FALLBACK';
 }
 
 export class PredictiveEngine {
   /**
-   * Evaluates a trade route and generates institutional sentiment & confidence metrics.
+   * Evaluates a trade route and generates institutional sentiment & confidence metrics
+   * using a 100% decentralized mathematical and rule-based quantitative engine.
    */
   public static async analyzeRoute(input: PredictiveRouteInput): Promise<PredictiveAnalysisResult> {
-    const client = getGeminiClient();
-
-    // If Gemini client is available, attempt AI model analysis
-    if (client) {
-      try {
-        const prompt = `You are the chief quantitative risk model for HYPERON-DEX institutional swap aggregator.
-Analyze this proposed trade execution and return ONLY a valid JSON object matching the schema below:
-
-Trade Context:
-- Swap: ${input.amountInFormatted} ${input.tokenInSymbol} -> ${input.expectedOutputFormatted} ${input.tokenOutSymbol}
-- Price Impact: ${(input.priceImpactBps / 100).toFixed(2)}%
-- Gas Units: ${input.gasEstimatedUnits}
-- Routed Protocols: ${input.routeDexList.join(', ')}
-- Chain ID: ${input.chainId}
-
-Output JSON format strictly:
-{
-  "confidenceScore": <number 0-100>,
-  "marketSentiment": "<BULLISH|BEARISH|NEUTRAL>",
-  "whalePressureIndex": <number 0-100>,
-  "volatilityForecast": "<LOW|MODERATE|HIGH>",
-  "mevRiskAssessment": "<MINIMAL|MEDIUM|ELEVATED>",
-  "aiInsights": "<one concise sentence analysis>",
-  "recommendedAction": "<EXECUTE_IMMEDIATELY|SPLIT_ORDER|USE_PRIVATE_RELAY>"
-}`;
-
-        const response = await client.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.2,
-          },
-        });
-
-        const rawText = response.text?.trim();
-        if (rawText) {
-          const parsed = JSON.parse(rawText);
-          return {
-            confidenceScore: Math.min(100, Math.max(0, Math.round(Number(parsed.confidenceScore) || 95))),
-            marketSentiment: ['BULLISH', 'BEARISH', 'NEUTRAL'].includes(parsed.marketSentiment)
-              ? parsed.marketSentiment
-              : 'NEUTRAL',
-            whalePressureIndex: Math.min(100, Math.max(0, Math.round(Number(parsed.whalePressureIndex) || 15))),
-            volatilityForecast: ['LOW', 'MODERATE', 'HIGH'].includes(parsed.volatilityForecast)
-              ? parsed.volatilityForecast
-              : 'LOW',
-            mevRiskAssessment: ['MINIMAL', 'MEDIUM', 'ELEVATED'].includes(parsed.mevRiskAssessment)
-              ? parsed.mevRiskAssessment
-              : 'MINIMAL',
-            aiInsights: parsed.aiInsights || 'Tuyến định tuyến đạt độ sâu thanh khoản tối ưu và phân tán rủi ro MEV hiệu quả.',
-            recommendedAction: ['EXECUTE_IMMEDIATELY', 'SPLIT_ORDER', 'USE_PRIVATE_RELAY'].includes(parsed.recommendedAction)
-              ? parsed.recommendedAction
-              : 'USE_PRIVATE_RELAY',
-            analyzedAt: Date.now(),
-            source: 'GEMINI_GENAI_PRO',
-          };
-        }
-      } catch (err) {
-        console.warn('[PredictiveEngine] Gemini API call skipped or failed, using quantitative fallback:', (err as Error).message);
-      }
-    }
-
-    // Deterministic Quantitative Fallback Model (Pure Mathematical & Rule-Based)
     return this.calculateQuantitativeMetrics(input);
   }
 

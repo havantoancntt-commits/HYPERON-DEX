@@ -13,7 +13,7 @@ This matrix defines the strict technical verification boundaries, on-chain prove
 | **Token Security** | On-chain EVM bytecode inspection (`eth_getCode`), EIP-1967 proxy detection, selector forensics | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` | Evidence-based risk score with explicit `unknownFactors` listing. |
 | **DEX Quotes** | `AMMEngine` Constant Product $x \cdot y = k$ and Curve StableSwap with integer `bigint` math | `AVAILABLE`, `NO_LIQUIDITY`, `NOT_IMPLEMENTED` | Route ignored if no depth; rejects unverified pools. |
 | **Tx Simulation** | Real on-chain `balanceOf`, `allowance`, and gas price queries via Viem | `SIMULATED_SUCCESS`, `SIMULATED_REVERT`, `APPROVAL_REQUIRED` | Pre-flight rejection with custom revert reason decoding. |
-| **AI Intelligence** | Gemini 2.5 Flash grounded on live market metrics & quantitative backtest engine | `PROBABILISTIC_ANALYSIS` | AI acts as advisory copilot only. User signs all transactions. |
+| **Market Intelligence** | On-chain quantitative indicators (RSI, ATR, Bollinger, Order Book Imbalance) & backtest engine | `DETERMINISTIC_ANALYSIS` | Pure decentralized mathematical models. User signs all transactions. |
 
 ---
 

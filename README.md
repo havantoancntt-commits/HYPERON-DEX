@@ -83,9 +83,6 @@ The platform provides mathematically verified on-chain routing, dynamic split op
 Create a `.env` file in the project root based on `.env.example`:
 
 ```env
-# Gemini API Key for AI Market Insights & Portfolio Copilot
-GEMINI_API_KEY=your_gemini_api_key_here
-
 # App URL for hosted endpoints
 APP_URL=http://localhost:3000
 

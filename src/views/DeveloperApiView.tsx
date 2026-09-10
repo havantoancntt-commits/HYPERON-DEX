@@ -131,7 +131,7 @@ if (simulation.success) {
       {activeTab === 'sdk' ? (
         <div className="rounded-2xl bg-[#0A0A0A] border border-white/5 p-4 space-y-3 font-mono text-xs shadow-xl">
           <div className="flex items-center justify-between text-slate-400 pb-2 border-b border-white/5">
-            <span>npm install @aetherdex/sdk</span>
+            <span>npm install @hyperon/sdk</span>
             <button
               onClick={() => copyCode(sdkCode)}
               className="flex items-center gap-1 text-blue-400 hover:text-blue-300 cursor-pointer"
@@ -151,9 +151,9 @@ if (simulation.success) {
               Interactive Endpoint Tester
             </div>
             <div className="p-3 rounded-xl bg-[#121212] border border-white/5 font-mono text-xs text-slate-300">
-              {activeTab === 'quotes' && `curl -X POST https://aetherdex.io/api/quotes \\\n  -H "Content-Type: application/json" \\\n  -d '{"fromTokenSymbol":"ETH","toTokenSymbol":"USDC","amount":1.0}'`}
-              {activeTab === 'risk' && `curl -X POST https://aetherdex.io/api/ai/token-scanner \\\n  -H "Content-Type: application/json" \\\n  -d '{"address":"0xA0b8...B48","symbol":"USDC"}'`}
-              {activeTab === 'ai' && `curl -X GET https://aetherdex.io/api/ai/market-intelligence?symbol=ETH`}
+              {activeTab === 'quotes' && `curl -X POST https://hyperon.exchange/api/quotes \\\n  -H "Content-Type: application/json" \\\n  -d '{"fromTokenSymbol":"ETH","toTokenSymbol":"USDC","amount":1.0}'`}
+              {activeTab === 'risk' && `curl -X POST https://hyperon.exchange/api/ai/token-scanner \\\n  -H "Content-Type: application/json" \\\n  -d '{"address":"0xA0b8...B48","symbol":"USDC"}'`}
+              {activeTab === 'ai' && `curl -X GET https://hyperon.exchange/api/ai/market-intelligence?symbol=ETH`}
             </div>
 
             <button

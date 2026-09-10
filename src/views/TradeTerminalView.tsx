@@ -77,7 +77,7 @@ export const TradeTerminalView: React.FC = () => {
       setTakeProfit(tp);
       setStopLoss(sl);
       addToast({
-        title: 'Gemini Copilot Strategy Applied',
+        title: 'Quant ATR Strategy Applied',
         message: `Calculated Optimal Target: $${tp} (+4.2% liquidity cluster) | Invalidation: $${sl} (-2.2% ATR 2.0x band).`,
         type: 'success'
       });
@@ -87,7 +87,7 @@ export const TradeTerminalView: React.FC = () => {
       setTakeProfit(tp);
       setStopLoss(sl);
       addToast({
-        title: 'Gemini Copilot Strategy Applied',
+        title: 'Quant ATR Strategy Applied',
         message: `Calculated Short Target: $${tp} (-4.2% support floor) | Invalidation: $${sl} (+2.2% ATR resistance).`,
         type: 'success'
       });
@@ -973,11 +973,11 @@ export const TradeTerminalView: React.FC = () => {
               ))}
             </div>
 
-            {/* AI Copilot Tactical Strategy Box */}
+            {/* Quantitative ATR Copilot Tactical Strategy Box */}
             <div className="mt-3 p-2.5 rounded-xl bg-gradient-to-r from-blue-950/40 via-cyan-950/20 to-purple-950/30 border border-cyan-500/20">
               <div className="flex items-center justify-between text-[10px] font-mono mb-1.5">
                 <span className="text-cyan-300 font-bold flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-cyan-400" /> GEMINI COPILOT ASSIST
+                  <Zap className="w-3 h-3 text-cyan-400" /> QUANT ATR COPILOT
                 </span>
                 <button
                   onClick={handleApplyAICopilotStrategy}

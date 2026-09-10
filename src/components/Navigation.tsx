@@ -190,11 +190,11 @@ export const Navigation: React.FC = () => {
       {/* Mobile Bottom Navigation Dock */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#07090E]/95 backdrop-blur-xl border-t border-white/10 px-3 py-2 flex items-center justify-around">
         {[
-          { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-          { id: 'swap', label: 'Swap', icon: ArrowLeftRight },
-          { id: 'trade', label: 'Trade Pro', icon: LineChart },
-          { id: 'ai-intelligence', label: 'AI Suite', icon: Cpu },
-          { id: 'portfolio', label: 'Portfolio', icon: PieChart },
+          { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
+          { id: 'swap', label: t('nav.swap'), icon: ArrowLeftRight },
+          { id: 'trade', label: t('nav.trade'), icon: LineChart },
+          { id: 'ai-intelligence', label: t('nav.analytics'), icon: Activity },
+          { id: 'portfolio', label: t('nav.portfolio'), icon: PieChart },
         ].map((item) => {
           const Icon = item.icon;
           const isActive = activeView === item.id;
