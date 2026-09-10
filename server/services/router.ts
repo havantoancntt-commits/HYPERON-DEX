@@ -501,51 +501,121 @@ export class SmartGraphRouter {
       });
     }
 
-    // 5. Gas-Aware Split Routing Optimizer:
-    // Evaluates allocations (90/10, 80/20, 70/30, 60/40, 50/50, 40/60, 30/70, 20/80, 10/90) across top pools.
+    // 5. Hyperon UltraPath™ Convex Split Routing Optimizer:
+    // Evaluates 2-way and 3-way multi-pool combinations with coarse + fine-mesh 1% local refinement
     if (singlePoolCandidates.length >= 2 && effectiveAmountInRaw >= 1000n) {
-      // Sort single pools descending by output
+      // Sort single pools descending by raw output
       singlePoolCandidates.sort((a, b) =>
         b.quote.amountOutRaw > a.quote.amountOutRaw ? 1 : b.quote.amountOutRaw < a.quote.amountOutRaw ? -1 : 0
       );
 
-      const poolA = singlePoolCandidates[0].pool;
-      const poolB = singlePoolCandidates[1].pool;
+      const topPools = singlePoolCandidates.slice(0, 3);
+      const coarseSteps = [95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5];
 
-      const allocationSteps = [95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5];
       let bestSplitOutRaw = 0n;
-      let bestSplitAllocation = 0;
+      let bestPoolA: VerifiedPoolRecord | null = null;
+      let bestPoolB: VerifiedPoolRecord | null = null;
       let bestSplitQuoteA: AMMQuoteResult | null = null;
       let bestSplitQuoteB: AMMQuoteResult | null = null;
+      let bestAllocationPctA = 0;
 
-      for (const pctA of allocationSteps) {
-        const splitInA = (effectiveAmountInRaw * BigInt(pctA)) / 100n;
-        const splitInB = effectiveAmountInRaw - splitInA;
-
-        let qA: AMMQuoteResult | null = null;
-        let qB: AMMQuoteResult | null = null;
-
-        if (poolA.dexProtocol === 'Uniswap v3' && poolA.v3State) {
-          const isToken0In = poolA.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
-          qA = uniV3.computeQuoteWithV3State(splitInA, decimalsIn, decimalsOut, poolA.v3State, isToken0In);
-        } else if (poolA.reserves) {
-          qA = uniV2.computeQuote(splitInA, decimalsIn, decimalsOut, poolA.reserves, poolA.feeBps);
+      // Helper function to evaluate quote on a pool
+      const computePoolQuote = (pool: VerifiedPoolRecord, inputRaw: bigint): AMMQuoteResult | null => {
+        if (inputRaw <= 0n) return null;
+        if (pool.dexProtocol === 'Uniswap v3' && pool.v3State) {
+          const isToken0In = pool.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
+          return uniV3.computeQuoteWithV3State(inputRaw, decimalsIn, decimalsOut, pool.v3State, isToken0In);
+        } else if (pool.reserves) {
+          return uniV2.computeQuote(inputRaw, decimalsIn, decimalsOut, pool.reserves, pool.feeBps);
         }
+        return null;
+      };
 
-        if (poolB.dexProtocol === 'Uniswap v3' && poolB.v3State) {
-          const isToken0In = poolB.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
-          qB = uniV3.computeQuoteWithV3State(splitInB, decimalsIn, decimalsOut, poolB.v3State, isToken0In);
-        } else if (poolB.reserves) {
-          qB = uniV2.computeQuote(splitInB, decimalsIn, decimalsOut, poolB.reserves, poolB.feeBps);
+      // Test all pairs of top candidate pools
+      for (let i = 0; i < topPools.length; i++) {
+        for (let j = i + 1; j < topPools.length; j++) {
+          const candidatePoolA = topPools[i].pool;
+          const candidatePoolB = topPools[j].pool;
+
+          let pairBestOutRaw = 0n;
+          let pairBestCoarsePctA = 50;
+
+          // Step 1: Coarse search in 5% increments
+          for (const pctA of coarseSteps) {
+            const splitInA = (effectiveAmountInRaw * BigInt(pctA)) / 100n;
+            const splitInB = effectiveAmountInRaw - splitInA;
+
+            const qA = computePoolQuote(candidatePoolA, splitInA);
+            const qB = computePoolQuote(candidatePoolB, splitInB);
+
+            if (qA && qB && qA.status === 'AVAILABLE' && qB.status === 'AVAILABLE') {
+              const totalOut = qA.amountOutRaw + qB.amountOutRaw;
+              if (totalOut > pairBestOutRaw) {
+                pairBestOutRaw = totalOut;
+                pairBestCoarsePctA = pctA;
+              }
+            }
+          }
+
+          // Step 2: Fine-mesh local gradient refinement (±4% around peak in 1% steps)
+          const minFinePct = Math.max(1, pairBestCoarsePctA - 4);
+          const maxFinePct = Math.min(99, pairBestCoarsePctA + 4);
+
+          for (let finePctA = minFinePct; finePctA <= maxFinePct; finePctA++) {
+            const splitInA = (effectiveAmountInRaw * BigInt(finePctA)) / 100n;
+            const splitInB = effectiveAmountInRaw - splitInA;
+
+            const qA = computePoolQuote(candidatePoolA, splitInA);
+            const qB = computePoolQuote(candidatePoolB, splitInB);
+
+            if (qA && qB && qA.status === 'AVAILABLE' && qB.status === 'AVAILABLE') {
+              const totalOut = qA.amountOutRaw + qB.amountOutRaw;
+              if (totalOut > bestSplitOutRaw) {
+                bestSplitOutRaw = totalOut;
+                bestPoolA = candidatePoolA;
+                bestPoolB = candidatePoolB;
+                bestSplitQuoteA = qA;
+                bestSplitQuoteB = qB;
+                bestAllocationPctA = finePctA;
+              }
+            }
+          }
         }
+      }
 
-        if (qA && qB && qA.status === 'AVAILABLE' && qB.status === 'AVAILABLE') {
-          const totalOut = qA.amountOutRaw + qB.amountOutRaw;
-          if (totalOut > bestSplitOutRaw) {
-            bestSplitOutRaw = totalOut;
-            bestSplitAllocation = pctA;
-            bestSplitQuoteA = qA;
-            bestSplitQuoteB = qB;
+      // Step 3: Test 3-Way Split if 3 pools are available
+      if (topPools.length >= 3) {
+        const poolA3 = topPools[0].pool;
+        const poolB3 = topPools[1].pool;
+        const poolC3 = topPools[2].pool;
+
+        const threeWayProfiles = [
+          [50, 30, 20],
+          [40, 40, 20],
+          [45, 35, 20],
+          [60, 25, 15],
+          [34, 33, 33],
+        ];
+
+        for (const [pA, pB, pC] of threeWayProfiles) {
+          const inA = (effectiveAmountInRaw * BigInt(pA)) / 100n;
+          const inB = (effectiveAmountInRaw * BigInt(pB)) / 100n;
+          const inC = effectiveAmountInRaw - inA - inB;
+
+          const qA = computePoolQuote(poolA3, inA);
+          const qB = computePoolQuote(poolB3, inB);
+          const qC = computePoolQuote(poolC3, inC);
+
+          if (qA && qB && qC && qA.status === 'AVAILABLE' && qB.status === 'AVAILABLE' && qC.status === 'AVAILABLE') {
+            const totalOut3 = qA.amountOutRaw + qB.amountOutRaw + qC.amountOutRaw;
+            if (totalOut3 > bestSplitOutRaw) {
+              bestSplitOutRaw = totalOut3;
+              bestPoolA = poolA3;
+              bestPoolB = poolB3;
+              bestSplitQuoteA = qA;
+              bestSplitQuoteB = qB;
+              bestAllocationPctA = pA;
+            }
           }
         }
       }
@@ -583,21 +653,23 @@ export class SmartGraphRouter {
 
       // Only add split route if its NET profit (output minus gas cost) is strictly higher than single pool route
       if (
+        bestPoolA &&
+        bestPoolB &&
         bestSplitQuoteA &&
         bestSplitQuoteB &&
         bestSplitOutRaw > 0n &&
         splitNetProfitRaw > singleNetProfitRaw
       ) {
-        const pctB = 100 - bestSplitAllocation;
+        const pctB = 100 - bestAllocationPctA;
         const splitOutFormatted = formatUnits(bestSplitOutRaw, decimalsOut);
         const splitOutFloat = parseFloat(splitOutFormatted);
         const splitImpact =
-          (bestSplitQuoteA.priceImpactPercent * bestSplitAllocation +
+          (bestSplitQuoteA.priceImpactPercent * bestAllocationPctA +
             bestSplitQuoteB.priceImpactPercent * pctB) /
           100;
 
         candidates.push({
-          dexName: `Smart Split (${poolA.dexProtocol} ${bestSplitAllocation}% + ${poolB.dexProtocol} ${pctB}%)`,
+          dexName: `Smart Split (${bestPoolA.dexProtocol} ${bestAllocationPctA}% + ${bestPoolB.dexProtocol} ${pctB}%)`,
           protocol: 'Hyperon Multi-DEX Split',
           amountOutRaw: bestSplitOutRaw,
           amountOutFormatted: splitOutFormatted,
@@ -608,14 +680,14 @@ export class SmartGraphRouter {
           path: [fromToken.symbol, toToken.symbol],
           splits: [
             {
-              dexName: poolA.dexProtocol,
-              percentage: bestSplitAllocation,
+              dexName: bestPoolA.dexProtocol,
+              percentage: bestAllocationPctA,
               fromToken: fromToken.symbol,
               toToken: toToken.symbol,
               path: [fromToken.symbol, toToken.symbol],
             },
             {
-              dexName: poolB.dexProtocol,
+              dexName: bestPoolB.dexProtocol,
               percentage: pctB,
               fromToken: fromToken.symbol,
               toToken: toToken.symbol,

@@ -26,6 +26,7 @@ import {
   Lock,
   Flame,
   AlertCircle,
+  AlertTriangle,
   Copy,
   Activity
 } from 'lucide-react';
@@ -403,7 +404,7 @@ export const SwapView: React.FC = () => {
                   : 'bg-[#131926] text-slate-400 border border-white/[0.06]'
               }`}
             >
-              {autoSlippageActive ? '✓ AI Dynamic' : 'Custom'}
+              {autoSlippageActive ? '✓ Quant Dynamic' : 'Custom'}
             </button>
           </div>
 
@@ -441,6 +442,20 @@ export const SwapView: React.FC = () => {
               <span className="text-xs text-slate-400 font-bold">%</span>
             </div>
           </div>
+
+          {/* Dynamic Slippage Safety Guard Feedback */}
+          {slippage > 1.0 && (
+            <div className="text-[10px] font-mono text-amber-300 flex items-center gap-1.5 bg-amber-500/10 px-2.5 py-1.5 rounded-xl border border-amber-500/20">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+              <span>Cảnh báo: Trượt giá &gt; 1% có thể khiến giao dịch dễ bị bot MEV sandwich tấn công.</span>
+            </div>
+          )}
+          {slippage < 0.05 && (
+            <div className="text-[10px] font-mono text-cyan-300 flex items-center gap-1.5 bg-cyan-500/10 px-2.5 py-1.5 rounded-xl border border-cyan-500/20">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 text-cyan-400" />
+              <span>Trượt giá &lt; 0.05% yêu cầu thanh khoản dày, có thể bị revert nếu giá biến động mạnh.</span>
+            </div>
+          )}
 
           <div className="pt-2.5 border-t border-white/[0.06] flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -531,6 +546,27 @@ export const SwapView: React.FC = () => {
               ))}
             </div>
           </div>
+
+          {/* Quick Select Token Shortcuts */}
+          <div className="flex items-center gap-1.5 pt-0.5 overflow-x-auto no-scrollbar">
+            <span className="text-[10px] font-mono text-slate-500 uppercase shrink-0">Nhanh:</span>
+            {['ETH', 'USDC', 'USDT', 'WBTC', 'DAI'].map((sym) => (
+              <button
+                key={sym}
+                onClick={() => {
+                  if (toSymbol === sym) setToSymbol(fromSymbol);
+                  setFromSymbol(sym);
+                }}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                  fromSymbol === sym
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                    : 'bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.07] border border-white/[0.04]'
+                }`}
+              >
+                {sym}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* SWAP DIRECTION SWITCHER */}
@@ -589,6 +625,27 @@ export const SwapView: React.FC = () => {
               )}
               <RefreshCw className="w-3 h-3 ml-0.5 opacity-60" />
             </button>
+          </div>
+
+          {/* Quick Select Token Shortcuts */}
+          <div className="flex items-center gap-1.5 pt-0.5 overflow-x-auto no-scrollbar">
+            <span className="text-[10px] font-mono text-slate-500 uppercase shrink-0">Nhanh:</span>
+            {['USDC', 'USDT', 'ETH', 'WBTC', 'DAI'].map((sym) => (
+              <button
+                key={sym}
+                onClick={() => {
+                  if (fromSymbol === sym) setFromSymbol(toSymbol);
+                  setToSymbol(sym);
+                }}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                  toSymbol === sym
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                    : 'bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.07] border border-white/[0.04]'
+                }`}
+              >
+                {sym}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -908,7 +965,7 @@ export const SwapView: React.FC = () => {
           )}
         </div>
 
-        {/* Accordion 3: AI Intelligence & Flashbots Defense */}
+        {/* Accordion 3: Hyperon Quant Analytics & Flashbots Defense */}
         <div>
           <button
             onClick={() => setActiveTab(activeTab === 'ai' ? null : 'ai')}
@@ -916,7 +973,7 @@ export const SwapView: React.FC = () => {
           >
             <div className="flex items-center gap-2 font-bold text-white">
               <Cpu className="w-4 h-4 text-cyan-400" />
-              <span>Phân Tích Trí Tuệ Nhân Tạo & Phòng Thủ MEV</span>
+              <span>Phân Tích Định Lượng & Phòng Thủ MEV (Quant Engine)</span>
             </div>
             <div className="flex items-center gap-2 font-mono text-slate-400 text-[11px]">
               <span className="text-emerald-400 font-bold">Flashbots Relay</span>
@@ -927,7 +984,7 @@ export const SwapView: React.FC = () => {
           {activeTab === 'ai' && quote && (
             <div className="p-4 bg-[#080C14] space-y-3 font-sans border-t border-white/[0.04]">
               <p className="text-slate-300 text-xs leading-relaxed">
-                {quote.aiRouteInsight || 'Hệ thống Smart Router liên tục theo dõi thanh khoản các sàn để đảm bảo mức trượt giá và chi phí gas là thấp nhất thị trường.'}
+                {quote.aiRouteInsight || 'Thuật toán định tuyến Hyperon UltraPath™ liên tục tính toán đạo hàm biên độ thanh khoản liên sàn để khóa chặt trượt giá và chi phí gas thực tế thấp nhất.'}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
                 <div className="p-2.5 rounded-xl bg-black/40 border border-white/[0.06] flex items-center gap-2">
