@@ -69,7 +69,7 @@ export interface AMMQuoteResult {
   feePaidFormatted: string;
   gasEstimatedUnits: number;
   dexAdapterName: string;
-  status: 'AVAILABLE' | 'NO_LIQUIDITY' | 'UNSUPPORTED_POOL' | 'UNAVAILABLE' | 'INSUFFICIENT_DATA';
+  status: 'AVAILABLE' | 'NO_LIQUIDITY' | 'UNSUPPORTED_POOL' | 'UNAVAILABLE' | 'INSUFFICIENT_DATA' | 'SIMULATION_INCOMPLETE';
 }
 
 export const AMM_GAS_CONFIG = {
@@ -272,6 +272,8 @@ export class UniswapV3Adapter implements IDexAdapter {
       priceImpactPercent = priceImpactBps / 100;
     }
 
+    const status = simResult.status === 'SUCCESS' ? 'AVAILABLE' : simResult.status;
+
     return {
       amountInRaw,
       amountOutRaw,
@@ -285,7 +287,7 @@ export class UniswapV3Adapter implements IDexAdapter {
       feePaidFormatted: formatUnits(feePaidRaw, decimalsIn),
       gasEstimatedUnits: AMM_GAS_CONFIG.UNISWAP_V3_GAS,
       dexAdapterName: `${this.name} (${(poolState.feeTierBps || 5) / 100}%)`,
-      status: 'AVAILABLE',
+      status,
     };
   }
 
@@ -602,10 +604,22 @@ export class BalancerAdapter implements IDexAdapter {
         amountOutRaw = (bOut * complement) / ONE_ETHER;
       }
     } else {
-      // Standard 50/50 fallback
-      const num = bOut * amountInWithFee;
-      const den = bIn + amountInWithFee;
-      amountOutRaw = den > 0n ? num / den : 0n;
+      // STRICT COMPLIANCE: Do NOT fallback to 50/50 if pool weights are unsupported.
+      return {
+        amountInRaw,
+        amountOutRaw: 0n,
+        amountInFormatted: formatUnits(amountInRaw, decimalsIn),
+        amountOutFormatted: '0.0',
+        spotPriceBefore: 0,
+        executionPrice: 0,
+        priceImpactBps: 0,
+        priceImpactPercent: 0,
+        feePaidRaw: 0n,
+        feePaidFormatted: '0.0',
+        gasEstimatedUnits: 0,
+        dexAdapterName: `${this.name} ${weightIn}/${weightOut}`,
+        status: 'UNSUPPORTED_POOL',
+      };
     }
 
     const scaleFactorIn = 10n ** BigInt(decimalsIn);

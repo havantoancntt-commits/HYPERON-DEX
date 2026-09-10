@@ -122,41 +122,85 @@ export class TickMath {
 export class SqrtPriceMath {
   /**
    * Gets the next sqrt price given an input amount of token0 or token1.
-   * Conservative rounding:
-   * - zeroForOne = true: token0 in, price decreases. Next price rounded UP so amountOut is smaller.
-   * - zeroForOne = false: token1 in, price increases. Next price rounded DOWN so amountOut is smaller.
+   * Bit-exact match with Uniswap V3 SqrtPriceMath.sol.
    */
+  public static getNextSqrtPriceFromAmount0RoundingUp(
+    sqrtPX96: bigint,
+    liquidity: bigint,
+    amount: bigint,
+    add: boolean
+  ): bigint {
+    if (amount === 0n) return sqrtPX96;
+    const numerator1 = liquidity * Q96;
+
+    if (add) {
+      const product = amount * sqrtPX96;
+      if (product / amount === sqrtPX96) {
+        const denominator = numerator1 + product;
+        if (denominator >= numerator1) {
+          return FullMath.mulDivRoundingUp(numerator1, sqrtPX96, denominator);
+        }
+      }
+      return FullMath.mulDivRoundingUp(numerator1, 1n, (numerator1 / sqrtPX96) + amount);
+    } else {
+      const product = amount * sqrtPX96;
+      if (product / amount !== sqrtPX96 || numerator1 <= product) {
+        throw new FormalMathError('SqrtPriceMath: underflow in getNextSqrtPriceFromAmount0RoundingUp', 'UNDERFLOW');
+      }
+      const denominator = numerator1 - product;
+      return FullMath.mulDivRoundingUp(numerator1, sqrtPX96, denominator);
+    }
+  }
+
+  public static getNextSqrtPriceFromAmount1RoundingDown(
+    sqrtPX96: bigint,
+    liquidity: bigint,
+    amount: bigint,
+    add: boolean
+  ): bigint {
+    if (add) {
+      const quotient = (amount * Q96) / liquidity;
+      return sqrtPX96 + quotient;
+    } else {
+      const quotient = FullMath.mulDivRoundingUp(amount, Q96, liquidity);
+      if (sqrtPX96 <= quotient) {
+        throw new FormalMathError('SqrtPriceMath: underflow in getNextSqrtPriceFromAmount1RoundingDown', 'UNDERFLOW');
+      }
+      return sqrtPX96 - quotient;
+    }
+  }
+
   public static getNextSqrtPriceFromInput(
     sqrtPX96: bigint,
     liquidity: bigint,
     amountIn: bigint,
     zeroForOne: boolean
   ): bigint {
-    if (sqrtPX96 <= 0n || liquidity <= 0n || amountIn <= 0n) return sqrtPX96;
-
-    if (zeroForOne) {
-      // Selling token0 for token1 -> Price drops
-      // Formula: sqrtP_next = (L * Q96 * sqrtP) / (L * Q96 + amountIn * sqrtP)
-      const num1 = liquidity * Q96;
-      const product = amountIn * sqrtPX96;
-
-      // Guard against 512-bit overflow
-      const denominator = num1 + product;
-      if (denominator <= 0n) return MIN_SQRT_RATIO;
-
-      // Conservative: round UP
-      return FullMath.mulDivRoundingUp(num1, sqrtPX96, denominator);
-    } else {
-      // Selling token1 for token0 -> Price increases
-      // Formula: sqrtP_next = sqrtP + (amountIn * Q96) / L
-      // Conservative: round DOWN
-      const quotient = (amountIn * Q96) / liquidity;
-      return sqrtPX96 + quotient;
+    if (sqrtPX96 <= 0n || liquidity <= 0n) {
+      throw new FormalMathError('SqrtPriceMath: invalid price or liquidity', 'INVALID_STATE');
     }
+    return zeroForOne
+      ? SqrtPriceMath.getNextSqrtPriceFromAmount0RoundingUp(sqrtPX96, liquidity, amountIn, true)
+      : SqrtPriceMath.getNextSqrtPriceFromAmount1RoundingDown(sqrtPX96, liquidity, amountIn, true);
+  }
+
+  public static getNextSqrtPriceFromOutput(
+    sqrtPX96: bigint,
+    liquidity: bigint,
+    amountOut: bigint,
+    zeroForOne: boolean
+  ): bigint {
+    if (sqrtPX96 <= 0n || liquidity <= 0n) {
+      throw new FormalMathError('SqrtPriceMath: invalid price or liquidity', 'INVALID_STATE');
+    }
+    return zeroForOne
+      ? SqrtPriceMath.getNextSqrtPriceFromAmount1RoundingDown(sqrtPX96, liquidity, amountOut, false)
+      : SqrtPriceMath.getNextSqrtPriceFromAmount0RoundingUp(sqrtPX96, liquidity, amountOut, false);
   }
 
   /**
    * Gets amount0 delta between two sqrt ratios.
+   * Calculations: liquidity * (upper - lower) / (upper * lower)
    */
   public static getAmount0Delta(
     sqrtRatioAX96: bigint,
@@ -182,12 +226,13 @@ export class SqrtPriceMath {
         lower
       );
     } else {
-      return (numerator1 * numerator2 / upper) / lower;
+      return FullMath.mulDiv(numerator1, numerator2, upper) / lower;
     }
   }
 
   /**
    * Gets amount1 delta between two sqrt ratios.
+   * Calculations: liquidity * (upper - lower) / Q96
    */
   public static getAmount1Delta(
     sqrtRatioAX96: bigint,
@@ -215,6 +260,7 @@ export class SqrtPriceMath {
 export class SwapMath {
   /**
    * Computes a single swap step from current sqrt price to target sqrt price.
+   * Bit-exact translation of Uniswap V3 SwapMath.sol computeSwapStep.
    */
   public static computeSwapStep(
     sqrtRatioCurrentX96: bigint,
@@ -240,36 +286,35 @@ export class SwapMath {
     const amountRemainingLessFee = FullMath.mulDiv(amountRemaining, 1_000_000n - feePipsBig, 1_000_000n);
 
     // Max amountIn to reach target
-    const maxAmountInToTarget = zeroForOne
+    amountIn = zeroForOne
       ? SqrtPriceMath.getAmount0Delta(sqrtRatioTargetX96, sqrtRatioCurrentX96, liquidity, true)
       : SqrtPriceMath.getAmount1Delta(sqrtRatioCurrentX96, sqrtRatioTargetX96, liquidity, true);
 
-    if (amountRemainingLessFee >= maxAmountInToTarget) {
-      // Step reaches target tick boundary!
+    if (amountRemainingLessFee >= amountIn) {
       sqrtRatioNextX96 = sqrtRatioTargetX96;
-      amountIn = maxAmountInToTarget;
-      feeAmount = FullMath.mulDivRoundingUp(amountIn, feePipsBig, 1_000_000n - feePipsBig);
-      amountOut = zeroForOne
-        ? SqrtPriceMath.getAmount1Delta(sqrtRatioTargetX96, sqrtRatioCurrentX96, liquidity, false)
-        : SqrtPriceMath.getAmount0Delta(sqrtRatioCurrentX96, sqrtRatioTargetX96, liquidity, false);
     } else {
-      // Partial step within current range
       sqrtRatioNextX96 = SqrtPriceMath.getNextSqrtPriceFromInput(
         sqrtRatioCurrentX96,
         liquidity,
         amountRemainingLessFee,
         zeroForOne
       );
+    }
 
-      if (zeroForOne) {
-        amountIn = SqrtPriceMath.getAmount0Delta(sqrtRatioNextX96, sqrtRatioCurrentX96, liquidity, true);
-        amountOut = SqrtPriceMath.getAmount1Delta(sqrtRatioNextX96, sqrtRatioCurrentX96, liquidity, false);
-      } else {
-        amountIn = SqrtPriceMath.getAmount1Delta(sqrtRatioCurrentX96, sqrtRatioNextX96, liquidity, true);
-        amountOut = SqrtPriceMath.getAmount0Delta(sqrtRatioCurrentX96, sqrtRatioNextX96, liquidity, false);
-      }
+    const max = sqrtRatioTargetX96 === sqrtRatioNextX96;
 
+    if (zeroForOne) {
+      amountIn = max ? amountIn : SqrtPriceMath.getAmount0Delta(sqrtRatioNextX96, sqrtRatioCurrentX96, liquidity, true);
+      amountOut = SqrtPriceMath.getAmount1Delta(sqrtRatioNextX96, sqrtRatioCurrentX96, liquidity, false);
+    } else {
+      amountIn = max ? amountIn : SqrtPriceMath.getAmount1Delta(sqrtRatioCurrentX96, sqrtRatioNextX96, liquidity, true);
+      amountOut = SqrtPriceMath.getAmount0Delta(sqrtRatioCurrentX96, sqrtRatioNextX96, liquidity, false);
+    }
+
+    if (!max) {
       feeAmount = amountRemaining > amountIn ? amountRemaining - amountIn : 0n;
+    } else {
+      feeAmount = FullMath.mulDivRoundingUp(amountIn, feePipsBig, 1_000_000n - feePipsBig);
     }
 
     return {
@@ -299,10 +344,13 @@ export interface V3SwapSimulationResult {
   endSqrtPriceX96: bigint;
   endTick: number;
   ticksCrossed: number;
+  status: 'SUCCESS' | 'SIMULATION_INCOMPLETE' | 'NO_LIQUIDITY';
 }
 
 /**
- * Simulates an exactInput Uniswap V3 swap with tick crossing.
+ * Simulates an exactInput Uniswap V3 swap with full multi-tick crossing.
+ * Traverses initialized ticks in swap direction, updates active liquidity,
+ * and maintains bit-exact invariant matching Uniswap V3 Pool.swap.
  */
 export function simulateUniswapV3Swap(params: {
   sqrtPriceX96: bigint;
@@ -321,6 +369,18 @@ export function simulateUniswapV3Swap(params: {
     ticks = [],
   } = params;
 
+  if (params.sqrtPriceX96 <= 0n || amountIn <= 0n) {
+    return {
+      amountInConsumed: 0n,
+      amountOut: 0n,
+      feePaid: 0n,
+      endSqrtPriceX96: params.sqrtPriceX96,
+      endTick: params.tick,
+      ticksCrossed: 0,
+      status: 'NO_LIQUIDITY',
+    };
+  }
+
   let currentSqrtP = params.sqrtPriceX96;
   let currentL = params.liquidity;
   let currentTick = params.tick;
@@ -328,49 +388,70 @@ export function simulateUniswapV3Swap(params: {
   const defaultLimit = zeroForOne ? MIN_SQRT_RATIO + 1n : MAX_SQRT_RATIO - 1n;
   const sqrtPriceLimitX96 = params.sqrtPriceLimitX96 || defaultLimit;
 
+  // Validate price limit
+  if (zeroForOne) {
+    if (sqrtPriceLimitX96 <= MIN_SQRT_RATIO || sqrtPriceLimitX96 >= currentSqrtP) {
+      // Out of bounds limit
+      return {
+        amountInConsumed: 0n,
+        amountOut: 0n,
+        feePaid: 0n,
+        endSqrtPriceX96: currentSqrtP,
+        endTick: currentTick,
+        ticksCrossed: 0,
+        status: 'NO_LIQUIDITY',
+      };
+    }
+  } else {
+    if (sqrtPriceLimitX96 >= MAX_SQRT_RATIO || sqrtPriceLimitX96 <= currentSqrtP) {
+      return {
+        amountInConsumed: 0n,
+        amountOut: 0n,
+        feePaid: 0n,
+        endSqrtPriceX96: currentSqrtP,
+        endTick: currentTick,
+        ticksCrossed: 0,
+        status: 'NO_LIQUIDITY',
+      };
+    }
+  }
+
   let amountRemaining = amountIn;
   let totalAmountOut = 0n;
   let totalFeePaid = 0n;
   let ticksCrossed = 0;
 
-  // Filter and sort initialized ticks in swap direction
-  const sortedTicks = [...ticks].sort((a, b) => (a.tick > b.tick ? 1 : a.tick < b.tick ? -1 : 0));
+  // Filter and sort candidate initialized ticks in the direction of traversal
+  // If zeroForOne (price decreasing, tick decreasing):
+  // Filter ticks < currentTick, sort descending (highest tick first)
+  // If !zeroForOne (price increasing, tick increasing):
+  // Filter ticks > currentTick, sort ascending (lowest tick first)
+  const candidateTicks = zeroForOne
+    ? ticks.filter((t) => t.tick < currentTick).sort((a, b) => b.tick - a.tick)
+    : ticks.filter((t) => t.tick > currentTick).sort((a, b) => a.tick - b.tick);
 
-  let tickIndex = zeroForOne
-    ? sortedTicks.findIndex((t) => t.tick <= currentTick)
-    : sortedTicks.findIndex((t) => t.tick > currentTick);
-
-  const MAX_STEPS = 100;
+  let tickPtr = 0;
+  const MAX_STEPS = 200;
   let steps = 0;
 
-  while (amountRemaining > 0n && currentL > 0n && steps < MAX_STEPS) {
+  while (amountRemaining > 0n && steps < MAX_STEPS) {
     steps++;
 
-    // Find next target tick
-    let nextTick: V3Tick | null = null;
-    if (zeroForOne) {
-      // Moving down in price
-      for (let i = sortedTicks.length - 1; i >= 0; i--) {
-        if (sortedTicks[i].tick < currentTick) {
-          nextTick = sortedTicks[i];
-          break;
-        }
-      }
-    } else {
-      // Moving up in price
-      for (let i = 0; i < sortedTicks.length; i++) {
-        if (sortedTicks[i].tick > currentTick) {
-          nextTick = sortedTicks[i];
-          break;
-        }
-      }
+    if (currentL <= 0n) {
+      // Cannot execute swap step without active liquidity
+      break;
     }
 
+    const nextTick: V3Tick | undefined = candidateTicks[tickPtr];
     let targetSqrtP: bigint;
+
     if (nextTick) {
-      targetSqrtP = TickMath.getSqrtRatioAtTick(nextTick.tick);
-      if (zeroForOne && targetSqrtP < sqrtPriceLimitX96) targetSqrtP = sqrtPriceLimitX96;
-      if (!zeroForOne && targetSqrtP > sqrtPriceLimitX96) targetSqrtP = sqrtPriceLimitX96;
+      const nextTickSqrtP = TickMath.getSqrtRatioAtTick(nextTick.tick);
+      if (zeroForOne) {
+        targetSqrtP = nextTickSqrtP < sqrtPriceLimitX96 ? sqrtPriceLimitX96 : nextTickSqrtP;
+      } else {
+        targetSqrtP = nextTickSqrtP > sqrtPriceLimitX96 ? sqrtPriceLimitX96 : nextTickSqrtP;
+      }
     } else {
       targetSqrtP = sqrtPriceLimitX96;
     }
@@ -383,21 +464,27 @@ export function simulateUniswapV3Swap(params: {
       feePips
     );
 
-    amountRemaining -= (step.amountIn + step.feeAmount);
+    const stepCost = step.amountIn + step.feeAmount;
+    amountRemaining = amountRemaining >= stepCost ? amountRemaining - stepCost : 0n;
     totalAmountOut += step.amountOut;
     totalFeePaid += step.feeAmount;
     currentSqrtP = step.sqrtRatioNextX96;
 
-    if (currentSqrtP === targetSqrtP && nextTick) {
-      // Cross tick!
-      ticksCrossed++;
-      currentL = zeroForOne
-        ? LiquidityMath.addDelta(currentL, -nextTick.liquidityNet)
-        : LiquidityMath.addDelta(currentL, nextTick.liquidityNet);
-
-      currentTick = zeroForOne ? nextTick.tick - 1 : nextTick.tick;
-    } else if (currentSqrtP !== targetSqrtP) {
-      // Swap completed within tick interval
+    if (currentSqrtP === targetSqrtP) {
+      if (nextTick && targetSqrtP === TickMath.getSqrtRatioAtTick(nextTick.tick)) {
+        // Cross initialized tick
+        ticksCrossed++;
+        const netLiquidity = zeroForOne ? -nextTick.liquidityNet : nextTick.liquidityNet;
+        currentL = LiquidityMath.addDelta(currentL, netLiquidity);
+        currentTick = zeroForOne ? nextTick.tick - 1 : nextTick.tick;
+        tickPtr++;
+      } else {
+        // Reached price limit
+        currentTick = TickMath.getTickAtSqrtRatio(currentSqrtP);
+        break;
+      }
+    } else {
+      // Step completed within current tick interval
       currentTick = TickMath.getTickAtSqrtRatio(currentSqrtP);
       break;
     }
@@ -407,12 +494,24 @@ export function simulateUniswapV3Swap(params: {
     }
   }
 
+  const amountInConsumed = amountIn - amountRemaining;
+  let status: 'SUCCESS' | 'SIMULATION_INCOMPLETE' | 'NO_LIQUIDITY' = 'SUCCESS';
+
+  if (amountRemaining > 0n) {
+    if (amountInConsumed === 0n) {
+      status = 'NO_LIQUIDITY';
+    } else {
+      status = 'SIMULATION_INCOMPLETE';
+    }
+  }
+
   return {
-    amountInConsumed: amountIn - amountRemaining,
+    amountInConsumed,
     amountOut: totalAmountOut,
     feePaid: totalFeePaid,
     endSqrtPriceX96: currentSqrtP,
     endTick: currentTick,
     ticksCrossed,
+    status,
   };
 }
