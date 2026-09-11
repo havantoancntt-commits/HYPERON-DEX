@@ -25,6 +25,7 @@ export interface LiquidityEdge {
   feeBps: number;
   gasCostUnits: number;
   protocolVersion: 'v2' | 'v3' | 'curve' | 'balancer';
+  lastBlockNumber?: number;
 }
 
 export interface HeatmapCacheEntry {
@@ -201,6 +202,7 @@ export class UltraRouter {
         feeBps,
         gasCostUnits,
         protocolVersion,
+        lastBlockNumber: pool.lastBlockNumber ? Number(pool.lastBlockNumber) : undefined,
       });
     }
 
@@ -415,9 +417,9 @@ export class UltraRouter {
     const isSplit = bestSplits.length > 1;
     const totalGasUnits = isSplit ? 185_000 : 135_000;
     const nativeSymbol = chainId === 56 ? 'BNB' : chainId === 137 ? 'POL' : 'ETH';
-    const nativePriceUsd = getUsdPrice(nativeSymbol) || 2500;
+    const nativePriceUsd = getUsdPrice(nativeSymbol) || 0;
     const gasPriceGwei = 25;
-    const gasCostUsd = Number(((totalGasUnits * gasPriceGwei * 1e-9) * nativePriceUsd).toFixed(2));
+    const gasCostUsd = nativePriceUsd > 0 ? Number(((totalGasUnits * gasPriceGwei * 1e-9) * nativePriceUsd).toFixed(2)) : 0;
     const tokenOutPriceUsd = getUsdPrice(tokenOutSymbol) || (tokenOutSymbol.includes('USD') ? 1.0 : 0);
 
     let netSavingsUsd = 0;
@@ -425,7 +427,7 @@ export class UltraRouter {
       const extraTokensOut = bestOutput - singleVenueResults[0].output;
       const extraTokensOutFloat = Number(formatUnits(extraTokensOut, tokenOutObj.decimals));
       const extraOutputUsd = tokenOutPriceUsd > 0 ? extraTokensOutFloat * tokenOutPriceUsd : 0;
-      const extraGasCostUsd = (50_000 * gasPriceGwei * 1e-9) * nativePriceUsd;
+      const extraGasCostUsd = nativePriceUsd > 0 ? (50_000 * gasPriceGwei * 1e-9) * nativePriceUsd : 0;
       netSavingsUsd = Math.max(0, Number((extraOutputUsd - extraGasCostUsd).toFixed(2)));
     }
 
@@ -433,12 +435,12 @@ export class UltraRouter {
     const randomizedDelay = Math.floor(Math.random() * 250) + 50; // 50ms - 300ms jitter
     const bundleId = `bundle-0x${randomBytes(12).toString('hex')}`;
     const mevProtection: MevProtectionBundle = {
-      relayEndpoint: 'https://rpc.flashbots.net/fast',
-      targetBlock: 21_850_001,
+      relayEndpoint: chainId === 1 ? 'https://rpc.flashbots.net/fast' : 'https://rpc.mevblocker.io',
+      targetBlock: singleVenueResults[0]?.edge.lastBlockNumber ? singleVenueResults[0].edge.lastBlockNumber + 1 : 0,
       bundleId,
       randomizedSubmissionDelayMs: randomizedDelay,
       frontrunningImmunity: true,
-      sandwichRiskScore: 0,
+      sandwichRiskScore: priceImpactBps > 100 ? 55 : priceImpactBps > 30 ? 25 : 5,
     };
 
     // Calculate calculation latency

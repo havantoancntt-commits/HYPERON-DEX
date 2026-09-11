@@ -344,6 +344,7 @@ export class CurveAdapter implements IDexAdapter {
 
     let D = sum;
     const Ann = A * N;
+    let converged = false;
 
     // Newton's method for D:
     // D_next = (Ann * sum + N * D_P) * D / ((Ann - 1) * D + (N + 1) * D_P)
@@ -365,8 +366,13 @@ export class CurveAdapter implements IDexAdapter {
       // Convergence test: abs(D - D_prev) <= 1
       const diff = D > D_prev ? D - D_prev : D_prev - D;
       if (diff <= 1n) {
+        converged = true;
         break;
       }
+    }
+
+    if (!converged) {
+      throw new Error('CURVE_CONVERGENCE_ERROR: StableSwap invariant D did not converge within 255 iterations');
     }
 
     return D;
@@ -397,6 +403,7 @@ export class CurveAdapter implements IDexAdapter {
     // Newton iteration for y:
     // y_{k+1} = (y_k^2 + c) / (2 * y_k + b - D)
     let y = D;
+    let converged = false;
     for (let iter = 0; iter < 255; iter++) {
       const y_prev = y;
       const num = y * y + c;
@@ -407,8 +414,13 @@ export class CurveAdapter implements IDexAdapter {
 
       const diff = y > y_prev ? y - y_prev : y_prev - y;
       if (diff <= 1n) {
+        converged = true;
         break;
       }
+    }
+
+    if (!converged) {
+      throw new Error('CURVE_CONVERGENCE_ERROR: StableSwap get_y did not converge within 255 iterations');
     }
 
     return y;
@@ -439,91 +451,109 @@ export class CurveAdapter implements IDexAdapter {
       };
     }
 
-    const feeBps = 4n; // Curve default 0.04%
+    try {
+      const feeBps = 4n; // Curve default 0.04%
 
-    // Scale all balances to uniform 18 decimals using FormalMath for StableSwap invariant computation
-    const normBal0 = FormalMath.normalizeTo18(reserves.reserve0, decimalsIn);
-    const normBal1 = FormalMath.normalizeTo18(reserves.reserve1, decimalsOut);
-    const normAmountIn = FormalMath.normalizeTo18(amountInRaw, decimalsIn);
+      // Scale all balances to uniform 18 decimals using FormalMath for StableSwap invariant computation
+      const normBal0 = FormalMath.normalizeTo18(reserves.reserve0, decimalsIn);
+      const normBal1 = FormalMath.normalizeTo18(reserves.reserve1, decimalsOut);
+      const normAmountIn = FormalMath.normalizeTo18(amountInRaw, decimalsIn);
 
-    const balances = [normBal0, normBal1];
-    const D = this.computeD(balances, A_param);
+      const balances = [normBal0, normBal1];
+      const D = this.computeD(balances, A_param);
 
-    if (D <= 0n) {
+      if (D <= 0n) {
+        return {
+          amountInRaw,
+          amountOutRaw: 0n,
+          amountInFormatted: formatUnits(amountInRaw, decimalsIn),
+          amountOutFormatted: '0.0',
+          spotPriceBefore: 1.0,
+          executionPrice: 0,
+          priceImpactBps: 0,
+          priceImpactPercent: 0,
+          feePaidRaw: 0n,
+          feePaidFormatted: '0.0',
+          gasEstimatedUnits: 160000,
+          dexAdapterName: this.name,
+          status: 'UNSUPPORTED_POOL',
+        };
+      }
+
+      const newX = normBal0 + normAmountIn;
+      const newY = this.getY(0, 1, newX, balances, A_param, D);
+
+      if (newY >= normBal1) {
+        return {
+          amountInRaw,
+          amountOutRaw: 0n,
+          amountInFormatted: formatUnits(amountInRaw, decimalsIn),
+          amountOutFormatted: '0.0',
+          spotPriceBefore: 1.0,
+          executionPrice: 0,
+          priceImpactBps: 0,
+          priceImpactPercent: 0,
+          feePaidRaw: 0n,
+          feePaidFormatted: '0.0',
+          gasEstimatedUnits: AMM_GAS_CONFIG.CURVE_GAS,
+          dexAdapterName: this.name,
+          status: 'NO_LIQUIDITY',
+        };
+      }
+
+      const rawDyNorm = normBal1 - newY;
+      // Deduct swap fee: dyWithFee = dy * (10000 - feeBps) / 10000
+      const dyWithFeeNorm = (rawDyNorm * (BPS_DENOMINATOR - feeBps)) / BPS_DENOMINATOR;
+      const amountOutRaw = FormalMath.denormalizeFrom18(dyWithFeeNorm, decimalsOut);
+      const feePaidRaw = (amountInRaw * feeBps) / BPS_DENOMINATOR;
+
+      const scaleFactorIn = 10n ** BigInt(decimalsIn);
+      const scaleFactorOut = 10n ** BigInt(decimalsOut);
+      const spotPriceScaled = ONE_ETHER; // 1.0 in 1e18
+      const execPriceScaled = (amountOutRaw * scaleFactorIn * ONE_ETHER) / (amountInRaw * scaleFactorOut);
+      const executionPrice = Number(formatUnits(execPriceScaled, 18));
+
+      let priceImpactPercent = 0;
+      let priceImpactBps = 0;
+      if (spotPriceScaled > execPriceScaled && spotPriceScaled > 0n) {
+        const diff = spotPriceScaled - execPriceScaled;
+        priceImpactBps = Number((diff * 10000n) / spotPriceScaled);
+        priceImpactPercent = priceImpactBps / 100;
+      }
+
       return {
         amountInRaw,
-        amountOutRaw: 0n,
+        amountOutRaw,
         amountInFormatted: formatUnits(amountInRaw, decimalsIn),
-        amountOutFormatted: '0.0',
+        amountOutFormatted: formatUnits(amountOutRaw, decimalsOut),
         spotPriceBefore: 1.0,
-        executionPrice: 0,
-        priceImpactBps: 0,
-        priceImpactPercent: 0,
-        feePaidRaw: 0n,
-        feePaidFormatted: '0.0',
-        gasEstimatedUnits: 160000,
-        dexAdapterName: this.name,
-        status: 'UNSUPPORTED_POOL',
-      };
-    }
-
-    const newX = normBal0 + normAmountIn;
-    const newY = this.getY(0, 1, newX, balances, A_param, D);
-
-    if (newY >= normBal1) {
-      return {
-        amountInRaw,
-        amountOutRaw: 0n,
-        amountInFormatted: formatUnits(amountInRaw, decimalsIn),
-        amountOutFormatted: '0.0',
-        spotPriceBefore: 1.0,
-        executionPrice: 0,
-        priceImpactBps: 0,
-        priceImpactPercent: 0,
-        feePaidRaw: 0n,
-        feePaidFormatted: '0.0',
+        executionPrice: Number(executionPrice.toFixed(6)),
+        priceImpactBps,
+        priceImpactPercent: Number(priceImpactPercent.toFixed(4)),
+        feePaidRaw,
+        feePaidFormatted: formatUnits(feePaidRaw, decimalsIn),
         gasEstimatedUnits: AMM_GAS_CONFIG.CURVE_GAS,
         dexAdapterName: this.name,
-        status: 'NO_LIQUIDITY',
+        status: 'AVAILABLE',
+      };
+    } catch {
+      // Fail closed on numerical non-convergence or invariant failure
+      return {
+        amountInRaw,
+        amountOutRaw: 0n,
+        amountInFormatted: formatUnits(amountInRaw, decimalsIn),
+        amountOutFormatted: '0.0',
+        spotPriceBefore: 1.0,
+        executionPrice: 0,
+        priceImpactBps: 0,
+        priceImpactPercent: 0,
+        feePaidRaw: 0n,
+        feePaidFormatted: '0.0',
+        gasEstimatedUnits: 0,
+        dexAdapterName: this.name,
+        status: 'UNAVAILABLE',
       };
     }
-
-    const rawDyNorm = normBal1 - newY;
-    // Deduct swap fee: dyWithFee = dy * (10000 - feeBps) / 10000
-    const dyWithFeeNorm = (rawDyNorm * (BPS_DENOMINATOR - feeBps)) / BPS_DENOMINATOR;
-    const amountOutRaw = FormalMath.denormalizeFrom18(dyWithFeeNorm, decimalsOut);
-    const feePaidRaw = (amountInRaw * feeBps) / BPS_DENOMINATOR;
-
-    const scaleFactorIn = 10n ** BigInt(decimalsIn);
-    const scaleFactorOut = 10n ** BigInt(decimalsOut);
-    const spotPriceScaled = ONE_ETHER; // 1.0 in 1e18
-    const execPriceScaled = (amountOutRaw * scaleFactorIn * ONE_ETHER) / (amountInRaw * scaleFactorOut);
-    const executionPrice = Number(formatUnits(execPriceScaled, 18));
-    const spotPriceBefore = 1.0;
-
-    let priceImpactPercent = 0;
-    let priceImpactBps = 0;
-    if (spotPriceScaled > execPriceScaled && spotPriceScaled > 0n) {
-      const diff = spotPriceScaled - execPriceScaled;
-      priceImpactBps = Number((diff * 10000n) / spotPriceScaled);
-      priceImpactPercent = priceImpactBps / 100;
-    }
-
-    return {
-      amountInRaw,
-      amountOutRaw,
-      amountInFormatted: formatUnits(amountInRaw, decimalsIn),
-      amountOutFormatted: formatUnits(amountOutRaw, decimalsOut),
-      spotPriceBefore: 1.0,
-      executionPrice: Number(executionPrice.toFixed(6)),
-      priceImpactBps,
-      priceImpactPercent: Number(priceImpactPercent.toFixed(4)),
-      feePaidRaw,
-      feePaidFormatted: formatUnits(feePaidRaw, decimalsIn),
-      gasEstimatedUnits: AMM_GAS_CONFIG.CURVE_GAS,
-      dexAdapterName: this.name,
-      status: 'AVAILABLE',
-    };
   }
 }
 
@@ -619,6 +649,24 @@ export class BalancerAdapter implements IDexAdapter {
         gasEstimatedUnits: 0,
         dexAdapterName: `${this.name} ${weightIn}/${weightOut}`,
         status: 'UNSUPPORTED_POOL',
+      };
+    }
+
+    if (amountOutRaw <= 0n || amountOutRaw >= bOut) {
+      return {
+        amountInRaw,
+        amountOutRaw: 0n,
+        amountInFormatted: formatUnits(amountInRaw, decimalsIn),
+        amountOutFormatted: '0.0',
+        spotPriceBefore: 0,
+        executionPrice: 0,
+        priceImpactBps: 0,
+        priceImpactPercent: 0,
+        feePaidRaw: 0n,
+        feePaidFormatted: '0.0',
+        gasEstimatedUnits: 0,
+        dexAdapterName: `${this.name} ${weightIn}/${weightOut}`,
+        status: 'NO_LIQUIDITY',
       };
     }
 

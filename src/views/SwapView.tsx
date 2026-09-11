@@ -331,7 +331,8 @@ export const SwapView: React.FC = () => {
     ? fromToken.priceUsd / toToken.priceUsd
     : 0;
 
-  const expectedOutVal = quote ? quote.expectedOutput : (numFromAmount * priceRatio);
+  // STRICT PURITY: Output is derived ONLY from verified AMM quote, never synthesized
+  const expectedOutVal = quote ? quote.expectedOutput : 0;
 
   return (
     <div className="max-w-xl mx-auto space-y-3.5 pb-16">
@@ -596,7 +597,13 @@ export const SwapView: React.FC = () => {
 
           <div className="flex items-center justify-between gap-3">
             <div className="text-2xl sm:text-3xl font-mono font-black text-white">
-              {expectedOutVal > 0 ? formatTokenDisplay(expectedOutVal, toToken) : '0.00'}
+              {isFetchingQuote ? (
+                <span className="text-slate-500 animate-pulse text-lg font-sans font-medium">Đang tìm tuyến tối ưu...</span>
+              ) : expectedOutVal > 0 ? (
+                formatTokenDisplay(expectedOutVal, toToken)
+              ) : (
+                '0.00'
+              )}
             </div>
 
             {/* Token Selector Chip */}
@@ -612,7 +619,9 @@ export const SwapView: React.FC = () => {
 
           <div className="flex items-center justify-between pt-1 border-t border-white/[0.04] text-[11px] font-mono">
             <span className="text-slate-400">
-              ≈ {formatCurrency(expectedOutVal * toToken.priceUsd)} USD
+              {expectedOutVal > 0 && toToken.priceUsd > 0
+                ? `≈ ${formatCurrency(expectedOutVal * toToken.priceUsd)} USD`
+                : '≈ $0.00 USD'}
             </span>
             <button
               onClick={() => setIsRatioInverted(!isRatioInverted)}
