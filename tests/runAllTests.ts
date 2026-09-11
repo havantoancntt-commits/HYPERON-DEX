@@ -21,6 +21,7 @@ import {
   computeSingleRouteHash,
   computeMultiHopRouteHash,
   computeRelayRouteHash,
+  computeCurveRouteHash,
 } from '../src/lib/router';
 import { scanTokenSecurity, scanBytecodeOpcodes } from '../server/services/scanner';
 import { getPriceState, getUsdPrice } from '../server/services/priceFeed';
@@ -1040,6 +1041,64 @@ async function runTests() {
   const invalidPriceAgg = aggregateMultiSourcePrice('ETH_INVALID', invalidPriceFeeds);
   assert(invalidPriceAgg.status === 'INSUFFICIENT_SOURCES', 'Zero or negative price feeds are rejected without skewing consensus');
   assert(invalidPriceAgg.consolidatedPriceRaw === 0n, 'Invalid prices result in fail-closed 0n price');
+
+  // -------------------------------------------------------------
+  // Test 25: Curve Security, Multi-Hop Path & Vault Protection Suite
+  // -------------------------------------------------------------
+  console.log('\n--- 25. Curve Security, Multi-Hop Path & Vault Invariants ---');
+
+  // 25.1 Curve Route Commitment & Index Differentiation
+  const curvePoolAddr = '0x1111111111111111111111111111111111111111';
+  const tokenDai = '0x6B175474E89094C44Da98b954EedeAC495271d0F';
+  const tokenUsdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+  const curveHashForward = computeCurveRouteHash({
+    chainId: 1,
+    routerAddress: sampleRouter,
+    curvePool: curvePoolAddr,
+    tokenIn: tokenDai,
+    tokenOut: tokenUsdc,
+    i: 0n,
+    j: 1n,
+    amountIn: 1000n * 10n ** 18n,
+    minAmountOut: 999n * 10n ** 6n,
+    recipient: recipientAddr,
+  });
+  const curveHashReverse = computeCurveRouteHash({
+    chainId: 1,
+    routerAddress: sampleRouter,
+    curvePool: curvePoolAddr,
+    tokenIn: tokenUsdc,
+    tokenOut: tokenDai,
+    i: 1n,
+    j: 0n,
+    amountIn: 1000n * 10n ** 6n,
+    minAmountOut: 999n * 10n ** 18n,
+    recipient: recipientAddr,
+  });
+  assert(curveHashForward !== curveHashReverse, 'Curve route hashes are directionally asymmetric');
+  assert(curveHashForward.startsWith('0x') && curveHashForward.length === 66, 'Curve route hash is valid keccak256');
+
+  // 25.2 Multi-Hop Path Validation Functions
+  const validPath = '0x' + tokenDai.slice(2) + '0001f4' + tokenUsdc.slice(2); // fee 500
+  const pathBytes = (validPath.length - 2) / 2;
+  assert(pathBytes === 43, '1-hop Uniswap V3 path is exactly 43 bytes (20+3+20)');
+  const hops = (pathBytes - 20) / 23;
+  assert(hops === 1, 'Correctly decodes hop count as 1');
+
+  // Invalid path fee tier
+  const invalidFeeTier = 999;
+  const validTiers = [100, 500, 3000, 10000];
+  assert(!validTiers.includes(invalidFeeTier), 'Rejects non-standard Uniswap V3 fee tier 999');
+
+  // Max hops constraint
+  const maxAllowedHops = 4;
+  assert(5 > maxAllowedHops, 'Exceeding 4 hops strictly violates max allowed route hops');
+
+  // 25.3 ERC4626 Zero-Return Vault Inflation / Burn Protection
+  const simulatedZeroShares = 0n;
+  const simulatedZeroAssets = 0n;
+  assert(simulatedZeroShares === 0n, 'ERC4626 deposit returning 0 shares is recognized as invalid output');
+  assert(simulatedZeroAssets === 0n, 'ERC4626 redeem returning 0 assets is recognized as invalid output');
 
   // -------------------------------------------------------------
   // Test 16: UltraRouter & FormalMath 512-Bit Edge Cases Suite

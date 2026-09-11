@@ -76,6 +76,11 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     error RouteCommitmentRequired();
     error InvalidPathLength();
     error PathEndpointsMismatch(address expectedIn, address expectedOut, address actualIn, address actualOut);
+    error CurveCoinMismatch(address expected, address actual);
+    error InvalidIndex();
+    error InvalidFeeTier(uint24 feeTier);
+    error MaxHopsExceeded(uint256 hops, uint256 maxAllowed);
+    error InvalidPath();
 
     // --- Modifiers ---
     modifier whenNotHalted() {
@@ -100,7 +105,9 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         address _oracleAggregator,
         address _initialOwner
     ) Ownable(_initialOwner) EIP712("HyperonRouter", "1") {
-        if (_uniswapV3Router == address(0)) revert InvalidAddress();
+        if (_uniswapV3Router == address(0) || _uniswapV3Router.code.length == 0) revert InvalidAddress();
+        if (_oracleAggregator == address(0) || _oracleAggregator.code.length == 0) revert InvalidAddress();
+        if (_initialOwner == address(0)) revert InvalidAddress();
         uniswapV3Router = ISwapRouter(_uniswapV3Router);
         oracleAggregator = IERC7528PriceOracle(_oracleAggregator);
         authorizedRelayers[_initialOwner] = true;
@@ -115,6 +122,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     }
 
     function setOracleAggregator(address _newOracle) external onlyOwner {
+        if (_newOracle == address(0) || _newOracle.code.length == 0) revert InvalidAddress();
         oracleAggregator = IERC7528PriceOracle(_newOracle);
         emit OracleAggregatorUpdated(_newOracle);
     }
@@ -246,20 +254,80 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         );
     }
 
-    function _verifyPathEndpoints(bytes calldata path, address tokenIn, address tokenOut) internal pure {
+    function _getCurveCoin(address pool, int128 index) internal view returns (address) {
+        if (index < 0) revert InvalidIndex();
+        (bool success, bytes memory data) = pool.staticcall(
+            abi.encodeWithSelector(0xc6610657, uint256(uint128(index)))
+        );
+        if (success && data.length >= 32) {
+            return abi.decode(data, (address));
+        }
+        (bool success128, bytes memory data128) = pool.staticcall(
+            abi.encodeWithSelector(0x87d46816, index)
+        );
+        if (success128 && data128.length >= 32) {
+            return abi.decode(data128, (address));
+        }
+        revert UntrustedPool(pool);
+    }
+
+    function _verifyCurveCoins(
+        address pool,
+        address tokenIn,
+        address tokenOut,
+        int128 i,
+        int128 j
+    ) internal view {
+        if (i == j) revert InvalidIndex();
+        address coinI = _getCurveCoin(pool, i);
+        address coinJ = _getCurveCoin(pool, j);
+        if (coinI != tokenIn) revert CurveCoinMismatch(tokenIn, coinI);
+        if (coinJ != tokenOut) revert CurveCoinMismatch(tokenOut, coinJ);
+    }
+
+    function _verifyPath(bytes calldata path, address tokenIn, address tokenOut) internal view {
         if (path.length < 43 || (path.length - 20) % 23 != 0) {
             revert InvalidPathLength();
         }
-        address firstToken;
-        address lastToken;
+        uint256 hops = (path.length - 20) / 23;
+        if (hops > 4) {
+            revert MaxHopsExceeded(hops, 4);
+        }
+
+        address currentToken;
         assembly {
-            firstToken := shr(96, calldataload(path.offset))
-            let lastOffset := add(path.offset, sub(path.length, 20))
-            lastToken := shr(96, calldataload(lastOffset))
+            currentToken := shr(96, calldataload(path.offset))
         }
-        if (firstToken != tokenIn || lastToken != tokenOut) {
-            revert PathEndpointsMismatch(tokenIn, tokenOut, firstToken, lastToken);
+        if (currentToken != tokenIn || currentToken == address(0)) {
+            revert PathEndpointsMismatch(tokenIn, tokenOut, currentToken, address(0));
         }
+
+        for (uint256 h = 0; h < hops; h++) {
+            uint24 fee;
+            address nextToken;
+            assembly {
+                let feeOffset := add(add(path.offset, 20), mul(h, 23))
+                let nextTokenOffset := add(feeOffset, 3)
+                fee := shr(232, calldataload(feeOffset))
+                nextToken := shr(96, calldataload(nextTokenOffset))
+            }
+            if (fee != 100 && fee != 500 && fee != 3000 && fee != 10000) {
+                revert InvalidFeeTier(fee);
+            }
+            if (nextToken == address(0) || nextToken == currentToken) {
+                revert InvalidPath();
+            }
+            _checkOracleSafety(nextToken);
+            currentToken = nextToken;
+        }
+
+        if (currentToken != tokenOut) {
+            revert PathEndpointsMismatch(tokenIn, tokenOut, tokenIn, currentToken);
+        }
+    }
+
+    function _verifyPathEndpoints(bytes calldata path, address tokenIn, address tokenOut) internal view {
+        _verifyPath(path, tokenIn, tokenOut);
     }
 
     // --- Core Swap Interfaces ---
@@ -427,6 +495,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     ) external nonReentrant whenNotHalted returns (uint256 amountOut) {
         if (params.amountIn == 0) revert InvalidAmount();
         if (params.recipient == address(0) || params.curvePool == address(0)) revert InvalidAddress();
+        if (!isTrustedCurvePool[params.curvePool]) revert UntrustedPool(params.curvePool);
         if (params.routeHash == bytes32(0)) revert RouteCommitmentRequired();
         bytes32 expected = computeCurveRouteHash(
             params.curvePool,
@@ -441,6 +510,8 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         if (params.routeHash != expected) {
             revert RouteCommitmentMismatch(params.routeHash, expected);
         }
+
+        _verifyCurveCoins(params.curvePool, params.tokenIn, params.tokenOut, params.i, params.j);
 
         _checkOracleSafety(params.tokenIn);
         _checkOracleSafety(params.tokenOut);
@@ -488,6 +559,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         if (!isTrustedVault[vault]) revert UntrustedVault(vault);
 
         address underlying = IERC4626(vault).asset();
+        if (underlying == address(0)) revert InvalidAddress();
         uint256 balanceBefore = IERC20(underlying).balanceOf(address(this));
         IERC20(underlying).safeTransferFrom(msg.sender, address(this), assets);
         uint256 actualAssets = IERC20(underlying).balanceOf(address(this)) - balanceBefore;
@@ -495,6 +567,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
 
         IERC20(underlying).forceApprove(vault, actualAssets);
         shares = IERC4626(vault).deposit(actualAssets, recipient);
+        if (shares == 0) revert InvalidAmount();
     }
 
     function redeemFromVault(
@@ -512,6 +585,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         if (actualShares == 0) revert InvalidAmount();
 
         assets = IERC4626(vault).redeem(actualShares, recipient, address(this));
+        if (assets == 0) revert InvalidAmount();
     }
 
     // --- EIP-712 Cryptographically Authorized Relayer Swap Execution ---
@@ -644,14 +718,21 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     // --- Internal Helpers ---
 
     function _checkOracleSafety(address token) internal view {
-        if (address(oracleAggregator) != address(0)) {
-            if (oracleAggregator.isCircuitBreakerTripped(token)) {
-                revert OracleCircuitBreakerTriggered(token);
-            }
-            IERC7528PriceOracle.PriceData memory data = oracleAggregator.getAssetPriceData(token);
+        if (address(oracleAggregator) == address(0) || address(oracleAggregator).code.length == 0) {
+            revert InvalidAddress();
+        }
+        try oracleAggregator.isCircuitBreakerTripped(token) returns (bool tripped) {
+            if (tripped) revert OracleCircuitBreakerTriggered(token);
+        } catch {
+            revert OracleCircuitBreakerTriggered(token);
+        }
+
+        try oracleAggregator.getAssetPriceData(token) returns (IERC7528PriceOracle.PriceData memory data) {
             if (data.isCircuitBreakerActive) {
                 revert OracleCircuitBreakerTriggered(token);
             }
+        } catch {
+            revert OracleCircuitBreakerTriggered(token);
         }
     }
 

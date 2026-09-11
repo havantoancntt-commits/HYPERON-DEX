@@ -294,3 +294,39 @@ export function computeRelayRouteHash(params: {
   );
 }
 
+/**
+ * Computes on-chain compliant cryptographic route commitment hash for Curve Stable swaps.
+ * Strictly binds chainId, routerAddress, curvePool, tokenIn, tokenOut, i, j, amounts, recipient, and domain.
+ */
+export function computeCurveRouteHash(params: {
+  chainId: bigint | number;
+  routerAddress: Address;
+  curvePool: Address;
+  tokenIn: Address;
+  tokenOut: Address;
+  i: bigint | number;
+  j: bigint | number;
+  amountIn: bigint;
+  minAmountOut: bigint;
+  recipient: Address;
+}): Hex {
+  return keccak256(
+    encodePacked(
+      ['uint256', 'address', 'address', 'address', 'address', 'int128', 'int128', 'uint256', 'uint256', 'address', 'bytes32'],
+      [
+        BigInt(params.chainId),
+        params.routerAddress,
+        params.curvePool,
+        params.tokenIn,
+        params.tokenOut,
+        BigInt(params.i),
+        BigInt(params.j),
+        params.amountIn,
+        params.minAmountOut,
+        params.recipient,
+        stringToHex('CURVE_SWAP', { size: 32 }),
+      ]
+    )
+  );
+}
+
