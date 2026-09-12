@@ -350,3 +350,49 @@ export class GasMath {
     return 0n;
   }
 }
+
+/**
+ * Protocol Fee & Settlement Mathematics with formal rounding guarantees.
+ * Rules:
+ * - Output amounts: Round DOWN (floor)
+ * - Minimum received: Round DOWN (floor)
+ * - Required inputs: Round UP (ceil)
+ * - Protocol fees: Round UP (ceil)
+ */
+export class FeeMath {
+  /**
+   * Calculates protocol fee from gross input amount, rounding UP in protocol's favor.
+   * feeRaw = ceil((amountInRaw * feeBps) / 10000)
+   */
+  public static calculateProtocolFeeRaw(amountInRaw: bigint, feeBps: bigint | number): bigint {
+    const bps = typeof feeBps === 'bigint' ? feeBps : BigInt(feeBps);
+    if (bps === 0n || amountInRaw === 0n) return 0n;
+    if (bps < 0n || bps > 10_000n) {
+      throw new FinancialMathError(`Invalid fee BPS: ${bps}`, 'INVALID_FEE_BPS');
+    }
+    return BigIntMath.mulDivUp(amountInRaw, bps, BPS_DIVISOR);
+  }
+
+  /**
+   * Calculates net amount available after deducting protocol fee, rounding DOWN in protocol's favor.
+   */
+  public static calculateAmountAfterFee(amountInRaw: bigint, feeBps: bigint | number): bigint {
+    const fee = this.calculateProtocolFeeRaw(amountInRaw, feeBps);
+    return BigIntMath.sub(amountInRaw, fee);
+  }
+
+  /**
+   * Calculates required gross input amount to deliver exact target net output, rounding UP.
+   * requiredInput = ceil((targetOutputRaw * 10000) / (10000 - feeBps))
+   */
+  public static calculateRequiredInputForTargetOutput(targetOutputRaw: bigint, feeBps: bigint | number): bigint {
+    const bps = typeof feeBps === 'bigint' ? feeBps : BigInt(feeBps);
+    if (bps === 0n) return targetOutputRaw;
+    if (bps >= 10_000n) {
+      throw new FinancialMathError('Fee BPS cannot equal or exceed 10000 BPS (100%)', 'FEE_EXCEEDS_100_PERCENT');
+    }
+    const netDivisor = BPS_DIVISOR - bps;
+    return BigIntMath.mulDivUp(targetOutputRaw, BPS_DIVISOR, netDivisor);
+  }
+}
+

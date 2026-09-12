@@ -310,6 +310,7 @@ export class SmartGraphRouter {
 
     const fromPrice = resolvedFrom.priceUsd ?? getUsdPrice(fromToken.symbol) ?? 0;
     const toPrice = resolvedTo.priceUsd ?? getUsdPrice(toToken.symbol) ?? 0;
+    const toPriceRaw = toPrice > 0 ? DecimalMath.parseExactDecimal(toPrice.toString(), 8) : 0n;
 
     // 2. Discover all live on-chain pools for the direct pair
     const directPools = await poolDiscovery
@@ -862,10 +863,35 @@ export class SmartGraphRouter {
       };
     });
 
+    const gasPriceWeiStr = gasGwei !== null ? DecimalMath.parseExactDecimal(gasGwei.toString(), 9).toString() : '0';
+    const gasUnitsStr = optimalRoute.gasEstimatedUnits.toString();
+    const gasCostWeiStr = GasMath.calculateTotalGasCostWei(
+      BigInt(optimalRoute.gasEstimatedUnits),
+      BigInt(gasPriceWeiStr)
+    ).toString();
+    const quoteId = `quote-${verifiedChain}-${now}-${fromToken.symbol}-${toToken.symbol}`;
+    const quoteHash = '0x' + crypto.createHash('sha256').update(`${verifiedChain}-${fromToken.address}-${toToken.address}-${effectiveAmountInRaw.toString()}-${optimalRoute.amountOutRaw.toString()}-${now}`).digest('hex');
+    const routeCommitment = {
+      protocol: 'HYPERON_SHA256_COMMITMENT_V1',
+      commitmentHash: quoteHash,
+      nullifier: '0x' + crypto.createHash('sha256').update(`${quoteId}-${now}`).digest('hex'),
+    };
+
     return {
-      id: `quote-${verifiedChain}-${now}-${fromToken.symbol}-${toToken.symbol}`,
+      id: quoteId,
+      quoteId,
       fromToken,
       toToken,
+      rawAmount: effectiveAmountInRaw.toString(),
+      expectedOutputRaw: optimalRoute.amountOutRaw.toString(),
+      minimumReceivedRaw: minReceivedRaw.toString(),
+      gasUnits: gasUnitsStr,
+      gasPriceWei: gasPriceWeiStr,
+      gasCostWei: gasCostWeiStr,
+      priceUsdRaw: toPriceRaw.toString(),
+      routingFeeRaw: '0',
+      priceImpactBps: Math.round(optimalRoute.priceImpactPercent * 100).toString(),
+      slippageBps: slippageBps.toString(),
       fromAmount: numAmount,
       expectedOutput: parseFloat(optimalRoute.amountOutFormatted),
       minimumReceived: parseFloat(minReceivedFormatted),
@@ -893,7 +919,10 @@ export class SmartGraphRouter {
       protocol: optimalRoute.protocol,
       feeTierBps: optimalRoute.feeTierBps,
       calculationLatencyMs: Math.max(4, Math.round(performance.now() - startTimeMs)),
-      quoteHash: '0x' + crypto.createHash('sha256').update(`${verifiedChain}-${fromToken.address}-${toToken.address}-${effectiveAmountInRaw.toString()}-${optimalRoute.amountOutRaw.toString()}-${now}`).digest('hex'),
+      quoteHash,
+      routeHash: quoteHash,
+      routeCommitment,
+      zkProof: routeCommitment,
       mevProtectionStats: {
         frontrunningRisk: 'IMMUNE',
         sandwichRiskScore: 0,
@@ -951,6 +980,14 @@ export const simulateSwapTransaction = (
 // Only forwards signed transactions / ZK proofs to private mempool (Flashbots).
 // Does NOT participate in route calculation or user profiling.
 // ============================================================================
+export interface RouteCommitmentPayload {
+  protocol: string;
+  commitmentHash?: string;
+  proofHash?: string;
+  nullifier: string;
+  publicSignals?: any;
+}
+
 export interface RelayerPayload {
   signedTx?: string;
   eip712Signature?: string;
@@ -967,12 +1004,8 @@ export interface RelayerPayload {
     nonce: string;
     verifyingContract?: string;
   };
-  zkProof?: {
-    protocol: string;
-    proofHash: string;
-    nullifier: string;
-    publicSignals: any;
-  };
+  routeCommitment?: RouteCommitmentPayload;
+  zkProof?: RouteCommitmentPayload; // Backward-compatible alias
   routeHash?: string;
   chainId?: string;
   userAddress?: string;
@@ -983,34 +1016,37 @@ export interface RelayerResult {
   status: 'SUBMITTED' | 'RELAYED_FLASHBOTS';
   relayTimestamp: number;
   mevProtectionTier: 'TITAN_BUILDER' | 'FLASHBOTS_PROTECT';
-  zkProofVerified: boolean;
+  routeCommitmentVerified: boolean;
+  zkProofVerified: boolean; // Backward-compatible alias
   eip712Verified?: boolean;
   blockNumberTarget?: number;
 }
 
-export function verifyZkProof(zkProof: RelayerPayload['zkProof']): boolean {
-  if (!zkProof) return false;
-  if (!zkProof.proofHash || !zkProof.nullifier) return false;
-  // Verify cryptographic route commitment hash and nullifier formatting
-  return /^0x[a-fA-F0-9]{64}$/.test(zkProof.proofHash) && /^0x[a-fA-F0-9]{32,64}$/.test(zkProof.nullifier);
+export function verifyRouteCommitment(commitment?: RouteCommitmentPayload): boolean {
+  if (!commitment) return false;
+  const hash = commitment.commitmentHash || commitment.proofHash;
+  if (!hash || !commitment.nullifier) return false;
+  // Verify cryptographic route commitment SHA-256 hash and nullifier formatting
+  return /^0x[a-fA-F0-9]{64}$/.test(hash) && /^0x[a-fA-F0-9]{32,64}$/.test(commitment.nullifier);
 }
 
-export const verifyRouteCommitment = verifyZkProof;
+export const verifyZkProof = verifyRouteCommitment;
 
 export async function relayTransaction(payload: RelayerPayload): Promise<RelayerResult> {
-  const hasZk = !!payload.zkProof;
+  const commitmentPayload = payload.routeCommitment || payload.zkProof;
+  const hasCommitment = !!commitmentPayload;
   const hasSignedTx = !!payload.signedTx && payload.signedTx.startsWith('0x');
   const hasEip712 = !!payload.eip712Signature && !!payload.relaySwapParams;
 
-  if (!hasZk && !hasSignedTx && !hasEip712) {
-    throw new Error('AUTHENTICATION_REQUIRED: Transaction relay requires a signed transaction, EIP-712 swap authorization, or valid ZK proof.');
+  if (!hasCommitment && !hasSignedTx && !hasEip712) {
+    throw new Error('AUTHENTICATION_REQUIRED: Transaction relay requires a signed transaction, EIP-712 swap authorization, or valid cryptographic route commitment.');
   }
 
-  let isZkValid = false;
-  if (hasZk) {
-    isZkValid = verifyZkProof(payload.zkProof);
-    if (!isZkValid) {
-      throw new Error('INVALID_ZK_PROOF: Zero-Knowledge route proof verification failed');
+  let isCommitmentValid = false;
+  if (hasCommitment) {
+    isCommitmentValid = verifyRouteCommitment(commitmentPayload);
+    if (!isCommitmentValid) {
+      throw new Error('INVALID_ROUTE_COMMITMENT: Cryptographic route commitment verification failed');
     }
   }
 
@@ -1111,12 +1147,13 @@ export async function relayTransaction(payload: RelayerPayload): Promise<Relayer
       ['EIP712_RELAY', p.user as Address, p.tokenIn as Address, p.tokenOut as Address, BigInt(p.amountIn), BigInt(p.amountOutMinimum), BigInt(p.nonce), payload.eip712Signature]
     );
     txHash = keccak256(rawCommitment);
-  } else if (hasZk && payload.zkProof) {
-    const zkRaw = encodePacked(
+  } else if (hasCommitment && commitmentPayload) {
+    const hash = commitmentPayload.commitmentHash || commitmentPayload.proofHash || '';
+    const commitmentRaw = encodePacked(
       ['string', 'string', 'string'],
-      ['ZK_RELAY', payload.zkProof.proofHash, payload.zkProof.nullifier]
+      ['ROUTE_COMMITMENT_RELAY', hash, commitmentPayload.nullifier]
     );
-    txHash = keccak256(zkRaw);
+    txHash = keccak256(commitmentRaw);
   }
 
   if (!txHash) {
@@ -1128,7 +1165,8 @@ export async function relayTransaction(payload: RelayerPayload): Promise<Relayer
     status: 'RELAYED_FLASHBOTS',
     relayTimestamp: Date.now(),
     mevProtectionTier: 'FLASHBOTS_PROTECT',
-    zkProofVerified: isZkValid,
+    routeCommitmentVerified: isCommitmentValid,
+    zkProofVerified: isCommitmentValid,
     eip712Verified: isEip712Valid,
     blockNumberTarget: targetBlock,
   };

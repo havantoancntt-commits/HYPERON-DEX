@@ -113,7 +113,7 @@ npm run dev
 Open your browser at `http://localhost:3000`.
 
 ### 3. Run the Automated Verification Suite
-Runs the 50-point regression and math invariant test suite:
+Runs the 217-point regression and formal math invariant test suite:
 ```bash
 npm test
 ```
@@ -133,16 +133,18 @@ npm start
 
 ## 4. Verification & Testing Standards
 
-The regression suite (`tests/runAllTests.ts`) rigorously verifies:
+The regression suite (`tests/runAllTests.ts`) rigorously verifies 217 invariant properties:
 1. **Canonical Token Identity**: Unknown tokens throw `TOKEN_NOT_FOUND` rather than falling back to zero addresses.
 2. **AMM Precision Invariants**: 18 $\to$ 6, 8 $\to$ 6, and 18 $\to$ 18 swaps preserve $k$ and enforce mathematical monotonicity.
 3. **Curve StableSwap**: Tight stablecoin peg preservation across decimal scales.
-4. **Oracle Integrity**: Price feeds return explicit `null` and `UNAVAILABLE` when unverified (no synthetic $1.00 fallbacks).
+4. **Oracle Integrity**: Price feeds return explicit `null` and `UNAVAILABLE` when unverified (no synthetic $1.00 fallbacks); minimum 2 independent sources required for quorum.
 5. **DEX Comparison Matrix**: Verified pools produce `LIVE_QUOTE`; venues without pools produce `UNAVAILABLE`.
 6. **Simulation Security**: Enforces `USER_ADDRESS_REQUIRED`, dynamic fee tier extraction, and router ABI selection.
-7. **Gas-Aware Routing**: Verifies `calculateGasCostInTokenOutRaw` and rejects inefficient split routes where gas overhead exceeds output gains.
-8. **EVM Disassembler**: Verifies `PUSH` data is isolated from executable opcodes.
-9. **Chainlink VRF 2.5**: Verifies cryptographic determinism and entropy uniformity.
+7. **Gas-Aware Routing & Bit-Exact Precision**: Verifies `calculateGasCostInTokenOutRaw`, `DecimalMath`, and `FeeMath` directional rounding (ceil on protocol fees/required input, floor on outputs).
+8. **Cryptographic Route Commitment**: Binds quote parameters (pools, tokenIn, tokenOut, amountIn, minAmountOut, nonce, deadline) preventing MITM and parameter tampering.
+9. **EVM Disassembler**: Verifies `PUSH` data is isolated from executable opcodes.
+10. **Chainlink VRF 2.5**: Verifies cryptographic determinism and entropy uniformity.
+11. **Multi-Instance Distributed Circuit Breaker**: Formal abstraction for split-brain prevention across horizontally scaled container instances.
 
 ---
 

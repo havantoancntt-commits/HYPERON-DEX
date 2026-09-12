@@ -155,7 +155,9 @@ const authNonceLimiter = createRateLimiter({
 
 app.use('/api/', globalApiLimiter);
 app.use('/api/relay', relayLimiter);
+app.use('/api/relay-commitment', relayLimiter);
 app.use('/api/relay-zk-proof', relayLimiter);
+app.use('/api/submit', relayLimiter);
 app.use('/api/ai/portfolio-copilot', copilotLimiter);
 app.use('/api/auth/nonce', authNonceLimiter);
 
@@ -753,7 +755,7 @@ app.post(['/api/swaps/simulate', '/api/simulate-swap'], async (req: Request, res
 // -------------------------------------------------------------
 app.post('/api/submit', async (req: Request, res: Response) => {
   try {
-    const { signedTx, zkProof, routeHash, chainId, userAddress } = req.body;
+    const { signedTx, zkProof, routeCommitment, routeHash, chainId, userAddress } = req.body;
     if (!chainId) {
       return res.status(400).json({
         success: false,
@@ -762,7 +764,8 @@ app.post('/api/submit', async (req: Request, res: Response) => {
     }
     const result = await relayTransaction({
       signedTx,
-      zkProof,
+      routeCommitment: routeCommitment || zkProof,
+      zkProof: zkProof || routeCommitment,
       routeHash,
       chainId,
       userAddress,
@@ -770,7 +773,7 @@ app.post('/api/submit', async (req: Request, res: Response) => {
     res.json({
       success: true,
       result,
-      message: 'Transaction relayed via private Flashbots mempool with Zero-Knowledge verification',
+      message: 'Transaction relayed via private Flashbots mempool with Cryptographic Route Commitment verification',
     });
   } catch (err: any) {
     res.status(400).json({
@@ -780,12 +783,13 @@ app.post('/api/submit', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/relay', async (req: Request, res: Response) => {
+const handleRelay = async (req: Request, res: Response) => {
   try {
     const {
       signedTx,
       eip712Signature,
       relaySwapParams,
+      routeCommitment,
       zkProof,
       routeHash,
       chainId,
@@ -801,7 +805,8 @@ app.post('/api/relay', async (req: Request, res: Response) => {
       signedTx,
       eip712Signature,
       relaySwapParams,
-      zkProof,
+      routeCommitment: routeCommitment || zkProof,
+      zkProof: zkProof || routeCommitment,
       routeHash,
       chainId,
       userAddress,
@@ -816,7 +821,10 @@ app.post('/api/relay', async (req: Request, res: Response) => {
       error: err?.message || 'Failed to relay transaction',
     });
   }
-});
+};
+
+app.post('/api/relay', handleRelay);
+app.post('/api/relay-commitment', handleRelay);
 
 // -------------------------------------------------------------
 // 6. AI Market Intelligence

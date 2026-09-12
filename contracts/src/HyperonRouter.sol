@@ -59,11 +59,13 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     event OracleAggregatorUpdated(address indexed newOracle);
     event TrustedPoolUpdated(address indexed pool, bool status);
     event TrustedVaultUpdated(address indexed vault, bool status);
+    event FundsRescued(address indexed token, address indexed to, uint256 amount);
 
     // --- Custom Errors ---
     error EmergencyHalted();
     error UnauthorizedRelayer();
     error InsufficientOutputAmount(uint256 received, uint256 minimumExpected);
+    error InsufficientContractBalance(uint256 available, uint256 required);
     error InvalidAddress();
     error InvalidAmount();
     error ExpiredDeadline();
@@ -747,11 +749,16 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         if (to == address(0)) revert InvalidAddress();
         if (amount == 0) revert InvalidAmount();
         if (token == address(0)) {
+            uint256 bal = address(this).balance;
+            if (bal < amount) revert InsufficientContractBalance(bal, amount);
             (bool success, ) = to.call{value: amount}("");
             require(success, "ETH_TRANSFER_FAILED");
         } else {
+            uint256 bal = IERC20(token).balanceOf(address(this));
+            if (bal < amount) revert InsufficientContractBalance(bal, amount);
             IERC20(token).safeTransfer(to, amount);
         }
+        emit FundsRescued(token, to, amount);
     }
 
     /// @notice Allows contract to receive ETH for WETH unwrap flows

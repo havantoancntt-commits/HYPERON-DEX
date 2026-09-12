@@ -192,6 +192,9 @@ export async function scanTokenSecurity(
       chainId,
       securityScore: 100,
       riskLevel: 'LOW',
+      detectedPatterns: [],
+      unknownFactors: [],
+      confidenceScore: 100,
       isHoneypot: false,
       honeypotStatus: 'VERIFIED_SAFE',
       isContractVerified: true,
@@ -211,7 +214,6 @@ export async function scanTokenSecurity(
       riskSummary: 'Native network asset with immutable consensus security.',
       lastScannedTimestamp: Date.now(),
       evidence: ['Protocol native gas token', 'Immune to smart contract bytecode vulnerabilities'],
-      unknownFactors: [],
       confidence: 100,
       isKnownToken: true,
       isContractExists: false,
@@ -335,8 +337,17 @@ export async function scanTokenSecurity(
 
   score = Math.max(10, Math.min(100, score));
 
-  const riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' =
-    verifiedMatch ? 'LOW' : score >= 70 ? 'MEDIUM' : score >= 50 ? 'HIGH' : 'CRITICAL';
+  // Fail-closed on missing bytecode or high-risk bytecode opcodes
+  let riskLevel: 'SAFE' | 'LOW' | 'LOW_RISK' | 'MEDIUM' | 'MEDIUM_RISK' | 'HIGH' | 'HIGH_RISK' | 'CRITICAL' | 'UNKNOWN' =
+    verifiedMatch
+      ? 'LOW'
+      : !isContractExists || opcodes.hasSelfDestruct || (hasBlacklist && hasPause)
+      ? 'CRITICAL'
+      : score >= 70
+      ? 'MEDIUM'
+      : score >= 50
+      ? 'HIGH'
+      : 'CRITICAL';
 
   // Unknown factors strictly enumerated
   if (!verifiedMatch) {
@@ -362,6 +373,8 @@ export async function scanTokenSecurity(
     securityScore: score,
     riskLevel,
     verificationTier,
+    detectedPatterns: [...suspiciousPermissions],
+    confidenceScore: confidence,
     isHoneypot: honeypotStatus === 'SUSPECTED_HONEYPOT',
     honeypotStatus,
     isContractVerified: !!verifiedMatch || metadata.isValid,

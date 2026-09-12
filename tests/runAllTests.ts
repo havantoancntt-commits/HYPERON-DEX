@@ -7,6 +7,7 @@
 import { UniswapV2Adapter, UniswapV3Adapter, CurveAdapter, BalancerAdapter } from '../server/services/ammEngine';
 import { parseUnits, formatUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { FeeMath, DecimalMath, GasMath } from '../server/services/financialMath';
 import {
   calculateSmartRouteQuote,
   simulateSwapTransaction,
@@ -14,6 +15,7 @@ import {
   ROUTER_GAS_CONFIG,
   relayTransaction,
   verifyZkProof,
+  verifyRouteCommitment,
   getEip1559MovingAverageGasPriceGwei,
 } from '../server/services/router';
 import {
@@ -257,6 +259,15 @@ async function runTests() {
     routeQuote.minimumReceived >= routeQuote.expectedOutput * 0.994,
     'Test 14: minimumReceived respects exact integer 50 BPS (0.5%) slippage bound'
   );
+
+  // Financial-grade string representations
+  assert(typeof routeQuote.rawAmount === 'string' && routeQuote.rawAmount === '1500000000000000000', 'routeQuote has precise rawAmount string');
+  assert(typeof routeQuote.expectedOutputRaw === 'string' && BigInt(routeQuote.expectedOutputRaw) > 0n, 'routeQuote has positive expectedOutputRaw string');
+  assert(typeof routeQuote.minimumReceivedRaw === 'string' && BigInt(routeQuote.minimumReceivedRaw) > 0n, 'routeQuote has positive minimumReceivedRaw string');
+  assert(typeof routeQuote.gasUnits === 'string' && BigInt(routeQuote.gasUnits) > 0n, 'routeQuote has gasUnits string');
+  assert(typeof routeQuote.gasPriceWei === 'string', 'routeQuote has gasPriceWei string');
+  assert(typeof routeQuote.gasCostWei === 'string', 'routeQuote has gasCostWei string');
+  assert(routeQuote.routeCommitment !== undefined && routeQuote.routeCommitment.commitmentHash.startsWith('0x'), 'routeQuote generates valid routeCommitment');
 
   // Test 9 & 10: DEX Comparison Matrix without factor estimation
   assert(routeQuote.dexComparison !== undefined && routeQuote.dexComparison.length > 0, 'DEX comparison matrix exists');
@@ -723,6 +734,33 @@ async function runTests() {
     }
   }
   assert(replayRelayBlocked, 'Replay of consumed EIP-712 relay nonce is strictly rejected');
+
+  // Test 18b: Cryptographic Route Commitment Relay & Verification
+  const commitmentPayload = {
+    routeCommitment: {
+      protocol: 'HYPERON_SHA256_COMMITMENT_V1',
+      commitmentHash: '0x' + 'a'.repeat(64),
+      nullifier: '0x' + 'b'.repeat(64),
+    },
+    chainId: 'ethereum',
+  };
+  const commitmentRelay = await relayTransaction(commitmentPayload as any);
+  assert(commitmentRelay.status === 'RELAYED_FLASHBOTS', 'Route commitment relay succeeds');
+  assert(commitmentRelay.routeCommitmentVerified === true, 'Route commitment is verified');
+  assert(verifyRouteCommitment(commitmentPayload.routeCommitment) === true, 'verifyRouteCommitment passes for valid commitment');
+
+  // Test 18c: FeeMath Formal Rounding Directions
+  // Protocol fees MUST round UP
+  const oddAmount = 10001n;
+  const feeBps = 30n; // 0.3%
+  const feeUp = FeeMath.calculateProtocolFeeRaw(oddAmount, feeBps);
+  // (10001 * 30) / 10000 = 30.003 -> ceil = 31n
+  assert(feeUp === 31n, 'FeeMath rounds protocol fee strictly UP (31n for 10001n at 30 BPS)');
+  const netOut = FeeMath.calculateAmountAfterFee(oddAmount, feeBps);
+  assert(netOut === 10001n - 31n, 'FeeMath rounds net output strictly DOWN (user amount after fee is 9970n)');
+  const reqInput = FeeMath.calculateRequiredInputForTargetOutput(10000n, 30n);
+  // (10000 * 10000) / 9970 = 10030.090... -> ceil = 10031n
+  assert(reqInput === 10031n, 'FeeMath rounds required gross input strictly UP (10031n for 10000n net)');
 
   // -------------------------------------------------------------
   // Test 19: Multi-Oracle Circuit Breaker Audited Reset & Cooldown

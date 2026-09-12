@@ -124,8 +124,21 @@ export interface DexComparisonItem {
 
 export interface SwapQuote {
   id: string;
+  quoteId?: string;
   fromToken: Token;
   toToken: Token;
+  // Precise financial-grade string representations
+  rawAmount: string;
+  expectedOutputRaw: string;
+  minimumReceivedRaw: string;
+  gasUnits: string;
+  gasPriceWei: string;
+  gasCostWei: string;
+  priceUsdRaw?: string;
+  routingFeeRaw: string;
+  priceImpactBps: string;
+  slippageBps: string;
+  // Backward-compatible decimal/number representations for existing UI components
   fromAmount: number;
   expectedOutput: number;
   minimumReceived: number;
@@ -155,7 +168,12 @@ export interface SwapQuote {
   calculationLatencyMs?: number;
   quoteHash?: string;
   routeHash?: string;
-  zkProof?: any;
+  routeCommitment?: {
+    protocol: string;
+    commitmentHash: string;
+    nullifier: string;
+  };
+  zkProof?: any; // Deprecated alias for routeCommitment
   mevProtectionStats?: {
     frontrunningRisk: 'IMMUNE' | 'LOW' | 'HIGH';
     sandwichRiskScore: number;
@@ -186,6 +204,13 @@ export interface TransactionSimulation {
   correlationId: string;
   fromAddress: string;
   toAddress: string;
+  // Precise string representations
+  balanceBeforeRaw?: string;
+  balanceAfterRaw?: string;
+  gasUnits?: string;
+  gasPriceWei?: string;
+  gasCostWei?: string;
+  // Formatted representations
   gasEstimated: number;
   gasEstimatedUnits: number;
   gasCostUsd: number;
@@ -325,8 +350,11 @@ export interface TokenSecurityReport {
   tokenSymbol: string;
   chainId: ChainId;
   securityScore: number; // 0 - 100
-  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  verificationTier?: 'VERIFIED' | 'MEDIUM_RISK' | 'HIGH_RISK';
+  riskLevel: 'SAFE' | 'LOW' | 'LOW_RISK' | 'MEDIUM' | 'MEDIUM_RISK' | 'HIGH' | 'HIGH_RISK' | 'CRITICAL' | 'UNKNOWN';
+  verificationTier?: 'VERIFIED' | 'MEDIUM_RISK' | 'HIGH_RISK' | 'UNKNOWN';
+  detectedPatterns?: string[];
+  unknownFactors?: string[];
+  confidenceScore?: number;
   isHoneypot: boolean;
   isContractVerified: boolean;
   isProxyContract: boolean;

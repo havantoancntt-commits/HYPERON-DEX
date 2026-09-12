@@ -22,6 +22,21 @@ import {
   BPS_DIVISOR,
   USD_PRICE_DECIMALS,
 } from './financialMath';
+import {
+  CircuitBreakerStoreManager,
+  ICircuitBreakerStore,
+  IPriceHistoryStore,
+  ICircuitBreakerAuditStore,
+  CircuitBreakerState,
+} from './circuitBreakerStore';
+
+export {
+  CircuitBreakerStoreManager,
+  type ICircuitBreakerStore,
+  type IPriceHistoryStore,
+  type ICircuitBreakerAuditStore,
+  type CircuitBreakerState,
+};
 
 export interface PriceSource {
   name: string;
