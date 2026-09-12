@@ -41,11 +41,17 @@ export interface ResolvedToken {
 export class CanonicalTokenResolver {
   /**
    * Normalizes chain ID to verified supported chains.
+   * Strictly fails closed: throws INVALID_CHAIN on missing or unsupported chain.
    */
   normalizeChainId(chainId?: string): ChainId {
-    if (!chainId) return 'ethereum';
-    const c = chainId.toLowerCase() as ChainId;
-    return SUPPORTED_CHAINS[c] ? c : 'ethereum';
+    if (!chainId || typeof chainId !== 'string' || chainId.trim().length === 0) {
+      throw new Error('INVALID_CHAIN: Chain ID is required and cannot be empty.');
+    }
+    const c = chainId.trim().toLowerCase() as ChainId;
+    if (!SUPPORTED_CHAINS[c]) {
+      throw new Error(`INVALID_CHAIN: Unsupported chain ID "${chainId}". Supported chains: ${Object.keys(SUPPORTED_CHAINS).join(', ')}`);
+    }
+    return c;
   }
 
   /**
@@ -255,3 +261,4 @@ export class CanonicalTokenResolver {
 }
 
 export const tokenResolver = new CanonicalTokenResolver();
+export const normalizeChainId = (chainId?: string): ChainId => tokenResolver.normalizeChainId(chainId);

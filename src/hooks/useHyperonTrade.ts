@@ -108,9 +108,10 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
             });
             if (!res.ok) {
               const errData = await res.json().catch(() => ({}));
-              throw new Error(errData.error || `HTTP ${res.status}: Không thể lấy báo giá.`);
+              throw new Error(errData.userMessage || errData.message || errData.error || `HTTP ${res.status}: Không thể lấy báo giá.`);
             }
-            return (await res.json()) as SwapQuote;
+            const data = await res.json();
+            return (data.quote || data) as SwapQuote;
           },
           maxRetries,
           initialBackoffMs
@@ -146,6 +147,19 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
    */
   const simulateTrade = useCallback(
     async (quote: SwapQuote, userAddress: string): Promise<SimulationResult | null> => {
+      if (quote.expiresAt && Date.now() > quote.expiresAt) {
+        const errorMsg = 'Báo giá đã hết hạn, vui lòng cập nhật báo giá mới.';
+        setProgress((prev) => ({
+          ...prev,
+          step: 'FAILED',
+          progressPercent: 0,
+          statusMessage: 'Báo giá đã hết hạn',
+          error: errorMsg,
+        }));
+        if (onError) onError(new Error(errorMsg));
+        return null;
+      }
+
       setProgress((prev) => ({
         ...prev,
         step: 'SIMULATING',
@@ -165,15 +179,16 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
                 toToken: quote.toToken.symbol,
                 amount: quote.fromAmount,
                 userAddress,
-                chainId: quote.fromToken.chainId,
+                chainId: quote.chainId || quote.fromToken.chainId,
                 quote,
               }),
             });
             if (!res.ok) {
               const errData = await res.json().catch(() => ({}));
-              throw new Error(errData.error || `Lỗi mô phỏng EVM (${res.status})`);
+              throw new Error(errData.userMessage || errData.message || errData.error || `Lỗi mô phỏng EVM (${res.status})`);
             }
-            return (await res.json()) as SimulationResult;
+            const data = await res.json();
+            return (data.simulation || data) as SimulationResult;
           },
           2,
           500

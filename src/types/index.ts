@@ -1,5 +1,27 @@
 export type ChainId = 'ethereum' | 'base' | 'arbitrum' | 'optimism' | 'bsc' | 'polygon';
 
+export interface NativeAsset {
+  type: 'NATIVE';
+  symbol: string;
+  chainId: ChainId;
+  decimals: number;
+}
+
+export interface ERC20Asset {
+  type: 'ERC20';
+  address: string;
+  symbol: string;
+  chainId: ChainId;
+  decimals: number;
+}
+
+export type AnyAsset = NativeAsset | ERC20Asset;
+
+export function isNativeAsset(asset: AnyAsset | Token): boolean {
+  if ('type' in asset) return asset.type === 'NATIVE';
+  return !!asset.isNative || asset.address === '0x0000000000000000000000000000000000000000' || asset.address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+}
+
 export type ProductView =
   | 'dashboard'
   | 'ai-signals'
@@ -115,7 +137,11 @@ export interface SwapQuote {
   sources: DexSource[];
   routeSplits: RouteSplit[];
   timestamp: number;
+  createdAt?: number;
+  expiresAt?: number;
   expiresInSec: number;
+  blockReference?: number;
+  chainId?: ChainId;
   isBestPrice: boolean;
   mevProtected: boolean;
   dexComparison?: DexComparisonItem[];

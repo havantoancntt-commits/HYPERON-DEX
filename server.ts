@@ -94,26 +94,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// Production Multi-Tier Rate Limiting with Reverse-Proxy & Forwarded Header Support
+// Enable trust proxy for reverse-proxy environments (e.g. Cloud Run / Nginx)
+app.set('trust proxy', 1);
+
+// Production Multi-Tier Rate Limiting with Secure Proxy IP Resolution
 const getClientIp = (req: Request): string => {
-  // If Forwarded header is present (RFC 7239: for="192.0.2.60" or for=192.0.2.60)
-  const forwarded = req.headers.forwarded;
-  if (typeof forwarded === 'string') {
-    const match = forwarded.match(/for=(?:"?\[?)([^;,\s"\]]+)/i);
-    if (match && match[1]) {
-      return match[1].trim();
-    }
-  }
-
-  // If X-Forwarded-For is present
-  const xForwardedFor = req.headers['x-forwarded-for'];
-  if (typeof xForwardedFor === 'string') {
-    return xForwardedFor.split(',')[0].trim();
-  }
-  if (Array.isArray(xForwardedFor) && xForwardedFor.length > 0) {
-    return xForwardedFor[0].trim();
-  }
-
+  // Rely on Express's validated req.ip which respects 'trust proxy'
   const rawIp = req.ip || req.socket?.remoteAddress || '127.0.0.1';
   // Strip IPv4 port if present (e.g. 1.2.3.4:5678)
   if (rawIp.includes(':') && !rawIp.includes('::')) {
@@ -178,8 +164,10 @@ app.use('/api/auth/nonce', authNonceLimiter);
 // -------------------------------------------------------------
 const QuoteSchema = z
   .object({
+    fromToken: z.string().optional(),
     fromTokenSymbol: z.string().min(1).max(20).optional(),
     fromTokenAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+    toToken: z.string().optional(),
     toTokenSymbol: z.string().min(1).max(20).optional(),
     toTokenAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
     amount: z.union([z.number().positive(), z.string().regex(/^\d+(\.\d+)?$/)]),
@@ -192,12 +180,12 @@ const QuoteSchema = z
         }, { message: 'Slippage must be between 0.01% and 50.0%' }),
       ])
       .optional(),
-    chainId: z.string().optional(),
+    chainId: z.string().min(1, 'chainId is strictly required'),
   })
   .refine(
     (data) =>
-      (data.fromTokenSymbol || data.fromTokenAddress) &&
-      (data.toTokenSymbol || data.toTokenAddress),
+      (data.fromToken || data.fromTokenSymbol || data.fromTokenAddress) &&
+      (data.toToken || data.toTokenSymbol || data.toTokenAddress),
     { message: 'Both source and destination token (symbol or address) must be provided.' }
   );
 
@@ -243,10 +231,14 @@ const SwapQuoteSchema = z.object({
   estimatedGasUsd: z.number(),
   routingFeeUsd: z.number(),
   executionPrice: z.number(),
-  sources: z.array(z.string()).optional().default([]),
+  sources: z.array(z.any()).optional().default([]),
   routeSplits: z.array(RouteSplitSchema).optional().default([]),
   timestamp: z.number(),
-  expiresInSec: z.number().optional().default(60),
+  createdAt: z.number().optional(),
+  expiresAt: z.number().optional(),
+  expiresInSec: z.number().optional().default(30),
+  blockReference: z.number().optional(),
+  chainId: z.string().optional(),
   isBestPrice: z.boolean().optional().default(true),
   mevProtected: z.boolean().optional().default(true),
   poolAddress: z.string().optional(),
@@ -255,6 +247,14 @@ const SwapQuoteSchema = z.object({
   quoteHash: z.string().optional(),
   routeHash: z.string().optional(),
   zkProof: ZkProofSchema.optional(),
+  dexComparison: z.array(z.any()).optional(),
+  savingsUsd: z.number().optional(),
+  savingsPercent: z.number().optional(),
+  aiRouteInsight: z.string().optional(),
+  autoSlippageRecommended: z.number().optional(),
+  calculationLatencyMs: z.number().optional(),
+  mevProtectionStats: z.any().optional(),
+  smartSplitMetrics: z.any().optional(),
 });
 
 const SimulateSchema = z.object({
@@ -569,25 +569,37 @@ app.post(['/api/quotes', '/api/quote'], async (req: Request, res: Response) => {
     }
 
     const {
+      fromToken,
       fromTokenSymbol,
       fromTokenAddress,
+      toToken,
       toTokenSymbol,
       toTokenAddress,
       amount,
       slippage = 0.5,
-      chainId = 'ethereum',
+      chainId,
     } = parsed.data;
 
+    const effectiveFromSymbol =
+      fromTokenSymbol || (fromToken && !fromToken.startsWith('0x') ? fromToken : undefined);
+    const effectiveFromAddress =
+      fromTokenAddress || (fromToken && fromToken.startsWith('0x') ? fromToken : undefined);
+    const effectiveToSymbol =
+      toTokenSymbol || (toToken && !toToken.startsWith('0x') ? toToken : undefined);
+    const effectiveToAddress =
+      toTokenAddress || (toToken && toToken.startsWith('0x') ? toToken : undefined);
+
     const quote = await calculateSmartRouteQuote({
-      fromTokenSymbol,
-      fromTokenAddress,
-      toTokenSymbol,
-      toTokenAddress,
+      fromTokenSymbol: effectiveFromSymbol,
+      fromTokenAddress: effectiveFromAddress,
+      toTokenSymbol: effectiveToSymbol,
+      toTokenAddress: effectiveToAddress,
       amount,
       slippage: typeof slippage === 'string' ? parseFloat(slippage) : slippage,
       chainId,
     });
-    res.json({ quote });
+    // Return both { quote } wrapper and root quote fields for full client compatibility
+    res.json({ quote, ...quote });
   } catch (err: any) {
     if (err instanceof DexError) {
       let httpStatus = 500;
@@ -688,7 +700,18 @@ app.post(['/api/swaps/simulate', '/api/simulate-swap'], async (req: Request, res
       );
     }
 
-    const { quote, userAddress, chainId = 'ethereum' } = parsed.data;
+    const targetChain = parsed.data.chainId || parsed.data.quote.chainId || parsed.data.quote.fromToken?.chainId;
+    if (!targetChain) {
+      return res.status(400).json(
+        createDexError(
+          DEX_ERROR_CODES.INVALID_CHAIN,
+          'chainId is strictly required for simulation',
+          ERROR_MESSAGES.INVALID_CHAIN
+        )
+      );
+    }
+
+    const { quote, userAddress } = parsed.data;
     if (!userAddress) {
       return res.status(400).json(
         createDexError(
@@ -699,11 +722,22 @@ app.post(['/api/swaps/simulate', '/api/simulate-swap'], async (req: Request, res
       );
     }
 
-    const simulation = await simulateSwapTransaction(quote as any, userAddress, chainId);
+    const simulation = await simulateSwapTransaction(quote as any, userAddress, targetChain);
     // Apply strict schema validation to prevent internal simulation data leakage
     const validatedSimulation = SimulationOutputSchema.parse(simulation);
     res.json({ simulation: validatedSimulation });
   } catch (err: any) {
+    if (err instanceof DexError) {
+      const httpStatus =
+        err.code === DEX_ERROR_CODES.INVALID_CHAIN ||
+        err.code === DEX_ERROR_CODES.USER_ADDRESS_REQUIRED ||
+        err.code === DEX_ERROR_CODES.QUOTE_EXPIRED
+          ? 400
+          : 500;
+      return res.status(httpStatus).json(
+        createDexError(err.code, err.message, ERROR_MESSAGES[err.code] || err.message, err.details)
+      );
+    }
     res.status(500).json(
       createDexError(
         DEX_ERROR_CODES.SIMULATION_FAILED,
@@ -719,7 +753,13 @@ app.post(['/api/swaps/simulate', '/api/simulate-swap'], async (req: Request, res
 // -------------------------------------------------------------
 app.post('/api/submit', async (req: Request, res: Response) => {
   try {
-    const { signedTx, zkProof, routeHash, chainId = 'ethereum', userAddress } = req.body;
+    const { signedTx, zkProof, routeHash, chainId, userAddress } = req.body;
+    if (!chainId) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_CHAIN: chainId is strictly required for relayer submission',
+      });
+    }
     const result = await relayTransaction({
       signedTx,
       zkProof,
@@ -748,9 +788,15 @@ app.post('/api/relay', async (req: Request, res: Response) => {
       relaySwapParams,
       zkProof,
       routeHash,
-      chainId = 'ethereum',
+      chainId,
       userAddress,
     } = req.body;
+    if (!chainId) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_CHAIN: chainId is strictly required for relayer broadcast',
+      });
+    }
     const result = await relayTransaction({
       signedTx,
       eip712Signature,

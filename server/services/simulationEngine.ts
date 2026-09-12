@@ -277,7 +277,7 @@ export class SimulationEngine {
     ]);
 
     const currentBlock = rpcBlock.data ? Number(rpcBlock.data) : 0;
-    const gasGwei = rpcGas.data?.gasPriceGwei || 15.0;
+    const gasGwei = rpcGas.data?.gasPriceGwei ?? null;
 
     const amountInRaw = safeTruncateAndParseUnits(quote.fromAmount.toString(), decimalsIn);
     const amountOutMinRaw = safeTruncateAndParseUnits(quote.minimumReceived.toString(), decimalsOut);
@@ -444,7 +444,7 @@ export class SimulationEngine {
       }
     }
 
-    const gasCostUsd = nativePriceUsd > 0 ? Number(((gasEstimated * gasGwei * 1e-9) * nativePriceUsd).toFixed(2)) : 0;
+    const gasCostUsd = nativePriceUsd > 0 && gasGwei !== null ? Number(((gasEstimated * gasGwei * 1e-9) * nativePriceUsd).toFixed(2)) : 0;
     const overallSuccess = ethCallSuccess && hasSufficientBalance && isAllowanceApproved;
     const status: SimulationStatus = overallSuccess
       ? 'SUCCESS'

@@ -206,16 +206,16 @@ export async function getLiveBlockNumber(chainId: string = 'ethereum'): Promise<
     };
   } catch (err: any) {
     const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
-    const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
+    const norm = (chainId || '').toLowerCase() as ChainId;
     return {
       data: null,
-      chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
+      chainId: (norm in CHAIN_CLIENTS ? norm : chainId) as ChainId,
       provider: isInvalidChain ? 'Chain Validator' : 'RPC Fallback Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
       status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
-      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to connect to RPC node'),
+      error: err?.message || (isInvalidChain ? `INVALID_CHAIN: '${chainId}' is not supported.` : 'Failed to connect to RPC node'),
     };
   }
 }
@@ -246,16 +246,16 @@ export async function getLiveGasPrice(chainId: string = 'ethereum'): Promise<Rpc
     };
   } catch (err: any) {
     const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
-    const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
+    const norm = (chainId || '').toLowerCase() as ChainId;
     return {
       data: null,
-      chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
+      chainId: (norm in CHAIN_CLIENTS ? norm : chainId) as ChainId,
       provider: isInvalidChain ? 'Chain Validator' : 'RPC Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
       status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
-      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to read gas price from RPC'),
+      error: err?.message || (isInvalidChain ? `INVALID_CHAIN: '${chainId}' is not supported.` : 'Failed to read gas price from RPC'),
     };
   }
 }
@@ -293,16 +293,16 @@ export async function getContractBytecode(address: string, chainId: string = 'et
     };
   } catch (err: any) {
     const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
-    const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
+    const norm = (chainId || '').toLowerCase() as ChainId;
     return {
       data: null,
-      chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
+      chainId: (norm in CHAIN_CLIENTS ? norm : chainId) as ChainId,
       provider: isInvalidChain ? 'Chain Validator' : 'eth_getCode Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
       status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
-      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to read contract bytecode'),
+      error: err?.message || (isInvalidChain ? `INVALID_CHAIN: '${chainId}' is not supported.` : 'Failed to read contract bytecode'),
     };
   }
 }
@@ -341,16 +341,16 @@ export async function getNativeBalance(address: string, chainId: string = 'ether
     };
   } catch (err: any) {
     const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
-    const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
+    const norm = (chainId || '').toLowerCase() as ChainId;
     return {
       data: null,
-      chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
+      chainId: (norm in CHAIN_CLIENTS ? norm : chainId) as ChainId,
       provider: isInvalidChain ? 'Chain Validator' : 'eth_getBalance Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
       status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
-      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to get native balance'),
+      error: err?.message || (isInvalidChain ? `INVALID_CHAIN: '${chainId}' is not supported.` : 'Failed to get native balance'),
     };
   }
 }
@@ -390,16 +390,16 @@ export async function getERC20Balance(
     };
   } catch (err: any) {
     const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
-    const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
+    const norm = (chainId || '').toLowerCase() as ChainId;
     return {
       data: null,
-      chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
+      chainId: (norm in CHAIN_CLIENTS ? norm : chainId) as ChainId,
       provider: isInvalidChain ? 'Chain Validator' : 'ERC20 balanceOf Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
       status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
-      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to read token balance'),
+      error: err?.message || (isInvalidChain ? `INVALID_CHAIN: '${chainId}' is not supported.` : 'Failed to read token balance'),
     };
   }
 }
@@ -459,16 +459,16 @@ export async function getERC20Allowance(
     };
   } catch (err: any) {
     const isInvalidChain = err instanceof InvalidChainError || err?.message?.includes('INVALID_CHAIN');
-    const norm = (chainId || 'ethereum').toLowerCase() as ChainId;
+    const norm = (chainId || '').toLowerCase() as ChainId;
     return {
       data: null,
-      chainId: norm in CHAIN_CLIENTS ? norm : 'ethereum',
+      chainId: (norm in CHAIN_CLIENTS ? norm : chainId) as ChainId,
       provider: isInvalidChain ? 'Chain Validator' : 'ERC20 allowance Provider',
       blockNumber: null,
       timestamp: Date.now(),
       latencyMs: Date.now() - startTime,
       status: isInvalidChain ? 'INVALID_CHAIN' : 'RPC_UNAVAILABLE',
-      error: err?.message || (isInvalidChain ? 'Invalid blockchain specified' : 'Failed to read token allowance'),
+      error: err?.message || (isInvalidChain ? `INVALID_CHAIN: '${chainId}' is not supported.` : 'Failed to read token allowance'),
     };
   }
 }

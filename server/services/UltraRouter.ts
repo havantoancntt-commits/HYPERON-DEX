@@ -12,6 +12,7 @@ import { poolDiscovery } from './poolDiscovery';
 import { tokenResolver } from './tokenResolver';
 import { UniswapV2Adapter, UniswapV3Adapter, CurveAdapter, BalancerAdapter } from './ammEngine';
 import { getUsdPrice } from './priceFeed';
+import { getLiveGasPrice } from './rpc';
 
 export interface LiquidityEdge {
   poolId: string;
@@ -91,7 +92,7 @@ export interface UltraOptimalRoute {
   };
 }
 
-function toCanonicalChainId(chainId: number | string): 'ethereum' | 'arbitrum' | 'base' | 'bsc' | 'polygon' {
+export function toCanonicalChainId(chainId: number | string): 'ethereum' | 'arbitrum' | 'base' | 'bsc' | 'polygon' {
   if (typeof chainId === 'number') {
     if (chainId === 1) return 'ethereum';
     if (chainId === 42161) return 'arbitrum';
@@ -100,17 +101,18 @@ function toCanonicalChainId(chainId: number | string): 'ethereum' | 'arbitrum' |
     if (chainId === 137) return 'polygon';
   }
   if (typeof chainId === 'string') {
-    const s = chainId.toLowerCase();
+    const s = chainId.toLowerCase().trim();
     if (s === '1' || s === 'ethereum') return 'ethereum';
     if (s === '42161' || s === 'arbitrum') return 'arbitrum';
     if (s === '8453' || s === 'base') return 'base';
     if (s === '56' || s === 'bsc') return 'bsc';
     if (s === '137' || s === 'polygon') return 'polygon';
   }
-  return 'ethereum';
+  throw new Error(`INVALID_CHAIN: Unsupported chain ID "${chainId}". Supported chains: 1 (ethereum), 42161 (arbitrum), 8453 (base), 56 (bsc), 137 (polygon)`);
 }
 
 export class UltraRouter {
+  static toCanonicalChainId = toCanonicalChainId;
   // In-memory Liquidity Heatmap cache with 24-second TTL (approx. 2 Ethereum blocks)
   private static heatmapCache = new Map<string, HeatmapCacheEntry>();
   private static readonly HEATMAP_TTL_MS = 24_000;
@@ -413,13 +415,14 @@ export class UltraRouter {
     const spotOutput = singleVenueResults[0].output;
     const priceImpactBps = FormalMath.calculatePriceImpactBps(spotOutput, bestOutput);
 
-    // Dynamic Gas estimations using live native currency price
+    // Dynamic Gas estimations using live RPC gas and native currency price
     const isSplit = bestSplits.length > 1;
     const totalGasUnits = isSplit ? 185_000 : 135_000;
     const nativeSymbol = chainId === 56 ? 'BNB' : chainId === 137 ? 'POL' : 'ETH';
     const nativePriceUsd = getUsdPrice(nativeSymbol) || 0;
-    const gasPriceGwei = 25;
-    const gasCostUsd = nativePriceUsd > 0 ? Number(((totalGasUnits * gasPriceGwei * 1e-9) * nativePriceUsd).toFixed(2)) : 0;
+    const rpcGas = await getLiveGasPrice(chainKey).catch(() => ({ status: 'RPC_UNAVAILABLE' as const, data: null }));
+    const gasPriceGwei = rpcGas.status === 'SUCCESS' && rpcGas.data?.gasPriceGwei ? rpcGas.data.gasPriceGwei : 0;
+    const gasCostUsd = nativePriceUsd > 0 && gasPriceGwei > 0 ? Number(((totalGasUnits * gasPriceGwei * 1e-9) * nativePriceUsd).toFixed(2)) : 0;
     const tokenOutPriceUsd = getUsdPrice(tokenOutSymbol) || (tokenOutSymbol.includes('USD') ? 1.0 : 0);
 
     let netSavingsUsd = 0;
@@ -427,7 +430,7 @@ export class UltraRouter {
       const extraTokensOut = bestOutput - singleVenueResults[0].output;
       const extraTokensOutFloat = Number(formatUnits(extraTokensOut, tokenOutObj.decimals));
       const extraOutputUsd = tokenOutPriceUsd > 0 ? extraTokensOutFloat * tokenOutPriceUsd : 0;
-      const extraGasCostUsd = nativePriceUsd > 0 ? (50_000 * gasPriceGwei * 1e-9) * nativePriceUsd : 0;
+      const extraGasCostUsd = nativePriceUsd > 0 && gasPriceGwei > 0 ? (50_000 * gasPriceGwei * 1e-9) * nativePriceUsd : 0;
       netSavingsUsd = Math.max(0, Number((extraOutputUsd - extraGasCostUsd).toFixed(2)));
     }
 

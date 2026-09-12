@@ -35,7 +35,7 @@ import { deriveWinningDigitsFromSeed, generateCryptographicTicketNumbers } from 
 import { DEX_ERROR_CODES } from '../src/lib/errorCodes';
 import { validateAndCleanCandles } from '../server/services/marketData';
 import { poolDiscovery } from '../server/services/poolDiscovery';
-import { tokenResolver } from '../server/services/tokenResolver';
+import { tokenResolver, normalizeChainId } from '../server/services/tokenResolver';
 import { getRouterConfig } from '../server/services/routerRegistry';
 import { validateWebhookUrl } from '../server/services/webhookSecurity';
 import {
@@ -1099,6 +1099,120 @@ async function runTests() {
   const simulatedZeroAssets = 0n;
   assert(simulatedZeroShares === 0n, 'ERC4626 deposit returning 0 shares is recognized as invalid output');
   assert(simulatedZeroAssets === 0n, 'ERC4626 redeem returning 0 assets is recognized as invalid output');
+
+  // -------------------------------------------------------------
+  // Test 15b: Strict Fail-Closed Chain Resolution, Gas & Provenance
+  // -------------------------------------------------------------
+  console.log('\n--- 26. Strict Fail-Closed Chain Resolution & Quote Provenance ---');
+  const { UltraRouter } = await import('../server/services/UltraRouter');
+  const { getLiveGasPrice } = await import('../server/services/rpc');
+
+  // 1. Strict Chain Normalization - No silent Ethereum fallback
+  let chainErrorThrown = false;
+  try {
+    normalizeChainId('solana');
+  } catch (err: any) {
+    chainErrorThrown = err?.message?.includes('INVALID_CHAIN');
+  }
+  assert(chainErrorThrown, 'normalizeChainId strictly throws INVALID_CHAIN for unsupported chain');
+
+  let emptyChainError = false;
+  try {
+    normalizeChainId('');
+  } catch (err: any) {
+    emptyChainError = err?.message?.includes('INVALID_CHAIN');
+  }
+  assert(emptyChainError, 'normalizeChainId strictly throws INVALID_CHAIN for empty chain parameter');
+
+  // 2. Router Registry Fail-Closed
+  let routerConfigError = false;
+  try {
+    getRouterConfig('dogechain' as any);
+  } catch (err: any) {
+    routerConfigError = err?.message?.includes('INVALID_CHAIN');
+  }
+  assert(routerConfigError, 'getRouterConfig strictly throws INVALID_CHAIN for unregistered chain');
+
+  // 3. UltraRouter Canonical Chain Fail-Closed
+  let ultraCanonicalError = false;
+  try {
+    (UltraRouter as any).toCanonicalChainId('unknown_chain_999');
+  } catch (err: any) {
+    ultraCanonicalError = err?.message?.includes('INVALID_CHAIN');
+  }
+  assert(ultraCanonicalError, 'UltraRouter.toCanonicalChainId strictly throws INVALID_CHAIN for unknown chain');
+
+  // 4. RPC Gas Price Fail-Closed
+  const rpcGasBadChain = await getLiveGasPrice('unsupported_chain_xyz' as any);
+  assert(
+    ((rpcGasBadChain.status as string) === 'INVALID_CHAIN' || (rpcGasBadChain.status as string) === 'RPC_UNAVAILABLE') &&
+      Boolean(rpcGasBadChain.error?.includes('INVALID_CHAIN')),
+    'getLiveGasPrice fails closed with INVALID_CHAIN for unsupported network'
+  );
+
+  // 5. Quote Provenance Verification
+  // Refresh pool seed with fresh timestamp for quote calculation
+  poolDiscovery.seedPoolRecord('ethereum:ETH:USDC:uniswapv3:30', {
+    poolAddress: '0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640',
+    chainId: 'ethereum',
+    dexProtocol: 'Uniswap v3',
+    token0Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    token1Address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    token0Symbol: 'ETH',
+    token1Symbol: 'USDC',
+    token0Decimals: 18,
+    token1Decimals: 6,
+    feeBps: 30,
+    lastUpdated: Date.now(),
+    lastBlockNumber: 21000000n,
+    status: 'LIVE',
+    v3State: {
+      sqrtPriceX96: 4611686018427387904000000000n,
+      liquidity: 15000000000000000000n,
+      tick: 200000,
+      tickSpacing: 60,
+      feeTierBps: 30,
+      token0Decimals: 18,
+      token1Decimals: 6,
+      token0Symbol: 'ETH',
+      token1Symbol: 'USDC',
+    },
+  });
+
+  const quote = await calculateSmartRouteQuote({
+    fromTokenSymbol: 'ETH',
+    toTokenSymbol: 'USDC',
+    amount: 1,
+    slippage: 0.5,
+    chainId: 'ethereum',
+  });
+  assert(typeof quote.createdAt === 'number' && quote.createdAt > 0, 'Quote contains valid numeric createdAt timestamp');
+  assert(typeof quote.expiresAt === 'number' && quote.expiresAt > quote.createdAt, 'Quote contains valid expiresAt strictly greater than createdAt');
+  assert(quote.chainId === 'ethereum', 'Quote contains verified canonical chainId');
+  assert(typeof quote.blockReference === 'number', 'Quote contains blockReference number');
+
+  // 6. Expired Quote Fail-Closed in Simulation
+  const expiredQuote = {
+    ...quote,
+    expiresAt: Date.now() - 5000,
+    timestamp: Date.now() - 35000,
+  };
+  let expiredQuoteError = false;
+  try {
+    await simulateSwapTransaction(expiredQuote, '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045', 'ethereum');
+  } catch (err: any) {
+    expiredQuoteError = err?.message?.includes('QUOTE_EXPIRED') || err?.code === 'QUOTE_EXPIRED';
+  }
+  assert(expiredQuoteError, 'simulateSwapTransaction strictly rejects expired quotes with QUOTE_EXPIRED');
+
+  // 7. Missing/Invalid Address in Simulation Fail-Closed
+  let missingAddressError = false;
+  try {
+    await simulateSwapTransaction(quote, '0xinvalid_short', 'ethereum');
+  } catch (err: any) {
+    missingAddressError = err?.message?.includes('USER_ADDRESS_REQUIRED');
+  }
+  assert(missingAddressError, 'simulateSwapTransaction strictly rejects invalid/short EVM address');
 
   // -------------------------------------------------------------
   // Test 16: UltraRouter & FormalMath 512-Bit Edge Cases Suite

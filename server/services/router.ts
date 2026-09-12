@@ -456,21 +456,23 @@ export class SmartGraphRouter {
 
     // 5. Fetch live gas price to perform gas-aware route optimization
     const rpcGas = await getLiveGasPrice(verifiedChain);
-    const gasGwei = rpcGas.data?.gasPriceGwei || 15.0;
+    const gasGwei = rpcGas.status === 'SUCCESS' && rpcGas.data?.gasPriceGwei ? rpcGas.data.gasPriceGwei : null;
     const nativeSymbol = routerConfig.nativeSymbol;
     const nativePriceUsd = getUsdPrice(nativeSymbol) || 0;
     const isNativeOut = toToken.symbol === nativeSymbol;
 
     // Add all valid single-pool routes
     for (const { pool, quote } of singlePoolCandidates) {
-      const gasCostTokenRaw = calculateGasCostInTokenOutRaw(
-        quote.gasEstimatedUnits,
-        gasGwei,
-        nativePriceUsd,
-        toPrice,
-        decimalsOut,
-        isNativeOut
-      );
+      const gasCostTokenRaw = (gasGwei !== null && nativePriceUsd > 0)
+        ? calculateGasCostInTokenOutRaw(
+            quote.gasEstimatedUnits,
+            gasGwei,
+            nativePriceUsd,
+            toPrice,
+            decimalsOut,
+            isNativeOut
+          )
+        : 0n;
       const netProfitRaw =
         quote.amountOutRaw > gasCostTokenRaw ? quote.amountOutRaw - gasCostTokenRaw : 0n;
 
@@ -510,7 +512,8 @@ export class SmartGraphRouter {
       );
 
       const topPools = singlePoolCandidates.slice(0, 3);
-      const coarseSteps = [95, 90, 85, 80, 75, 70, 65, 60, 55, 50, 45, 40, 35, 30, 25, 20, 15, 10, 5];
+      // Evaluates coarse steps + mandatory ratios [1, 5, 10, 17, 33, 50, 67, 83, 99]
+      const coarseSteps = [99, 95, 90, 85, 83, 80, 75, 70, 67, 65, 60, 55, 50, 45, 40, 35, 33, 30, 25, 20, 17, 15, 10, 5, 1];
 
       let bestSplitOutRaw = 0n;
       let bestPoolA: VerifiedPoolRecord | null = null;
@@ -540,7 +543,7 @@ export class SmartGraphRouter {
           let pairBestOutRaw = 0n;
           let pairBestCoarsePctA = 50;
 
-          // Step 1: Coarse search in 5% increments
+          // Step 1: Search across mandatory and coarse steps
           for (const pctA of coarseSteps) {
             const splitInA = (effectiveAmountInRaw * BigInt(pctA)) / 100n;
             const splitInB = effectiveAmountInRaw - splitInA;
@@ -624,28 +627,32 @@ export class SmartGraphRouter {
       // Compare netProfit = amountOutRaw - gasCostInToken
       const singleBestCandidate = singlePoolCandidates[0];
       const singleGasUnits = singleBestCandidate.quote.gasEstimatedUnits;
-      const singleGasCostInTokenRaw = calculateGasCostInTokenOutRaw(
-        singleGasUnits,
-        gasGwei,
-        nativePriceUsd,
-        toPrice,
-        decimalsOut,
-        isNativeOut
-      );
+      const singleGasCostInTokenRaw = (gasGwei !== null && nativePriceUsd > 0)
+        ? calculateGasCostInTokenOutRaw(
+            singleGasUnits,
+            gasGwei,
+            nativePriceUsd,
+            toPrice,
+            decimalsOut,
+            isNativeOut
+          )
+        : 0n;
       const singleNetProfitRaw =
         singleBestCandidate.quote.amountOutRaw > singleGasCostInTokenRaw
           ? singleBestCandidate.quote.amountOutRaw - singleGasCostInTokenRaw
           : 0n;
 
       const splitGasUnits = ROUTER_GAS_CONFIG.SPLIT_EXECUTION_GAS;
-      const splitGasCostInTokenRaw = calculateGasCostInTokenOutRaw(
-        splitGasUnits,
-        gasGwei,
-        nativePriceUsd,
-        toPrice,
-        decimalsOut,
-        isNativeOut
-      );
+      const splitGasCostInTokenRaw = (gasGwei !== null && nativePriceUsd > 0)
+        ? calculateGasCostInTokenOutRaw(
+            splitGasUnits,
+            gasGwei,
+            nativePriceUsd,
+            toPrice,
+            decimalsOut,
+            isNativeOut
+          )
+        : 0n;
       const splitNetProfitRaw =
         bestSplitOutRaw > splitGasCostInTokenRaw
           ? bestSplitOutRaw - splitGasCostInTokenRaw
@@ -703,15 +710,23 @@ export class SmartGraphRouter {
     // 6. Gas Cost Evaluation in USD & Net Economic Output Score
     for (const c of candidates) {
       const gasCostUsd =
-        nativePriceUsd > 0 ? (c.gasEstimatedUnits * gasGwei * 1e-9) * nativePriceUsd : 0;
+        nativePriceUsd > 0 && gasGwei !== null ? (c.gasEstimatedUnits * gasGwei * 1e-9) * nativePriceUsd : 0;
       const tokenOutUsd =
         toPrice > 0 ? parseFloat(c.amountOutFormatted) * toPrice : parseFloat(c.amountOutFormatted);
       c.netOutputScore = tokenOutUsd - gasCostUsd;
     }
 
-    // Sort descending by net economic output score (net profit after gas)
+    // Sort descending by exact integer net profit (BigInt), with amountOutRaw as tiebreaker
     candidates.sort((a, b) =>
-      b.netOutputScore > a.netOutputScore ? 1 : b.netOutputScore < a.netOutputScore ? -1 : 0
+      b.netProfitRaw > a.netProfitRaw
+        ? 1
+        : b.netProfitRaw < a.netProfitRaw
+        ? -1
+        : b.amountOutRaw > a.amountOutRaw
+        ? 1
+        : b.amountOutRaw < a.amountOutRaw
+        ? -1
+        : 0
     );
     const optimalRoute = candidates[0];
 
@@ -721,9 +736,9 @@ export class SmartGraphRouter {
     const minReceivedFormatted = formatUnits(minReceivedRaw, decimalsOut);
 
     const gasUnits = optimalRoute.gasEstimatedUnits;
-    const gasCostNative = gasUnits * gasGwei * 1e-9;
+    const gasCostNative = gasGwei !== null ? gasUnits * gasGwei * 1e-9 : 0;
     const estimatedGasUsd =
-      nativePriceUsd > 0 ? Number((gasCostNative * nativePriceUsd).toFixed(2)) : 0;
+      nativePriceUsd > 0 && gasGwei !== null ? Number((gasCostNative * nativePriceUsd).toFixed(2)) : 0;
 
     // 7. Generate Real DEX Price Comparison Matrix (NO FAKE FACTORS)
     const bestOutputNum = parseFloat(optimalRoute.amountOutFormatted);
@@ -859,7 +874,11 @@ export class SmartGraphRouter {
       sources,
       routeSplits: optimalRoute.splits,
       timestamp: now,
+      createdAt: now,
+      expiresAt: now + 30_000,
       expiresInSec: 30,
+      blockReference: Number(optimalRoute.blockNumber || 0),
+      chainId: verifiedChain,
       isBestPrice: true,
       mevProtected: routerConfig.flashbotsRelaySupported,
       dexComparison,
@@ -888,17 +907,27 @@ export class SmartGraphRouter {
 
   /**
    * Pre-Flight Transaction Simulation via simulationEngine.
+   * Strictly verifies quote expiration and wallet address.
    */
   async simulateSwapTransaction(
     quote: SwapQuote,
     userAddress?: string,
-    chainId: string = 'ethereum',
+    chainId?: string,
     options?: any
   ): Promise<TransactionSimulation> {
     if (!userAddress || !userAddress.startsWith('0x') || userAddress.length !== 42) {
       throw new Error('USER_ADDRESS_REQUIRED: Connect a valid Web3 wallet to run pre-flight simulation.');
     }
-    return simulationEngine.simulateSwap(quote, userAddress, chainId, options);
+    const targetChain = chainId || quote.chainId || quote.fromToken.chainId;
+    if (!targetChain) {
+      throw new Error('INVALID_CHAIN: Chain ID is required for transaction simulation.');
+    }
+    const now = Date.now();
+    const expiresAt = quote.expiresAt || (quote.timestamp + (quote.expiresInSec || 30) * 1000);
+    if (now > expiresAt) {
+      throw new DexError(DEX_ERROR_CODES.QUOTE_EXPIRED, 'QUOTE_EXPIRED: Swap quote has expired. Please request a fresh quote.');
+    }
+    return simulationEngine.simulateSwap(quote, userAddress, targetChain, options);
   }
 }
 
@@ -1002,7 +1031,10 @@ export async function relayTransaction(payload: RelayerPayload): Promise<Relayer
       throw new Error('EXPIRED_DEADLINE: Relay swap intent deadline has expired');
     }
 
-    const routerConfig = getRouterConfig(payload.chainId || 'ethereum');
+    if (!payload.chainId) {
+      throw new Error('INVALID_CHAIN: chainId is strictly required for relayer transaction broadcast');
+    }
+    const routerConfig = getRouterConfig(payload.chainId);
     const targetVerifyingContract = (p.verifyingContract && isAddress(p.verifyingContract)
       ? p.verifyingContract
       : (routerConfig.universalRouter || routerConfig.uniswapV3Router || '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD')) as `0x${string}`;
@@ -1046,7 +1078,7 @@ export async function relayTransaction(payload: RelayerPayload): Promise<Relayer
     isEip712Valid = true;
   }
 
-  const blockRes = await getLiveBlockNumber(payload.chainId || 'ethereum');
+  const blockRes = await getLiveBlockNumber(payload.chainId);
   const targetBlock = blockRes.status === 'SUCCESS' && blockRes.data ? Number(blockRes.data) : undefined;
 
   let txHash = '';

@@ -345,28 +345,32 @@ async function _doSyncRealTimePrices(now: number): Promise<void> {
       }
     });
 
-    // Hyperon AMM native tokens computed relative to live ETH liquidity pool ratio
-    if (priceCache['HYPR'] && priceCache['ETH']?.priceUsd) {
-      const ethPrice = priceCache['ETH'].priceUsd;
-      const hyprPrice = Number((ethPrice * 0.001415).toFixed(4));
-      priceCache['HYPR'] = {
-        ...priceCache['HYPR'],
-        priceUsd: hyprPrice,
-        lastUpdated: now,
-        status: 'LIVE',
-        ageMs: 0,
-        source: 'Hyperon DEX Native AMM Pool (HYPR/ETH)',
-      };
-    }
-    if (priceCache['AETH'] && priceCache['HYPR']?.priceUsd) {
-      priceCache['AETH'] = {
-        ...priceCache['AETH'],
-        priceUsd: priceCache['HYPR'].priceUsd,
-        lastUpdated: now,
-        status: 'LIVE',
-        ageMs: 0,
-        source: 'Hyperon DEX Native AMM Pool (AETH/ETH)',
-      };
+    // Hyperon AMM native tokens: must be derived strictly from verified on-chain pool reserves.
+    // Never use hardcoded synthetic ratios (e.g. 0.001415) per Zero-Synthetic Data Policy.
+    try {
+      const { poolDiscovery } = await import('./poolDiscovery');
+      const hyprPools = await poolDiscovery.discoverAllPairPools('ethereum', 'HYPR', 'ETH', 18, 18);
+      const liveHyprPool = hyprPools.find((p) => p.status === 'LIVE' && p.reserves && p.reserves.reserve0 > 0n && p.reserves.reserve1 > 0n);
+      if (liveHyprPool && liveHyprPool.reserves && priceCache['ETH']?.priceUsd) {
+        const r0 = liveHyprPool.reserves.reserve0;
+        const r1 = liveHyprPool.reserves.reserve1;
+        const ethReserve = liveHyprPool.token0Symbol === 'ETH' ? r0 : r1;
+        const hyprReserve = liveHyprPool.token0Symbol === 'HYPR' ? r0 : r1;
+        if (hyprReserve > 0n) {
+          const ratio = Number(ethReserve) / Number(hyprReserve);
+          const hyprPrice = Number((priceCache['ETH'].priceUsd * ratio).toFixed(4));
+          priceCache['HYPR'] = {
+            ...priceCache['HYPR'],
+            priceUsd: hyprPrice,
+            lastUpdated: now,
+            status: 'LIVE',
+            ageMs: 0,
+            source: 'Hyperon DEX On-Chain Pool Reserves (HYPR/ETH)',
+          };
+        }
+      }
+    } catch {
+      // Do not invent fake synthetic price if no on-chain pool exists
     }
   }
 

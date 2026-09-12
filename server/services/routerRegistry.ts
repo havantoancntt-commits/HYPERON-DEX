@@ -100,10 +100,13 @@ export const ROUTER_REGISTRY: Record<ChainId, ChainRouterConfig> = {
 };
 
 export function getRouterConfig(chainId: string): ChainRouterConfig {
-  const normalized = (chainId || 'ethereum').toLowerCase() as ChainId;
+  if (!chainId || typeof chainId !== 'string' || chainId.trim().length === 0) {
+    throw new Error('INVALID_CHAIN: Chain ID is required and cannot be empty.');
+  }
+  const normalized = chainId.trim().toLowerCase() as ChainId;
   const config = ROUTER_REGISTRY[normalized];
   if (!config) {
-    throw new Error(`Unsupported chain: ${chainId}. Valid chains are: ${Object.keys(ROUTER_REGISTRY).join(', ')}`);
+    throw new Error(`INVALID_CHAIN: Unsupported chain: ${chainId}. Valid chains are: ${Object.keys(ROUTER_REGISTRY).join(', ')}`);
   }
   return config;
 }

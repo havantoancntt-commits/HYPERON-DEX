@@ -268,7 +268,13 @@ export class PoolDiscoveryService {
       }
 
       if (!poolEntry) {
-        // Pool is not registered or discovered
+        // Pool is not registered in canonical list; if seeded/cached in memory, preserve cached record
+        if (cached && (cached.reserves || cached.v3State || cached.curveState)) {
+          return {
+            ...cached,
+            status: 'STALE',
+          };
+        }
         return null;
       }
 
