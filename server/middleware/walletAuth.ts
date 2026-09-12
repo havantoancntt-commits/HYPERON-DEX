@@ -3,6 +3,8 @@ import { verifyMessage, verifyTypedData, isAddress, Address, Hex } from 'viem';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import pg from 'pg';
+import Redis from 'ioredis';
 
 export interface WalletAuthPayload {
   userAddress: string;
@@ -169,49 +171,75 @@ export class DurableNonceStore implements INonceStore {
 }
 
 /**
- * Real Distributed Nonce Store Implementation for Redis (REST / RESP / Cluster)
+ * Real Distributed Nonce Store Implementation for Redis (ioredis / REST / Upstash)
  * Supports atomic setnx and CAS consumption across multi-instance clusters.
+ * Enforces fail-closed semantics: NO silent fallback to process memory in production.
  */
 export class RedisDistributedNonceStore implements INonceStore {
   private redisUrl: string;
-  private localFallbackMap = new Map<string, NonceRecord>();
+  private client?: Redis;
+  private isRest: boolean;
 
   constructor(redisUrl: string) {
     this.redisUrl = redisUrl;
+    this.isRest = this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://');
+    if (!this.isRest) {
+      this.client = new Redis(this.redisUrl, {
+        lazyConnect: true,
+        maxRetriesPerRequest: 2,
+        enableReadyCheck: false,
+      });
+    }
+  }
+
+  private async getClient(): Promise<Redis> {
+    if (!this.client) {
+      throw new Error('REDIS_CLIENT_UNAVAILABLE: Not a direct TCP/TLS Redis connection');
+    }
+    if (this.client.status === 'wait') {
+      await this.client.connect();
+    }
+    return this.client;
   }
 
   async get(key: string): Promise<NonceRecord | null> {
     try {
-      if (this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://')) {
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
         const res = await fetch(`${this.redisUrl}/get/${encodeURIComponent(key)}`, {
-          headers: { Authorization: `Bearer ${process.env.REDIS_TOKEN || ''}` },
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) return null;
         const data: any = await res.json();
         return data.result ? JSON.parse(data.result) : null;
       }
-      // Standard redis memory cluster fallback for test harness
-      const rec = this.localFallbackMap.get(key);
-      if (rec && Date.now() > rec.expiresAt) {
-        this.localFallbackMap.delete(key);
-        return null;
-      }
-      return rec || null;
-    } catch {
-      return null;
+      const client = await this.getClient();
+      const raw = await client.get(key);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (err: any) {
+      throw new Error(`REDIS_NONCE_READ_FAILED: ${err?.message || 'Cluster error'}`);
     }
   }
 
   async set(key: string, record: NonceRecord): Promise<void> {
     try {
       const ttlSec = Math.max(1, Math.ceil((record.expiresAt - Date.now()) / 1000));
-      if (this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://')) {
-        await fetch(`${this.redisUrl}/set/${encodeURIComponent(key)}/${encodeURIComponent(JSON.stringify(record))}?ex=${ttlSec}`, {
-          headers: { Authorization: `Bearer ${process.env.REDIS_TOKEN || ''}` },
-        });
+      const payload = JSON.stringify(record);
+
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
+        const res = await fetch(
+          `${this.redisUrl}/set/${encodeURIComponent(key)}/${encodeURIComponent(payload)}?ex=${ttlSec}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) {
+          throw new Error(`Upstash returned HTTP ${res.status}`);
+        }
         return;
       }
-      this.localFallbackMap.set(key, { ...record });
+      const client = await this.getClient();
+      await client.set(key, payload, 'EX', ttlSec);
     } catch (err: any) {
       throw new Error(`REDIS_NONCE_WRITE_FAILED: ${err?.message || 'Cluster error'}`);
     }
@@ -219,96 +247,219 @@ export class RedisDistributedNonceStore implements INonceStore {
 
   async markUsed(key: string): Promise<boolean> {
     try {
-      if (this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://')) {
-        // Atomic CAS via Lua script
-        const luaScript = `local r = redis.call('GET', KEYS[1]) if not r then return 0 end local d = cjson.decode(r) if d.used then return 0 end d.used = true redis.call('SET', KEYS[1], cjson.encode(d), 'KEEPTTL') return 1`;
+      const luaScript = `
+        local r = redis.call('GET', KEYS[1])
+        if not r then return 0 end
+        local d = cjson.decode(r)
+        if d.used or (d.expiresAt and tonumber(d.expiresAt) < tonumber(ARGV[1])) then
+          return 0
+        end
+        d.used = true
+        redis.call('SET', KEYS[1], cjson.encode(d), 'KEEPTTL')
+        return 1
+      `;
+      const nowMs = Date.now().toString();
+
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
         const res = await fetch(`${this.redisUrl}/eval`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${process.env.REDIS_TOKEN || ''}`,
+            Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ script: luaScript, keys: [key] }),
+          body: JSON.stringify({ script: luaScript, keys: [key], args: [nowMs] }),
         });
         if (!res.ok) return false;
         const data: any = await res.json();
         return data.result === 1;
       }
-      const rec = this.localFallbackMap.get(key);
-      if (!rec || rec.used || Date.now() > rec.expiresAt) return false;
-      rec.used = true;
-      return true;
-    } catch {
-      return false;
+
+      const client = await this.getClient();
+      const res = await client.eval(luaScript, 1, key, nowMs);
+      return res === 1;
+    } catch (err: any) {
+      throw new Error(`REDIS_NONCE_CAS_FAILED: ${err?.message || 'Cluster error'}`);
     }
   }
 
   async delete(key: string): Promise<void> {
     try {
-      if (this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://')) {
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
         await fetch(`${this.redisUrl}/del/${encodeURIComponent(key)}`, {
-          headers: { Authorization: `Bearer ${process.env.REDIS_TOKEN || ''}` },
+          headers: { Authorization: `Bearer ${token}` },
         });
         return;
       }
-      this.localFallbackMap.delete(key);
+      const client = await this.getClient();
+      await client.del(key);
     } catch {
       // Best-effort delete
     }
   }
 
   async prune(): Promise<void> {
-    const now = Date.now();
-    for (const [k, v] of this.localFallbackMap.entries()) {
-      if (v.expiresAt < now || v.used) {
-        this.localFallbackMap.delete(k);
-      }
-    }
+    // Redis automatically prunes expired keys using native TTL (EX flag)
   }
 }
 
 /**
  * Real Distributed Nonce Store Implementation for PostgreSQL / Supabase
- * Enforces atomic INSERT ... ON CONFLICT and row-level locks for CAS consumption.
+ * Enforces atomic UPDATE ... WHERE used = FALSE and row-level locks for CAS consumption.
+ * Enforces fail-closed semantics: NO silent fallback to process memory in production.
  */
 export class PostgresDistributedNonceStore implements INonceStore {
-  private dbUrl: string;
-  private localFallbackMap = new Map<string, NonceRecord>();
+  private pool: pg.Pool;
+  private initialized = false;
+  private initPromise: Promise<void> | null = null;
 
   constructor(dbUrl: string) {
-    this.dbUrl = dbUrl;
+    this.pool = new pg.Pool({
+      connectionString: dbUrl,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) return;
+    if (!this.initPromise) {
+      this.initPromise = (async () => {
+        const client = await this.pool.connect();
+        try {
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS wallet_nonces (
+              wallet_address VARCHAR(42) NOT NULL,
+              chain_id VARCHAR(32) NOT NULL,
+              nonce VARCHAR(64) NOT NULL,
+              expires_at BIGINT NOT NULL,
+              used BOOLEAN NOT NULL DEFAULT FALSE,
+              issued_at BIGINT NOT NULL,
+              action VARCHAR(64),
+              domain VARCHAR(128),
+              PRIMARY KEY (wallet_address, nonce)
+            );
+            CREATE INDEX IF NOT EXISTS idx_wallet_nonces_exp ON wallet_nonces (expires_at);
+          `);
+          this.initialized = true;
+        } finally {
+          client.release();
+        }
+      })();
+    }
+    return this.initPromise;
   }
 
   async get(key: string): Promise<NonceRecord | null> {
-    const rec = this.localFallbackMap.get(key);
-    if (rec && Date.now() > rec.expiresAt) {
-      this.localFallbackMap.delete(key);
-      return null;
+    try {
+      await this.ensureInitialized();
+      const parts = key.split(':');
+      if (parts.length < 2) return null;
+      const walletAddress = parts[0].toLowerCase();
+      const nonce = parts.slice(1).join(':');
+
+      const res = await this.pool.query(
+        `SELECT wallet_address, chain_id, nonce, expires_at, used, issued_at, action, domain
+         FROM wallet_nonces
+         WHERE wallet_address = $1 AND nonce = $2`,
+        [walletAddress, nonce]
+      );
+      if (res.rows.length === 0) return null;
+      const r = res.rows[0];
+      return {
+        userAddress: r.wallet_address,
+        chainId: r.chain_id,
+        nonce: r.nonce,
+        expiresAt: Number(r.expires_at),
+        used: Boolean(r.used),
+        issuedAt: Number(r.issued_at),
+        action: r.action || undefined,
+        domain: r.domain || undefined,
+      };
+    } catch (err: any) {
+      throw new Error(`POSTGRES_NONCE_READ_FAILED: ${err?.message || 'Database error'}`);
     }
-    return rec || null;
   }
 
   async set(key: string, record: NonceRecord): Promise<void> {
-    this.localFallbackMap.set(key, { ...record });
+    try {
+      await this.ensureInitialized();
+      await this.pool.query(
+        `INSERT INTO wallet_nonces (wallet_address, chain_id, nonce, expires_at, used, issued_at, action, domain)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (wallet_address, nonce)
+         DO UPDATE SET
+           chain_id = EXCLUDED.chain_id,
+           expires_at = EXCLUDED.expires_at,
+           used = EXCLUDED.used,
+           issued_at = EXCLUDED.issued_at,
+           action = EXCLUDED.action,
+           domain = EXCLUDED.domain`,
+        [
+          record.userAddress.toLowerCase(),
+          record.chainId,
+          record.nonce,
+          record.expiresAt,
+          record.used,
+          record.issuedAt,
+          record.action || null,
+          record.domain || null,
+        ]
+      );
+    } catch (err: any) {
+      throw new Error(`POSTGRES_NONCE_WRITE_FAILED: ${err?.message || 'Database error'}`);
+    }
   }
 
   async markUsed(key: string): Promise<boolean> {
-    const rec = this.localFallbackMap.get(key);
-    if (!rec || rec.used || Date.now() > rec.expiresAt) return false;
-    rec.used = true;
-    return true;
+    try {
+      await this.ensureInitialized();
+      const parts = key.split(':');
+      if (parts.length < 2) return false;
+      const walletAddress = parts[0].toLowerCase();
+      const nonce = parts.slice(1).join(':');
+      const now = Date.now();
+
+      // Atomic UPDATE with row-level lock where used = FALSE and not expired
+      // Guarantees exactly 1 successful execution under arbitrary multi-process concurrency
+      const res = await this.pool.query(
+        `UPDATE wallet_nonces
+         SET used = TRUE
+         WHERE wallet_address = $1 AND nonce = $2 AND used = FALSE AND expires_at > $3
+         RETURNING wallet_address`,
+        [walletAddress, nonce, now]
+      );
+      return (res.rowCount ?? 0) === 1;
+    } catch (err: any) {
+      throw new Error(`POSTGRES_NONCE_CAS_FAILED: ${err?.message || 'Database error'}`);
+    }
   }
 
   async delete(key: string): Promise<void> {
-    this.localFallbackMap.delete(key);
+    try {
+      await this.ensureInitialized();
+      const parts = key.split(':');
+      if (parts.length < 2) return;
+      const walletAddress = parts[0].toLowerCase();
+      const nonce = parts.slice(1).join(':');
+      await this.pool.query(
+        `DELETE FROM wallet_nonces WHERE wallet_address = $1 AND nonce = $2`,
+        [walletAddress, nonce]
+      );
+    } catch {
+      // Best-effort delete
+    }
   }
 
   async prune(): Promise<void> {
-    const now = Date.now();
-    for (const [k, v] of this.localFallbackMap.entries()) {
-      if (v.expiresAt < now || v.used) {
-        this.localFallbackMap.delete(k);
-      }
+    try {
+      await this.ensureInitialized();
+      const now = Date.now();
+      await this.pool.query(`DELETE FROM wallet_nonces WHERE expires_at < $1 OR used = TRUE`, [now]);
+    } catch {
+      // Background prune error handled
     }
   }
 }
@@ -358,7 +509,7 @@ export class DistributedNonceStoreAdapter implements INonceStore {
       process.env.NODE_ENV === 'production' ||
       process.env.REQUIRE_DISTRIBUTED_NONCE_STORE === 'true';
 
-    const redisUrl = process.env.REDIS_URL;
+    const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.REDIS_URL;
     const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
     if (redisUrl) {
@@ -437,10 +588,29 @@ export class MemoryRelayNonceStore implements IRelayNonceStore {
  */
 export class RedisRelayNonceStore implements IRelayNonceStore {
   private redisUrl: string;
-  private localFallback = new MemoryRelayNonceStore();
+  private client?: Redis;
+  private isRest: boolean;
 
   constructor(redisUrl: string) {
     this.redisUrl = redisUrl;
+    this.isRest = this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://');
+    if (!this.isRest) {
+      this.client = new Redis(this.redisUrl, {
+        lazyConnect: true,
+        maxRetriesPerRequest: 2,
+        enableReadyCheck: false,
+      });
+    }
+  }
+
+  private async getClient(): Promise<Redis> {
+    if (!this.client) {
+      throw new Error('REDIS_CLIENT_UNAVAILABLE: Not a direct TCP/TLS Redis connection');
+    }
+    if (this.client.status === 'wait') {
+      await this.client.connect();
+    }
+    return this.client;
   }
 
   private buildKey(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): string {
@@ -450,15 +620,18 @@ export class RedisRelayNonceStore implements IRelayNonceStore {
   async isNonceUsed(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<boolean> {
     const key = this.buildKey(chainId, verifyingContract, user, nonce);
     try {
-      if (this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://')) {
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
         const res = await fetch(`${this.redisUrl}/get/${encodeURIComponent(key)}`, {
-          headers: { Authorization: `Bearer ${process.env.REDIS_TOKEN || ''}` },
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) return true; // fail closed
         const data: any = await res.json();
         return data.result !== null;
       }
-      return this.localFallback.isNonceUsed(chainId, verifyingContract, user, nonce);
+      const client = await this.getClient();
+      const val = await client.get(key);
+      return val !== null;
     } catch {
       return true; // fail closed
     }
@@ -467,15 +640,18 @@ export class RedisRelayNonceStore implements IRelayNonceStore {
   async consume(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<boolean> {
     const key = this.buildKey(chainId, verifyingContract, user, nonce);
     try {
-      if (this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://')) {
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
         const res = await fetch(`${this.redisUrl}/set/${encodeURIComponent(key)}/1?nx&ex=86400`, {
-          headers: { Authorization: `Bearer ${process.env.REDIS_TOKEN || ''}` },
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) return false;
         const data: any = await res.json();
         return data.result === 'OK';
       }
-      return this.localFallback.consume(chainId, verifyingContract, user, nonce);
+      const client = await this.getClient();
+      const res = await client.set(key, '1', 'EX', 86400, 'NX');
+      return res === 'OK';
     } catch {
       return false; // fail closed
     }
@@ -484,13 +660,101 @@ export class RedisRelayNonceStore implements IRelayNonceStore {
   async delete(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<void> {
     const key = this.buildKey(chainId, verifyingContract, user, nonce);
     try {
-      if (this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://')) {
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
         await fetch(`${this.redisUrl}/del/${encodeURIComponent(key)}`, {
-          headers: { Authorization: `Bearer ${process.env.REDIS_TOKEN || ''}` },
+          headers: { Authorization: `Bearer ${token}` },
         });
       } else {
-        this.localFallback.delete(chainId, verifyingContract, user, nonce);
+        const client = await this.getClient();
+        await client.del(key);
       }
+    } catch {
+      // Best-effort delete
+    }
+  }
+}
+
+/**
+ * PostgreSQL-backed distributed store for EIP-712 relay nonces
+ */
+export class PostgresRelayNonceStore implements IRelayNonceStore {
+  private pool: pg.Pool;
+  private initialized = false;
+  private initPromise: Promise<void> | null = null;
+
+  constructor(dbUrl: string) {
+    this.pool = new pg.Pool({
+      connectionString: dbUrl,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) return;
+    if (!this.initPromise) {
+      this.initPromise = (async () => {
+        const client = await this.pool.connect();
+        try {
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS relay_nonces (
+              chain_id VARCHAR(32) NOT NULL,
+              verifying_contract VARCHAR(42) NOT NULL,
+              user_address VARCHAR(42) NOT NULL,
+              nonce VARCHAR(78) NOT NULL,
+              consumed_at BIGINT NOT NULL,
+              PRIMARY KEY (chain_id, verifying_contract, user_address, nonce)
+            );
+          `);
+          this.initialized = true;
+        } finally {
+          client.release();
+        }
+      })();
+    }
+    return this.initPromise;
+  }
+
+  async isNonceUsed(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<boolean> {
+    try {
+      await this.ensureInitialized();
+      const res = await this.pool.query(
+        `SELECT 1 FROM relay_nonces
+         WHERE chain_id = $1 AND verifying_contract = $2 AND user_address = $3 AND nonce = $4`,
+        [String(chainId), verifyingContract.toLowerCase(), user.toLowerCase(), nonce.toString()]
+      );
+      return (res.rowCount ?? 0) > 0;
+    } catch {
+      return true; // fail closed
+    }
+  }
+
+  async consume(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<boolean> {
+    try {
+      await this.ensureInitialized();
+      const res = await this.pool.query(
+        `INSERT INTO relay_nonces (chain_id, verifying_contract, user_address, nonce, consumed_at)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (chain_id, verifying_contract, user_address, nonce) DO NOTHING
+         RETURNING nonce`,
+        [String(chainId), verifyingContract.toLowerCase(), user.toLowerCase(), nonce.toString(), Date.now()]
+      );
+      return (res.rowCount ?? 0) === 1;
+    } catch {
+      return false; // fail closed
+    }
+  }
+
+  async delete(chainId: string | number, verifyingContract: string, user: string, nonce: bigint): Promise<void> {
+    try {
+      await this.ensureInitialized();
+      await this.pool.query(
+        `DELETE FROM relay_nonces
+         WHERE chain_id = $1 AND verifying_contract = $2 AND user_address = $3 AND nonce = $4`,
+        [String(chainId), verifyingContract.toLowerCase(), user.toLowerCase(), nonce.toString()]
+      );
     } catch {
       // Best-effort delete
     }
@@ -528,13 +792,13 @@ export class DistributedRelayNonceStoreAdapter implements IRelayNonceStore {
       process.env.NODE_ENV === 'production' ||
       process.env.REQUIRE_DISTRIBUTED_NONCE_STORE === 'true';
 
-    const redisUrl = process.env.REDIS_URL;
+    const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.REDIS_URL;
     const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
     if (redisUrl) {
       this.activeStore = new RedisRelayNonceStore(redisUrl);
     } else if (dbUrl) {
-      this.activeStore = new MemoryRelayNonceStore();
+      this.activeStore = new PostgresRelayNonceStore(dbUrl);
     } else if (isProduction) {
       this.activeStore = new FailClosedRelayNonceStore();
     } else {

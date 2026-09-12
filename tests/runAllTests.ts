@@ -62,6 +62,7 @@ import {
 } from '../server/middleware/corsSecurity';
 import { runUltraRouterTests } from './UltraRouter.test';
 import { runUniswapV3Suite } from './uniswapV3Verification';
+import { runProductionHardenTests } from './productionHarden.test';
 
 let totalTests = 0;
 let passedTests = 0;
@@ -1267,6 +1268,14 @@ async function runTests() {
   totalTests += v3Res.total;
   passedTests += v3Res.passed;
   failedTests += v3Res.failed;
+
+  // -------------------------------------------------------------
+  // Test 18: Production Hardening & Financial Math Invariants Suite
+  // -------------------------------------------------------------
+  const prodRes = await runProductionHardenTests();
+  totalTests += prodRes.total;
+  passedTests += prodRes.passed;
+  failedTests += prodRes.failed;
 
   // Summary
   console.log('\n======================================================');

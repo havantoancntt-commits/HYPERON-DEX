@@ -220,7 +220,7 @@ export interface RouteCandidate {
   path: string[];
   splits: RouteSplit[];
   netOutputScore: number;
-  netProfitRaw?: bigint;
+  netProfitRaw: bigint;
 }
 
 export class SmartGraphRouter {
@@ -241,18 +241,26 @@ export class SmartGraphRouter {
     } = params;
 
     const rawAmountStr = typeof amount === 'number' ? amount.toString() : amount;
+    if (!rawAmountStr || !/^\d+(\.\d+)?$/.test(rawAmountStr.trim().replace(/,/g, '.'))) {
+      throw new DexError(DEX_ERROR_CODES.INVALID_AMOUNT, 'INVALID_AMOUNT: Input amount must be a valid positive number.');
+    }
     const numAmount = parseFloat(rawAmountStr) || 0;
-
     if (numAmount <= 0) {
       throw new DexError(DEX_ERROR_CODES.INVALID_AMOUNT, 'INVALID_AMOUNT: Input amount must be strictly greater than zero.');
     }
 
     // Strict slippage validation: 0.01% <= slippage <= 50.0%
-    const slippageFloat = typeof slippage === 'string' ? parseFloat(slippage) : slippage;
-    if (isNaN(slippageFloat) || slippageFloat < 0.01 || slippageFloat > 50.0) {
+    let slippageBps: bigint;
+    try {
+      const slippageStr = String(slippage ?? 0.5).trim();
+      slippageBps = DecimalMath.parseExactDecimal(slippageStr, 2);
+    } catch {
       throw new DexError(DEX_ERROR_CODES.INVALID_SLIPPAGE, 'INVALID_SLIPPAGE: Slippage tolerance must be between 0.01% and 50.0%.');
     }
-    const slippageBps = Math.round(slippageFloat * 100);
+    if (slippageBps < 1n || slippageBps > 5000n) {
+      throw new DexError(DEX_ERROR_CODES.INVALID_SLIPPAGE, 'INVALID_SLIPPAGE: Slippage tolerance must be between 0.01% and 50.0%.');
+    }
+    const slippageFloat = Number(slippageBps) / 100;
 
     const routerConfig = getRouterConfig(chainId);
     const verifiedChain = routerConfig.chainId;
@@ -303,9 +311,17 @@ export class SmartGraphRouter {
     // Fee-on-transfer / tax token deduction:
     // If fromToken has a detected transfer fee/sell tax, AMM receives net amount
     const sellTaxPercent = resolvedFrom.security?.sellTaxPercent || 0;
-    const effectiveTaxBps = BigInt(Math.min(5000, Math.max(0, Math.round(sellTaxPercent * 100))));
+    let effectiveTaxBps = 0n;
+    if (sellTaxPercent > 0) {
+      try {
+        const parsedTax = DecimalMath.parseExactDecimal(sellTaxPercent.toString(), 2);
+        effectiveTaxBps = BigIntMath.clamp(parsedTax, 0n, 5000n);
+      } catch {
+        effectiveTaxBps = 0n;
+      }
+    }
     const effectiveAmountInRaw = effectiveTaxBps > 0n
-      ? amountInRaw - (amountInRaw * effectiveTaxBps) / 10000n
+      ? BigIntMath.sub(amountInRaw, BigIntMath.mulDivDown(amountInRaw, effectiveTaxBps, 10000n))
       : amountInRaw;
 
     const fromPrice = resolvedFrom.priceUsd ?? getUsdPrice(fromToken.symbol) ?? 0;
@@ -411,9 +427,10 @@ export class SmartGraphRouter {
 
             const hopOutFormatted = q2.amountOutFormatted;
             const hopOutFloat = parseFloat(hopOutFormatted);
-            const combinedImpact = Number(
-              (100 * (1 - (1 - q1.priceImpactPercent / 100) * (1 - q2.priceImpactPercent / 100))).toFixed(2)
-            );
+            const i1Bps = BigInt(Math.round(q1.priceImpactPercent * 100));
+            const i2Bps = BigInt(Math.round(q2.priceImpactPercent * 100));
+            const combinedImpactBps = 10000n - BigIntMath.mulDivDown(10000n - i1Bps, 10000n - i2Bps, 10000n);
+            const combinedImpact = Number(combinedImpactBps) / 100;
             const combinedGasUnits = q1.gasEstimatedUnits + q2.gasEstimatedUnits + 45000;
 
             multiHopCandidates.push({
@@ -505,6 +522,22 @@ export class SmartGraphRouter {
         netProfitRaw,
         netOutputScore: parseFloat(quote.amountOutFormatted),
       });
+    }
+
+    // Add all valid multi-hop routes
+    for (const m of multiHopCandidates) {
+      const gasCostTokenRaw = (gasGwei !== null && nativePriceUsd > 0)
+        ? calculateGasCostInTokenOutRaw(
+            m.gasEstimatedUnits,
+            gasGwei,
+            nativePriceUsd,
+            toPrice,
+            decimalsOut,
+            isNativeOut
+          )
+        : 0n;
+      m.netProfitRaw = m.amountOutRaw > gasCostTokenRaw ? m.amountOutRaw - gasCostTokenRaw : 0n;
+      candidates.push(m);
     }
 
     // 5. Hyperon UltraPath™ Convex Split Routing Optimizer:
@@ -674,10 +707,10 @@ export class SmartGraphRouter {
         const pctB = 100 - bestAllocationPctA;
         const splitOutFormatted = formatUnits(bestSplitOutRaw, decimalsOut);
         const splitOutFloat = parseFloat(splitOutFormatted);
-        const splitImpact =
-          (bestSplitQuoteA.priceImpactPercent * bestAllocationPctA +
-            bestSplitQuoteB.priceImpactPercent * pctB) /
-          100;
+        const impactA = BigInt(Math.round(bestSplitQuoteA.priceImpactPercent * 100));
+        const impactB = BigInt(Math.round(bestSplitQuoteB.priceImpactPercent * 100));
+        const splitImpactBps = (impactA * BigInt(bestAllocationPctA) + impactB * BigInt(pctB)) / 100n;
+        const splitImpact = Number(splitImpactBps) / 100;
 
         candidates.push({
           dexName: `Smart Split (${bestPoolA.dexProtocol} ${bestAllocationPctA}% + ${bestPoolB.dexProtocol} ${pctB}%)`,
@@ -735,8 +768,7 @@ export class SmartGraphRouter {
     const optimalRoute = candidates[0];
 
     // 6. Minimum received using pure integer arithmetic with slippage BPS
-    const minReceivedRaw =
-      (optimalRoute.amountOutRaw * BigInt(10000 - slippageBps)) / 10000n;
+    const minReceivedRaw = PriceMath.calculateMinimumReceived(optimalRoute.amountOutRaw, slippageBps);
     const minReceivedFormatted = formatUnits(minReceivedRaw, decimalsOut);
 
     const gasUnits = optimalRoute.gasEstimatedUnits;

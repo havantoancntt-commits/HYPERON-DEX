@@ -128,6 +128,10 @@ export class BigIntMath {
     }
     return z;
   }
+
+  public static clamp(val: bigint, minVal: bigint, maxVal: bigint): bigint {
+    return val < minVal ? minVal : val > maxVal ? maxVal : val;
+  }
 }
 
 /**
