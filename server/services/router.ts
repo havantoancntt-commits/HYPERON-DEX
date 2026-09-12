@@ -924,8 +924,8 @@ export class SmartGraphRouter {
       routeCommitment,
       zkProof: routeCommitment,
       mevProtectionStats: {
-        frontrunningRisk: 'IMMUNE',
-        sandwichRiskScore: 0,
+        frontrunningRisk: 'LOW',
+        sandwichRiskScore: 5,
         privateMempoolRelay: 'Flashbots Protect v2 / Titan Relay',
         mevSavedEstUsd: Math.max(0.20, Number((numAmount * 0.0012 * (toPrice || 1)).toFixed(2))),
       },
@@ -939,7 +939,7 @@ export class SmartGraphRouter {
 
   /**
    * Pre-Flight Transaction Simulation via simulationEngine.
-   * Strictly verifies quote expiration and wallet address.
+   * Strictly verifies quote expiration, chain binding, and wallet address.
    */
   async simulateSwapTransaction(
     quote: SwapQuote,
@@ -953,6 +953,12 @@ export class SmartGraphRouter {
     const targetChain = chainId || quote.chainId || quote.fromToken.chainId;
     if (!targetChain) {
       throw new Error('INVALID_CHAIN: Chain ID is required for transaction simulation.');
+    }
+    if (chainId && quote.chainId && chainId !== quote.chainId) {
+      throw new DexError(
+        DEX_ERROR_CODES.CHAIN_MISMATCH,
+        `CHAIN_MISMATCH: Target simulation chain ${chainId} does not match quote chain ${quote.chainId}`
+      );
     }
     const now = Date.now();
     const expiresAt = quote.expiresAt || (quote.timestamp + (quote.expiresInSec || 30) * 1000);

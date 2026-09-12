@@ -84,6 +84,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     error MaxHopsExceeded(uint256 hops, uint256 maxAllowed);
     error InvalidPath();
     error UnexpectedETH();
+    error ETHTransferFailed();
 
     // --- Modifiers ---
     modifier whenNotHalted() {
@@ -752,7 +753,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
             uint256 bal = address(this).balance;
             if (bal < amount) revert InsufficientContractBalance(bal, amount);
             (bool success, ) = to.call{value: amount}("");
-            require(success, "ETH_TRANSFER_FAILED");
+            if (!success) revert ETHTransferFailed();
         } else {
             uint256 bal = IERC20(token).balanceOf(address(this));
             if (bal < amount) revert InsufficientContractBalance(bal, amount);

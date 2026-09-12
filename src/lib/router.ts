@@ -1,5 +1,5 @@
 /**
- * HYPERON-DEX Client-Side Smart Router & Zero-Knowledge Execution Engine
+ * HYPERON-DEX Client-Side Smart Router & Cryptographic Route Commitment Engine
  * Runs 100% on the client (browser / Web Worker) using public RPC endpoints (Alchemy, Infura, Cloudflare).
  * Offloads compute from centralized servers, ensuring Zero-Trust non-custodial privacy.
  *
@@ -31,7 +31,7 @@ export interface ClientQuoteParams {
 }
 
 export interface RouteCommitment {
-  protocol: 'groth16' | 'sha256-merkle';
+  protocol: 'keccak256-route-commitment' | 'eip712-commitment' | 'groth16' | 'sha256-merkle';
   proofHash: string;
   nullifier: string;
   publicSignals: {
