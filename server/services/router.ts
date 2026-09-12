@@ -38,6 +38,13 @@ import { getRouterConfig } from './routerRegistry';
 import { poolDiscovery, VerifiedPoolRecord } from './poolDiscovery';
 import { tokenResolver, ResolvedToken } from './tokenResolver';
 import { simulationEngine } from './simulationEngine';
+import {
+  GasMath,
+  DecimalMath,
+  PriceMath,
+  USD_PRICE_DECIMALS,
+  BigIntMath,
+} from './financialMath';
 import { isCircuitBreakerTripped } from './multiOracleAggregator';
 
 export interface QuoteParams {
@@ -129,29 +136,25 @@ export function calculateGasCostInTokenOutRaw(
 
   if (effectiveGwei <= 0) return 0n;
 
-  // 1 Gwei = 10^9 Wei. We scale gasGwei to 4 decimal places to prevent float rounding.
-  const gasGweiScaled = BigInt(Math.max(1, Math.round(effectiveGwei * 1e4)));
-  const gasWei = BigInt(gasUnits) * gasGweiScaled * 10n ** 5n; // (units * gwei * 1e4 * 1e9) / 1e4 = units * gwei * 1e9
+  // Exact gas price in Wei: 1 Gwei = 10^9 Wei
+  // We parse effectiveGwei into exact Wei using DecimalMath.parseExactDecimal without float roundoff
+  const gasPriceWei = DecimalMath.parseExactDecimal(effectiveGwei.toString(), 9);
 
-  if (isNativeOut) {
-    if (decimalsOut === 18) return gasWei;
-    if (decimalsOut > 18) return gasWei * (10n ** BigInt(decimalsOut - 18));
-    return gasWei / (10n ** BigInt(18 - decimalsOut));
-  }
+  const nativePriceUsdRaw = nativePriceUsd > 0
+    ? DecimalMath.parseExactDecimal(nativePriceUsd.toString(), USD_PRICE_DECIMALS)
+    : 0n;
+  const tokenOutPriceUsdRaw = tokenOutPriceUsd > 0
+    ? DecimalMath.parseExactDecimal(tokenOutPriceUsd.toString(), USD_PRICE_DECIMALS)
+    : 0n;
 
-  if (nativePriceUsd > 0 && tokenOutPriceUsd > 0) {
-    const nativePriceScaled = BigInt(Math.round(nativePriceUsd * 1e6));
-    const tokenOutPriceScaled = BigInt(Math.round(tokenOutPriceUsd * 1e6));
-    const scaleFactorOut = 10n ** BigInt(decimalsOut);
-
-    const numerator = gasWei * nativePriceScaled * scaleFactorOut;
-    const denominator = tokenOutPriceScaled * (10n ** 18n);
-    if (denominator > 0n) {
-      return numerator / denominator;
-    }
-  }
-
-  return 0n;
+  return GasMath.calculateGasCostInTokenOutRaw(
+    BigInt(gasUnits),
+    gasPriceWei,
+    nativePriceUsdRaw,
+    tokenOutPriceUsdRaw,
+    decimalsOut,
+    isNativeOut
+  );
 }
 
 /**

@@ -81,6 +81,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     error InvalidFeeTier(uint24 feeTier);
     error MaxHopsExceeded(uint256 hops, uint256 maxAllowed);
     error InvalidPath();
+    error UnexpectedETH();
 
     // --- Modifiers ---
     modifier whenNotHalted() {
@@ -349,6 +350,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     function swapExactInputSingle(
         SingleSwapParams calldata params
     ) external payable nonReentrant whenNotHalted checkDeadline(params.deadline) returns (uint256 amountOut) {
+        if (msg.value > 0) revert UnexpectedETH();
         if (params.amountIn == 0) revert InvalidAmount();
         if (params.recipient == address(0)) revert InvalidAddress();
 
@@ -421,6 +423,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     function swapExactInputMultiple(
         MultiHopSwapParams calldata params
     ) external payable nonReentrant whenNotHalted checkDeadline(params.deadline) returns (uint256 amountOut) {
+        if (msg.value > 0) revert UnexpectedETH();
         if (params.amountIn == 0) revert InvalidAmount();
         if (params.recipient == address(0)) revert InvalidAddress();
 
@@ -733,6 +736,21 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
             }
         } catch {
             revert OracleCircuitBreakerTriggered(token);
+        }
+    }
+
+    /**
+     * @notice Rescues accidentally trapped ERC-20 tokens or native ETH.
+     * Restricted strictly to contract owner with non-reentrant guard.
+     */
+    function rescueFunds(address token, address to, uint256 amount) external onlyOwner nonReentrant {
+        if (to == address(0)) revert InvalidAddress();
+        if (amount == 0) revert InvalidAmount();
+        if (token == address(0)) {
+            (bool success, ) = to.call{value: amount}("");
+            require(success, "ETH_TRANSFER_FAILED");
+        } else {
+            IERC20(token).safeTransfer(to, amount);
         }
     }
 

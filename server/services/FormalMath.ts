@@ -340,3 +340,14 @@ export class FormalMath {
     return Number(impactBps);
   }
 }
+
+export {
+  BigIntMath,
+  DecimalMath,
+  FixedPoint,
+  PriceMath,
+  GasMath,
+  USD_PRICE_DECIMALS,
+  SCALAR_USD,
+  FinancialMathError,
+} from './financialMath';

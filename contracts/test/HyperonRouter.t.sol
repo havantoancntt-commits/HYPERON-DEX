@@ -58,7 +58,7 @@ contract HyperonRouterTest {
         tokenB.mint(user, 1000 * 1e18);
     }
 
-    function test_FuzzSingleSwapInvariant(uint256 amountIn) public {
+    function test_FuzzSingleSwapInvariant(uint256 amountIn) public view {
         if (amountIn == 0 || amountIn > 1000 * 1e18) return;
 
         uint256 deadline = block.timestamp + 300;
@@ -116,7 +116,7 @@ contract HyperonRouterTest {
         assert(caught == true);
     }
 
-    function test_RouteCommitment_TamperTokenIn() public {
+    function test_RouteCommitment_TamperTokenIn() public view {
         uint256 amountIn = 10 * 1e18;
         uint256 deadline = block.timestamp + 300;
         uint256 amountOutMin = (amountIn * 995) / 1000;
@@ -143,7 +143,7 @@ contract HyperonRouterTest {
         assert(originalHash != tamperedHash);
     }
 
-    function test_RouteCommitment_TamperTokenOut() public {
+    function test_RouteCommitment_TamperTokenOut() public view {
         uint256 amountIn = 10 * 1e18;
         uint256 deadline = block.timestamp + 300;
         uint256 amountOutMin = (amountIn * 995) / 1000;
@@ -170,7 +170,7 @@ contract HyperonRouterTest {
         assert(originalHash != tamperedHash);
     }
 
-    function test_RouteCommitment_TamperAmountIn() public {
+    function test_RouteCommitment_TamperAmountIn() public view {
         uint256 amountIn = 10 * 1e18;
         uint256 deadline = block.timestamp + 300;
         uint256 amountOutMin = (amountIn * 995) / 1000;
@@ -197,7 +197,7 @@ contract HyperonRouterTest {
         assert(originalHash != tamperedHash);
     }
 
-    function test_RouteCommitment_TamperAmountOutMinimum() public {
+    function test_RouteCommitment_TamperAmountOutMinimum() public view {
         uint256 amountIn = 10 * 1e18;
         uint256 deadline = block.timestamp + 300;
         uint256 amountOutMin = (amountIn * 995) / 1000;
@@ -224,7 +224,7 @@ contract HyperonRouterTest {
         assert(originalHash != tamperedHash);
     }
 
-    function test_RouteCommitment_TamperRecipient() public {
+    function test_RouteCommitment_TamperRecipient() public view {
         uint256 amountIn = 10 * 1e18;
         uint256 deadline = block.timestamp + 300;
         uint256 amountOutMin = (amountIn * 995) / 1000;
@@ -251,7 +251,7 @@ contract HyperonRouterTest {
         assert(originalHash != tamperedHash);
     }
 
-    function test_RouteCommitment_TamperDeadline() public {
+    function test_RouteCommitment_TamperDeadline() public view {
         uint256 amountIn = 10 * 1e18;
         uint256 deadline = block.timestamp + 300;
         uint256 amountOutMin = (amountIn * 995) / 1000;
@@ -278,7 +278,7 @@ contract HyperonRouterTest {
         assert(originalHash != tamperedHash);
     }
 
-    function test_RouteCommitment_TamperFeeTier() public {
+    function test_RouteCommitment_TamperFeeTier() public view {
         uint256 amountIn = 10 * 1e18;
         uint256 deadline = block.timestamp + 300;
         uint256 amountOutMin = (amountIn * 995) / 1000;
@@ -305,7 +305,7 @@ contract HyperonRouterTest {
         assert(originalHash != tamperedHash);
     }
 
-    function test_RouteCommitment_TamperRelayNonce() public {
+    function test_RouteCommitment_TamperRelayNonce() public view {
         uint256 amountIn = 10 * 1e18;
         uint256 deadline = block.timestamp + 300;
         uint256 amountOutMin = (amountIn * 995) / 1000;
@@ -336,7 +336,7 @@ contract HyperonRouterTest {
         assert(originalHash != tamperedHash);
     }
 
-    function test_RouteCommitment_TamperPath() public {
+    function test_RouteCommitment_TamperPath() public view {
         uint256 amountIn = 10 * 1e18;
         uint256 deadline = block.timestamp + 300;
         uint256 amountOutMin = (amountIn * 995) / 1000;
@@ -412,5 +412,48 @@ contract HyperonRouterTest {
             "RelaySwap(address user,address tokenIn,address tokenOut,uint256 amountIn,uint256 amountOutMinimum,address recipient,uint24 feeTier,bytes32 routeHash,uint256 deadline,uint256 nonce)"
         );
         assert(router.RELAY_SWAP_TYPEHASH() == expected);
+    }
+
+    function test_RevertIfUnexpectedETH() public {
+        uint256 amountIn = 10 * 1e18;
+        uint256 deadline = block.timestamp + 300;
+        uint256 amountOutMin = (amountIn * 995) / 1000;
+        bytes32 routeHash = router.computeSingleRouteHash(
+            address(tokenA),
+            address(tokenB),
+            3000,
+            amountIn,
+            amountOutMin,
+            user,
+            deadline
+        );
+
+        HyperonRouter.SingleSwapParams memory params = HyperonRouter.SingleSwapParams({
+            tokenIn: address(tokenA),
+            tokenOut: address(tokenB),
+            feeTier: 3000,
+            recipient: user,
+            deadline: deadline,
+            amountIn: amountIn,
+            amountOutMinimum: amountOutMin,
+            routeHash: routeHash
+        });
+
+        // Calling with msg.value > 0 on ERC-20 swap MUST revert with UnexpectedETH
+        (bool success, ) = address(router).call{value: 1 ether}(
+            abi.encodeWithSelector(router.swapExactInputSingle.selector, params)
+        );
+        assert(success == false);
+    }
+
+    function test_RescueFunds() public {
+        HyperonRouter ownedRouter = new HyperonRouter(address(mockUni), address(oracle), address(this));
+        tokenA.mint(address(ownedRouter), 50 * 1e18);
+        assert(tokenA.balanceOf(address(ownedRouter)) == 50 * 1e18);
+
+        address recoveryRecipient = address(0x9999);
+        ownedRouter.rescueFunds(address(tokenA), recoveryRecipient, 50 * 1e18);
+        assert(tokenA.balanceOf(recoveryRecipient) == 50 * 1e18);
+        assert(tokenA.balanceOf(address(ownedRouter)) == 0);
     }
 }
