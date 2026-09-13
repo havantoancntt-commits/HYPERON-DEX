@@ -24,18 +24,23 @@ import {
 } from './financialMath';
 import {
   CircuitBreakerStoreManager,
+  CircuitBreakerService,
   ICircuitBreakerStore,
   IPriceHistoryStore,
   ICircuitBreakerAuditStore,
   CircuitBreakerState,
+  CircuitBreakerStatus,
+  CircuitBreakerAuditLog as StoreAuditLog,
 } from './circuitBreakerStore';
 
 export {
   CircuitBreakerStoreManager,
+  CircuitBreakerService,
   type ICircuitBreakerStore,
   type IPriceHistoryStore,
   type ICircuitBreakerAuditStore,
   type CircuitBreakerState,
+  type CircuitBreakerStatus,
 };
 
 export interface PriceSource {
@@ -55,31 +60,10 @@ export interface PriceSnapshot {
   timestamp: number;
 }
 
-export interface CircuitBreakerStatus {
-  symbol: string;
-  isTripped: boolean;
-  isEmergencyMode?: boolean;
-  trippedAt?: number;
-  reason?: string;
-  priceChangeBps?: bigint;
-  priceChangePercent?: number;
-  lastValidPriceRaw?: bigint;
-  lastValidPriceUsd?: number;
-  cooldownElapsed?: boolean;
-}
-
-export interface CircuitBreakerAuditLog {
-  id: string;
-  symbol: string;
-  action: 'TRIPPED' | 'RESET';
-  operator: string;
-  reason: string;
-  timestamp: number;
-  verifiedPriceRaw?: string;
+export type CircuitBreakerAuditLog = StoreAuditLog & {
   verifiedPriceUsd?: number;
-  priceChangeBps?: string;
   priceChangePercent?: number;
-}
+};
 
 export interface ConsolidatedOracleReport {
   symbol: string;
@@ -124,11 +108,6 @@ export const EMERGENCY_SPIKE_PERCENT: number = 10.0;
 export const EMERGENCY_WINDOW_MS: number = 5_000; // 5 seconds window for instant flash crash/attack detection
 export const CIRCUIT_BREAKER_COOLDOWN_MS: number = 300_000; // 5 minutes cool-off
 export const MIN_INDEPENDENT_SOURCES: number = 2; // Hard constraint: at least 2 independent providers required
-
-// In-memory rolling price history per symbol (last 120 snapshots)
-const priceHistoryMap = new Map<string, PriceSnapshot[]>();
-const circuitBreakerMap = new Map<string, CircuitBreakerStatus>();
-const circuitBreakerAuditLogs: CircuitBreakerAuditLog[] = [];
 
 /**
  * Calculates consolidated price across independent sources.
@@ -201,17 +180,18 @@ export function getConsolidatedPrice(sources: PriceSource[]): bigint {
  * Does NOT auto-clear! Requires cooldown PLUS verified reset.
  */
 export function isCircuitBreakerTripped(symbol: string): boolean {
-  const status = circuitBreakerMap.get(symbol.toUpperCase());
-  if (!status || !status.isTripped) return false;
-  return true;
+  return CircuitBreakerService.isTrippedSync(symbol);
+}
+
+export async function isCircuitBreakerTrippedAsync(symbol: string): Promise<boolean> {
+  return CircuitBreakerService.isTripped(symbol);
 }
 
 /**
  * Checks whether emergency mode is active for a symbol.
  */
 export function isEmergencyModeActive(symbol: string): boolean {
-  const status = circuitBreakerMap.get(symbol.toUpperCase());
-  return !!status?.isEmergencyMode && isCircuitBreakerTripped(symbol);
+  return CircuitBreakerService.isEmergencyMode(symbol);
 }
 
 /**
@@ -223,23 +203,7 @@ export function resetCircuitBreaker(
   reason: string = 'Audited oracle price verified clean post-cooldown',
   verifiedPriceUsd?: number
 ): { success: boolean; message: string } {
-  const sym = symbol.toUpperCase();
-  const current = circuitBreakerMap.get(sym);
-
-  if (!current || !current.isTripped) {
-    return { success: true, message: `Circuit breaker for ${sym} is already clean.` };
-  }
-
-  const now = Date.now();
-  if (current.trippedAt && now - current.trippedAt < CIRCUIT_BREAKER_COOLDOWN_MS) {
-    const remainingSec = Math.ceil((CIRCUIT_BREAKER_COOLDOWN_MS - (now - current.trippedAt)) / 1000);
-    return {
-      success: false,
-      message: `Cannot reset circuit breaker: Cooldown period active (${remainingSec}s remaining).`,
-    };
-  }
-
-  let verifiedPriceRaw: bigint | undefined;
+  let verifiedPriceRaw = 0n;
   if (verifiedPriceUsd !== undefined) {
     if (typeof verifiedPriceUsd !== 'number' || isNaN(verifiedPriceUsd) || !isFinite(verifiedPriceUsd) || verifiedPriceUsd <= 0) {
       return {
@@ -250,34 +214,32 @@ export function resetCircuitBreaker(
     verifiedPriceRaw = DecimalMath.parseExactDecimal(verifiedPriceUsd.toString(), PRICE_DECIMALS);
   }
 
-  circuitBreakerMap.set(sym, {
-    symbol: sym,
-    isTripped: false,
-    isEmergencyMode: false,
-    lastValidPriceRaw: verifiedPriceRaw || current.lastValidPriceRaw,
-    lastValidPriceUsd: verifiedPriceUsd || current.lastValidPriceUsd,
-  });
+  return CircuitBreakerService.resetSync(symbol, operator, reason, verifiedPriceRaw);
+}
 
-  const auditEntry: CircuitBreakerAuditLog = {
-    id: `CB-RESET-${now}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
-    symbol: sym,
-    action: 'RESET',
-    operator,
-    reason,
-    timestamp: now,
-    verifiedPriceRaw: verifiedPriceRaw ? verifiedPriceRaw.toString() : undefined,
-    verifiedPriceUsd,
-  };
-  circuitBreakerAuditLogs.push(auditEntry);
-
-  return { success: true, message: `Circuit breaker for ${sym} successfully reset with audit record ${auditEntry.id}.` };
+export async function resetCircuitBreakerAsync(
+  symbol: string,
+  operator: string = 'GOVERNANCE_TIMELOCK',
+  reason: string = 'Audited oracle price verified clean post-cooldown',
+  verifiedPriceUsd?: number
+): Promise<{ success: boolean; state: CircuitBreakerState; error?: string }> {
+  let verifiedPriceRaw = 0n;
+  if (verifiedPriceUsd !== undefined && verifiedPriceUsd > 0) {
+    verifiedPriceRaw = DecimalMath.parseExactDecimal(verifiedPriceUsd.toString(), PRICE_DECIMALS);
+  }
+  const store = CircuitBreakerStoreManager.getCircuitBreakerStore();
+  return store.reset(symbol, operator, reason, verifiedPriceRaw);
 }
 
 /**
  * Retrieves immutable audit history of all circuit breaker trips and resets.
  */
-export function getCircuitBreakerAuditLogs(): CircuitBreakerAuditLog[] {
-  return [...circuitBreakerAuditLogs];
+export function getCircuitBreakerAuditLogs(symbol?: string): CircuitBreakerAuditLog[] {
+  return CircuitBreakerService.getAuditLogsSync(symbol);
+}
+
+export async function getCircuitBreakerAuditLogsAsync(symbol?: string, limit: number = 50): Promise<any[]> {
+  return CircuitBreakerService.getAuditLogs(symbol, limit);
 }
 
 /**
@@ -285,112 +247,15 @@ export function getCircuitBreakerAuditLogs(): CircuitBreakerAuditLog[] {
  * Uses 100% BigInt integer arithmetic for all volatility assertions.
  */
 export function recordPriceSnapshot(symbol: string, priceRaw: bigint): CircuitBreakerStatus {
-  const sym = symbol.toUpperCase();
-  const now = Date.now();
-
-  let history = priceHistoryMap.get(sym);
-  if (!history) {
-    history = [];
-    priceHistoryMap.set(sym, history);
+  const status = CircuitBreakerService.recordSnapshotSync(symbol, priceRaw);
+  if (status.lastValidPriceRaw && status.lastValidPriceUsd === undefined) {
+    status.lastValidPriceUsd = parseFloat(formatUnits(status.lastValidPriceRaw, PRICE_DECIMALS));
   }
+  return status;
+}
 
-  history.push({ priceRaw, timestamp: now });
-
-  // Retain snapshots up to 120 entries
-  if (history.length > 120) {
-    history.shift();
-  }
-
-  // If already tripped, maintain tripped state
-  const existing = circuitBreakerMap.get(sym);
-  if (existing?.isTripped) {
-    const cooldownElapsed = existing.trippedAt ? now - existing.trippedAt >= CIRCUIT_BREAKER_COOLDOWN_MS : false;
-    return {
-      ...existing,
-      cooldownElapsed,
-    };
-  }
-
-  // 1. Check Emergency Mode: >10% move in <= 5 seconds using pure BigInt BPS
-  const recent5s = history.filter((s) => now - s.timestamp <= EMERGENCY_WINDOW_MS);
-  if (recent5s.length >= 2) {
-    const oldest = recent5s[0];
-    const diff = priceRaw > oldest.priceRaw ? priceRaw - oldest.priceRaw : oldest.priceRaw - priceRaw;
-    const pctChangeBps = oldest.priceRaw > 0n ? (diff * 10000n) / oldest.priceRaw : 0n;
-
-    if (pctChangeBps >= EMERGENCY_SPIKE_BPS) {
-      const pctChangeFloat = Number(pctChangeBps) / 100;
-      const oldestUsd = parseFloat(formatUnits(oldest.priceRaw, PRICE_DECIMALS));
-      const status: CircuitBreakerStatus = {
-        symbol: sym,
-        isTripped: true,
-        isEmergencyMode: true,
-        trippedAt: now,
-        priceChangeBps: pctChangeBps,
-        priceChangePercent: pctChangeFloat,
-        reason: `EMERGENCY_HALT: Instant ${pctChangeFloat.toFixed(2)}% price spike detected in ${(now - oldest.timestamp) / 1000}s (Threshold: ${EMERGENCY_SPIKE_PERCENT}%)`,
-        lastValidPriceRaw: oldest.priceRaw,
-        lastValidPriceUsd: oldestUsd,
-      };
-      circuitBreakerMap.set(sym, status);
-      circuitBreakerAuditLogs.push({
-        id: `CB-TRIP-${now}`,
-        symbol: sym,
-        action: 'TRIPPED',
-        operator: 'SYSTEM_CIRCUIT_BREAKER',
-        reason: status.reason || '',
-        timestamp: now,
-        priceChangeBps: pctChangeBps.toString(),
-        priceChangePercent: pctChangeFloat,
-      });
-      return status;
-    }
-  }
-
-  // 2. Check Standard Circuit Breaker: >20% move in <= 15 seconds using pure BigInt BPS
-  const recent15s = history.filter((s) => now - s.timestamp <= CIRCUIT_BREAKER_WINDOW_MS);
-  if (recent15s.length >= 2) {
-    const oldest = recent15s[0];
-    const diff = priceRaw > oldest.priceRaw ? priceRaw - oldest.priceRaw : oldest.priceRaw - priceRaw;
-    const pctChangeBps = oldest.priceRaw > 0n ? (diff * 10000n) / oldest.priceRaw : 0n;
-
-    if (pctChangeBps >= CIRCUIT_BREAKER_THRESHOLD_BPS) {
-      const pctChangeFloat = Number(pctChangeBps) / 100;
-      const oldestUsd = parseFloat(formatUnits(oldest.priceRaw, PRICE_DECIMALS));
-      const status: CircuitBreakerStatus = {
-        symbol: sym,
-        isTripped: true,
-        isEmergencyMode: false,
-        trippedAt: now,
-        priceChangeBps: pctChangeBps,
-        priceChangePercent: pctChangeFloat,
-        reason: `CIRCUIT_BREAKER_ACTIVE: ${pctChangeFloat.toFixed(2)}% volatility spike in ${(now - oldest.timestamp) / 1000}s (Threshold: ${CIRCUIT_BREAKER_THRESHOLD_PERCENT}%)`,
-        lastValidPriceRaw: oldest.priceRaw,
-        lastValidPriceUsd: oldestUsd,
-      };
-      circuitBreakerMap.set(sym, status);
-      circuitBreakerAuditLogs.push({
-        id: `CB-TRIP-${now}`,
-        symbol: sym,
-        action: 'TRIPPED',
-        operator: 'SYSTEM_CIRCUIT_BREAKER',
-        reason: status.reason || '',
-        timestamp: now,
-        priceChangeBps: pctChangeBps.toString(),
-        priceChangePercent: pctChangeFloat,
-      });
-      return status;
-    }
-  }
-
-  const latestUsd = parseFloat(formatUnits(priceRaw, PRICE_DECIMALS));
-  return {
-    symbol: sym,
-    isTripped: false,
-    isEmergencyMode: false,
-    lastValidPriceRaw: priceRaw,
-    lastValidPriceUsd: latestUsd,
-  };
+export async function recordPriceSnapshotAsync(symbol: string, priceRaw: bigint): Promise<CircuitBreakerStatus> {
+  return recordPriceSnapshot(symbol, priceRaw);
 }
 
 /**

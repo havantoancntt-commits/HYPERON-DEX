@@ -45,7 +45,7 @@ import {
   USD_PRICE_DECIMALS,
   BigIntMath,
 } from './financialMath';
-import { isCircuitBreakerTripped } from './multiOracleAggregator';
+import { isCircuitBreakerTripped, isCircuitBreakerTrippedAsync } from './multiOracleAggregator';
 
 export interface QuoteParams {
   fromTokenSymbol?: string;
@@ -290,13 +290,13 @@ export class SmartGraphRouter {
     const toToken = tokenResolver.toToken(resolvedTo);
 
     // Multi-Oracle Circuit Breaker Check (>20% 60s price shock protection)
-    if (isCircuitBreakerTripped(fromToken.symbol)) {
+    if (isCircuitBreakerTripped(fromToken.symbol) || (await isCircuitBreakerTrippedAsync(fromToken.symbol))) {
       throw new DexError(
         DEX_ERROR_CODES.CIRCUIT_BREAKER_TRIGGERED,
         `CIRCUIT_BREAKER_TRIGGERED: Extreme price volatility detected for ${fromToken.symbol} (>20% change in <60s). Routing temporarily halted to protect against oracle manipulation.`
       );
     }
-    if (isCircuitBreakerTripped(toToken.symbol)) {
+    if (isCircuitBreakerTripped(toToken.symbol) || (await isCircuitBreakerTrippedAsync(toToken.symbol))) {
       throw new DexError(
         DEX_ERROR_CODES.CIRCUIT_BREAKER_TRIGGERED,
         `CIRCUIT_BREAKER_TRIGGERED: Extreme price volatility detected for ${toToken.symbol} (>20% change in <60s). Routing temporarily halted to protect against oracle manipulation.`

@@ -10,16 +10,27 @@ import crypto from 'crypto';
 import pg from 'pg';
 import Redis from 'ioredis';
 
+export type CircuitBreakerStatusType =
+  | 'HEALTHY'
+  | 'TRIPPED'
+  | 'CIRCUIT_BREAKER_ACTIVE'
+  | 'EMERGENCY_HALT'
+  | 'COOLDOWN'
+  | 'VERIFICATION_PENDING'
+  | 'VERIFIED_RESET'
+  | 'STORAGE_UNAVAILABLE';
+
 export interface CircuitBreakerState {
   symbol: string;
   isTripped: boolean;
   trippedAt: number;
   reason?: string;
   triggerPriceRaw?: bigint;
+  verifiedPriceRaw?: bigint;
   cooldownPeriodMs: number;
   resetAttempts: number;
   lastEvaluatedAt: number;
-  status: 'HEALTHY' | 'CIRCUIT_BREAKER_ACTIVE' | 'EMERGENCY_HALT' | 'COOLDOWN';
+  status: CircuitBreakerStatusType;
 }
 
 export interface PriceSnapshot {
@@ -119,11 +130,15 @@ export class InMemoryCircuitBreakerStore implements ICircuitBreakerStore {
       };
     }
 
-    // Check if cooldown has expired
-    if (existing.isTripped && Date.now() - existing.trippedAt > existing.cooldownPeriodMs) {
+    if (existing.isTripped) {
+      const elapsed = Date.now() - existing.trippedAt;
+      const status: CircuitBreakerStatusType =
+        elapsed >= existing.cooldownPeriodMs ? 'VERIFICATION_PENDING' : 'COOLDOWN';
       return {
         ...existing,
-        status: 'COOLDOWN',
+        status: existing.status === 'EMERGENCY_HALT' && elapsed < existing.cooldownPeriodMs
+          ? 'EMERGENCY_HALT'
+          : status,
       };
     }
 
@@ -157,7 +172,7 @@ export class InMemoryCircuitBreakerStore implements ICircuitBreakerStore {
         cooldownPeriodMs: DEFAULT_COOLDOWN_MS,
         resetAttempts: 0,
         lastEvaluatedAt: now,
-        status: isEmergency ? 'EMERGENCY_HALT' : 'CIRCUIT_BREAKER_ACTIVE',
+        status: isEmergency ? 'EMERGENCY_HALT' : 'TRIPPED',
       };
 
       this.states.set(key, newState);
@@ -210,19 +225,21 @@ export class InMemoryCircuitBreakerStore implements ICircuitBreakerStore {
         };
       }
 
-      const resetState: CircuitBreakerState = {
+      // Verification transition
+      const verifiedResetState: CircuitBreakerState = {
         symbol: key,
         isTripped: false,
         trippedAt: 0,
         reason: undefined,
         triggerPriceRaw: undefined,
+        verifiedPriceRaw: currentVerifiedPriceRaw > 0n ? currentVerifiedPriceRaw : undefined,
         cooldownPeriodMs: DEFAULT_COOLDOWN_MS,
         resetAttempts: current.resetAttempts + 1,
         lastEvaluatedAt: now,
         status: 'HEALTHY',
       };
 
-      this.states.set(key, resetState);
+      this.states.set(key, verifiedResetState);
 
       if (this.auditStore) {
         await this.auditStore.appendLog({
@@ -239,7 +256,7 @@ export class InMemoryCircuitBreakerStore implements ICircuitBreakerStore {
         });
       }
 
-      return { success: true, state: resetState };
+      return { success: true, state: verifiedResetState };
     });
   }
 
@@ -362,44 +379,62 @@ export class PostgresCircuitBreakerStore implements ICircuitBreakerStore {
   }
 
   async getStatus(symbol: string): Promise<CircuitBreakerState> {
-    await this.ensureInitialized();
     const key = symbol.toUpperCase();
-    const res = await this.pool.query(
-      `SELECT symbol, is_tripped, tripped_at, reason, trigger_price_raw, cooldown_period_ms, reset_attempts, last_evaluated_at, status
-       FROM circuit_breaker_states
-       WHERE symbol = $1`,
-      [key]
-    );
-    if (res.rows.length === 0) {
+    try {
+      await this.ensureInitialized();
+      const res = await this.pool.query(
+        `SELECT symbol, is_tripped, tripped_at, reason, trigger_price_raw, cooldown_period_ms, reset_attempts, last_evaluated_at, status
+         FROM circuit_breaker_states
+         WHERE symbol = $1`,
+        [key]
+      );
+      if (res.rows.length === 0) {
+        return {
+          symbol: key,
+          isTripped: false,
+          trippedAt: 0,
+          cooldownPeriodMs: DEFAULT_COOLDOWN_MS,
+          resetAttempts: 0,
+          lastEvaluatedAt: Date.now(),
+          status: 'HEALTHY',
+        };
+      }
+      const r = res.rows[0];
+      const isTripped = Boolean(r.is_tripped);
+      const trippedAt = Number(r.tripped_at);
+      const cooldownPeriodMs = Number(r.cooldown_period_ms);
+      let status = r.status as CircuitBreakerStatusType;
+      if (isTripped) {
+        const elapsed = Date.now() - trippedAt;
+        status = elapsed >= cooldownPeriodMs ? 'VERIFICATION_PENDING' : 'COOLDOWN';
+        if (r.status === 'EMERGENCY_HALT' && elapsed < cooldownPeriodMs) {
+          status = 'EMERGENCY_HALT';
+        }
+      }
+      return {
+        symbol: r.symbol,
+        isTripped,
+        trippedAt,
+        reason: r.reason || undefined,
+        triggerPriceRaw: r.trigger_price_raw ? BigInt(r.trigger_price_raw) : undefined,
+        cooldownPeriodMs,
+        resetAttempts: Number(r.reset_attempts),
+        lastEvaluatedAt: Number(r.last_evaluated_at),
+        status,
+      };
+    } catch (err: any) {
+      // FAIL CLOSED: Database connection or query error halts trading for this symbol
       return {
         symbol: key,
-        isTripped: false,
-        trippedAt: 0,
+        isTripped: true,
+        trippedAt: Date.now(),
+        reason: `POSTGRES_STORE_UNAVAILABLE: ${err?.message || 'Database query failure'}. Fail-closed security halt.`,
         cooldownPeriodMs: DEFAULT_COOLDOWN_MS,
         resetAttempts: 0,
         lastEvaluatedAt: Date.now(),
-        status: 'HEALTHY',
+        status: 'STORAGE_UNAVAILABLE',
       };
     }
-    const r = res.rows[0];
-    const isTripped = Boolean(r.is_tripped);
-    const trippedAt = Number(r.tripped_at);
-    const cooldownPeriodMs = Number(r.cooldown_period_ms);
-    let status = r.status as CircuitBreakerState['status'];
-    if (isTripped && Date.now() - trippedAt > cooldownPeriodMs) {
-      status = 'COOLDOWN';
-    }
-    return {
-      symbol: r.symbol,
-      isTripped,
-      trippedAt,
-      reason: r.reason || undefined,
-      triggerPriceRaw: r.trigger_price_raw ? BigInt(r.trigger_price_raw) : undefined,
-      cooldownPeriodMs,
-      resetAttempts: Number(r.reset_attempts),
-      lastEvaluatedAt: Number(r.last_evaluated_at),
-      status,
-    };
   }
 
   async isTripped(symbol: string): Promise<boolean> {
@@ -778,38 +813,69 @@ export class RedisCircuitBreakerStore implements ICircuitBreakerStore {
     const key = symbol.toUpperCase();
     const redisKey = `cb:state:${key}`;
     try {
+      let raw: string | null = null;
       if (this.isRest) {
         const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
         const res = await fetch(`${this.redisUrl}/get/${encodeURIComponent(redisKey)}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) return this.getDefaultStatus(key);
+        if (!res.ok) {
+          return this.getFailClosedStatus(key, `UPSTASH_HTTP_ERROR_${res.status}`);
+        }
         const data: any = await res.json();
-        if (!data.result) return this.getDefaultStatus(key);
-        return JSON.parse(data.result);
+        raw = data?.result ?? null;
+      } else {
+        const client = await this.getClient();
+        raw = await client.get(redisKey);
       }
-      const client = await this.getClient();
-      const raw = await client.get(redisKey);
-      if (!raw) return this.getDefaultStatus(key);
+
+      if (!raw) {
+        return {
+          symbol: key,
+          isTripped: false,
+          trippedAt: 0,
+          cooldownPeriodMs: DEFAULT_COOLDOWN_MS,
+          resetAttempts: 0,
+          lastEvaluatedAt: Date.now(),
+          status: 'HEALTHY',
+        };
+      }
+
       const parsed = JSON.parse(raw);
       if (parsed.triggerPriceRaw) {
         parsed.triggerPriceRaw = BigInt(parsed.triggerPriceRaw);
       }
+      if (parsed.verifiedPriceRaw) {
+        parsed.verifiedPriceRaw = BigInt(parsed.verifiedPriceRaw);
+      }
+
+      if (parsed.isTripped) {
+        const elapsed = Date.now() - (parsed.trippedAt || 0);
+        const cooldown = parsed.cooldownPeriodMs || DEFAULT_COOLDOWN_MS;
+        if (elapsed >= cooldown) {
+          parsed.status = 'VERIFICATION_PENDING';
+        } else if (parsed.status !== 'EMERGENCY_HALT') {
+          parsed.status = 'COOLDOWN';
+        }
+      }
+
       return parsed;
-    } catch {
-      return this.getDefaultStatus(key);
+    } catch (err: any) {
+      // Fail closed on any Redis connection or deserialization failure
+      return this.getFailClosedStatus(key, `REDIS_UNAVAILABLE: ${err?.message || 'Connection error'}`);
     }
   }
 
-  private getDefaultStatus(key: string): CircuitBreakerState {
+  private getFailClosedStatus(key: string, reason: string): CircuitBreakerState {
     return {
       symbol: key,
-      isTripped: false,
-      trippedAt: 0,
+      isTripped: true,
+      trippedAt: Date.now(),
+      reason: `${reason}. Fail-closed security halt active.`,
       cooldownPeriodMs: DEFAULT_COOLDOWN_MS,
       resetAttempts: 0,
       lastEvaluatedAt: Date.now(),
-      status: 'HEALTHY',
+      status: 'STORAGE_UNAVAILABLE',
     };
   }
 
@@ -838,7 +904,7 @@ export class RedisCircuitBreakerStore implements ICircuitBreakerStore {
       cooldownPeriodMs: DEFAULT_COOLDOWN_MS,
       resetAttempts: 0,
       lastEvaluatedAt: now,
-      status: isEmergency ? 'EMERGENCY_HALT' : 'CIRCUIT_BREAKER_ACTIVE',
+      status: isEmergency ? 'EMERGENCY_HALT' : 'TRIPPED',
     };
 
     const redisKey = `cb:state:${key}`;
@@ -887,6 +953,14 @@ export class RedisCircuitBreakerStore implements ICircuitBreakerStore {
       return { success: true, state: current };
     }
 
+    if (current.status === 'STORAGE_UNAVAILABLE') {
+      return {
+        success: false,
+        state: current,
+        error: 'STORAGE_UNAVAILABLE: Cannot reset circuit breaker while distributed storage is offline',
+      };
+    }
+
     const now = Date.now();
     const elapsed = now - current.trippedAt;
     const isAuthorizedGov = operator.startsWith('0x') || operator === 'ADMIN_OVERRIDE_AUTHORIZED';
@@ -895,7 +969,7 @@ export class RedisCircuitBreakerStore implements ICircuitBreakerStore {
       return {
         success: false,
         state: current,
-        error: `COOLDOWN_ACTIVE: Circuit breaker is locked for another ${remaining}s.`,
+        error: `COOLDOWN_ACTIVE: Circuit breaker is locked for another ${remaining}s. Cooldown must elapse before reset.`,
       };
     }
 
@@ -905,6 +979,7 @@ export class RedisCircuitBreakerStore implements ICircuitBreakerStore {
       trippedAt: 0,
       reason: undefined,
       triggerPriceRaw: undefined,
+      verifiedPriceRaw: currentVerifiedPriceRaw > 0n ? currentVerifiedPriceRaw : undefined,
       cooldownPeriodMs: DEFAULT_COOLDOWN_MS,
       resetAttempts: current.resetAttempts + 1,
       lastEvaluatedAt: now,
@@ -912,7 +987,10 @@ export class RedisCircuitBreakerStore implements ICircuitBreakerStore {
     };
 
     const redisKey = `cb:state:${key}`;
-    const serialized = JSON.stringify(resetState);
+    const serialized = JSON.stringify({
+      ...resetState,
+      verifiedPriceRaw: currentVerifiedPriceRaw > 0n ? currentVerifiedPriceRaw.toString() : undefined,
+    });
 
     if (this.isRest) {
       const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
@@ -953,6 +1031,7 @@ export class RedisCircuitBreakerStore implements ICircuitBreakerStore {
     const serialized = JSON.stringify({
       ...updated,
       triggerPriceRaw: updated.triggerPriceRaw ? updated.triggerPriceRaw.toString() : undefined,
+      verifiedPriceRaw: updated.verifiedPriceRaw ? updated.verifiedPriceRaw.toString() : undefined,
     });
     if (this.isRest) {
       const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
@@ -968,23 +1047,240 @@ export class RedisCircuitBreakerStore implements ICircuitBreakerStore {
 }
 
 /**
+ * Redis Distributed Price History Store
+ */
+export class RedisPriceHistoryStore implements IPriceHistoryStore {
+  private redisUrl: string;
+  private client?: Redis;
+  private isRest: boolean;
+  private readonly maxWindowMs = 300_000;
+
+  constructor(redisUrl: string) {
+    this.redisUrl = redisUrl;
+    this.isRest = this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://');
+    if (!this.isRest) {
+      this.client = new Redis(this.redisUrl, {
+        lazyConnect: true,
+        maxRetriesPerRequest: 2,
+        enableReadyCheck: false,
+      });
+    }
+  }
+
+  private async getClient(): Promise<Redis> {
+    if (!this.client) throw new Error('REDIS_CLIENT_UNAVAILABLE');
+    if (this.client.status === 'wait') await this.client.connect();
+    return this.client;
+  }
+
+  async recordSnapshot(symbol: string, priceRaw: bigint, timestamp: number = Date.now()): Promise<PriceSnapshot[]> {
+    const key = symbol.toUpperCase();
+    const redisKey = `cb:history:${key}`;
+    const payload = JSON.stringify({ price: priceRaw.toString(), timestamp });
+    try {
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
+        await fetch(`${this.redisUrl}/rpush/${encodeURIComponent(redisKey)}/${encodeURIComponent(payload)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        await fetch(`${this.redisUrl}/ltrim/${encodeURIComponent(redisKey)}/-120/-1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } else {
+        const client = await this.getClient();
+        await client.rpush(redisKey, payload);
+        await client.ltrim(redisKey, -120, -1);
+        await client.expire(redisKey, 3600);
+      }
+    } catch {
+      // In-memory or fallback snapshot collection
+    }
+    return this.getHistory(key, this.maxWindowMs);
+  }
+
+  async getHistory(symbol: string, windowMs: number = 60_000): Promise<PriceSnapshot[]> {
+    const key = symbol.toUpperCase();
+    const redisKey = `cb:history:${key}`;
+    const cutoff = Date.now() - windowMs;
+    try {
+      let rawList: string[] = [];
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
+        const res = await fetch(`${this.redisUrl}/lrange/${encodeURIComponent(redisKey)}/0/-1`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return [];
+        const data: any = await res.json();
+        rawList = Array.isArray(data.result) ? data.result : [];
+      } else {
+        const client = await this.getClient();
+        rawList = await client.lrange(redisKey, 0, -1);
+      }
+      return rawList
+        .map((str) => {
+          try {
+            const p = JSON.parse(str);
+            return { price: BigInt(p.price), timestamp: Number(p.timestamp) };
+          } catch {
+            return null;
+          }
+        })
+        .filter((item): item is PriceSnapshot => item !== null && item.timestamp >= cutoff)
+        .sort((a, b) => a.timestamp - b.timestamp);
+    } catch {
+      return [];
+    }
+  }
+
+  async clear(symbol: string): Promise<void> {
+    const key = symbol.toUpperCase();
+    const redisKey = `cb:history:${key}`;
+    try {
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
+        await fetch(`${this.redisUrl}/del/${encodeURIComponent(redisKey)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } else {
+        const client = await this.getClient();
+        await client.del(redisKey);
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/**
+ * Redis Distributed Circuit Breaker Audit Store
+ */
+export class RedisCircuitBreakerAuditStore implements ICircuitBreakerAuditStore {
+  private redisUrl: string;
+  private client?: Redis;
+  private isRest: boolean;
+
+  constructor(redisUrl: string) {
+    this.redisUrl = redisUrl;
+    this.isRest = this.redisUrl.startsWith('http://') || this.redisUrl.startsWith('https://');
+    if (!this.isRest) {
+      this.client = new Redis(this.redisUrl, {
+        lazyConnect: true,
+        maxRetriesPerRequest: 2,
+        enableReadyCheck: false,
+      });
+    }
+  }
+
+  private async getClient(): Promise<Redis> {
+    if (!this.client) throw new Error('REDIS_CLIENT_UNAVAILABLE');
+    if (this.client.status === 'wait') await this.client.connect();
+    return this.client;
+  }
+
+  async appendLog(log: CircuitBreakerAuditLog): Promise<void> {
+    const key = log.symbol.toUpperCase();
+    const payload = JSON.stringify({
+      ...log,
+      verifiedPriceRaw: log.verifiedPriceRaw.toString(),
+      priceChangeBps: log.priceChangeBps.toString(),
+    });
+    const globalKey = 'cb:audit:global';
+    const symbolKey = `cb:audit:${key}`;
+    try {
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
+        await fetch(`${this.redisUrl}/lpush/${encodeURIComponent(globalKey)}/${encodeURIComponent(payload)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        await fetch(`${this.redisUrl}/ltrim/${encodeURIComponent(globalKey)}/0/499`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        await fetch(`${this.redisUrl}/lpush/${encodeURIComponent(symbolKey)}/${encodeURIComponent(payload)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        await fetch(`${this.redisUrl}/ltrim/${encodeURIComponent(symbolKey)}/0/99`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } else {
+        const client = await this.getClient();
+        const pipeline = client.pipeline();
+        pipeline.lpush(globalKey, payload);
+        pipeline.ltrim(globalKey, 0, 499);
+        pipeline.lpush(symbolKey, payload);
+        pipeline.ltrim(symbolKey, 0, 99);
+        await pipeline.exec();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async getLogs(symbol?: string, limit: number = 50): Promise<CircuitBreakerAuditLog[]> {
+    const targetKey = symbol ? `cb:audit:${symbol.toUpperCase()}` : 'cb:audit:global';
+    try {
+      let rawList: string[] = [];
+      if (this.isRest) {
+        const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.REDIS_TOKEN || '';
+        const res = await fetch(`${this.redisUrl}/lrange/${encodeURIComponent(targetKey)}/0/${limit - 1}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return [];
+        const data: any = await res.json();
+        rawList = Array.isArray(data.result) ? data.result : [];
+      } else {
+        const client = await this.getClient();
+        rawList = await client.lrange(targetKey, 0, limit - 1);
+      }
+      return rawList
+        .map((str) => {
+          try {
+            const p = JSON.parse(str);
+            return {
+              ...p,
+              verifiedPriceRaw: BigInt(p.verifiedPriceRaw || '0'),
+              priceChangeBps: BigInt(p.priceChangeBps || '0'),
+            };
+          } catch {
+            return null;
+          }
+        })
+        .filter((item): item is CircuitBreakerAuditLog => item !== null);
+    } catch {
+      return [];
+    }
+  }
+}
+
+/**
  * Fail-Closed Circuit Breaker Stores for Multi-Instance Production
  */
 export class FailClosedCircuitBreakerStore implements ICircuitBreakerStore {
   async getStatus(_symbol: string): Promise<CircuitBreakerState> {
-    throw new Error('CIRCUIT_BREAKER_STORE_UNAVAILABLE: Production requires distributed store');
+    throw new Error(
+      'CIRCUIT_BREAKER_STORE_UNAVAILABLE: Distributed storage (Redis/Postgres) not configured. Circuit breaker queries blocked in production.'
+    );
   }
+
   async isTripped(_symbol: string): Promise<boolean> {
-    return true; // Fail closed: treat as tripped
+    return true; // Strictly fail closed: halted
   }
-  async trip(): Promise<CircuitBreakerState> {
-    throw new Error('CIRCUIT_BREAKER_STORE_UNAVAILABLE: Production requires distributed store');
+
+  async trip(_symbol: string, reason: string): Promise<CircuitBreakerState> {
+    throw new Error(
+      `CIRCUIT_BREAKER_STORE_UNAVAILABLE: Cannot persist trip (${reason}) without distributed store.`
+    );
   }
-  async reset(): Promise<{ success: boolean; state: CircuitBreakerState; error?: string }> {
-    throw new Error('CIRCUIT_BREAKER_STORE_UNAVAILABLE: Production requires distributed store');
+
+  async reset(_symbol: string): Promise<{ success: boolean; state: CircuitBreakerState; error?: string }> {
+    throw new Error(
+      'CIRCUIT_BREAKER_STORE_UNAVAILABLE: Cannot reset circuit breaker in fail-closed state without distributed store.'
+    );
   }
-  async recordEvaluation(): Promise<CircuitBreakerState> {
-    throw new Error('CIRCUIT_BREAKER_STORE_UNAVAILABLE: Production requires distributed store');
+
+  async recordEvaluation(_symbol: string): Promise<CircuitBreakerState> {
+    throw new Error(
+      'CIRCUIT_BREAKER_STORE_UNAVAILABLE: Cannot record evaluation without distributed store.'
+    );
   }
 }
 
@@ -1010,9 +1306,9 @@ export class CircuitBreakerStoreManager {
     const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
     if (redisUrl) {
-      this.auditStore = new InMemoryCircuitBreakerAuditStore();
+      this.auditStore = new RedisCircuitBreakerAuditStore(redisUrl);
       this.cbStore = new RedisCircuitBreakerStore(redisUrl, this.auditStore);
-      this.historyStore = new InMemoryPriceHistoryStore();
+      this.historyStore = new RedisPriceHistoryStore(redisUrl);
     } else if (dbUrl) {
       this.auditStore = new PostgresCircuitBreakerAuditStore(dbUrl);
       this.cbStore = new PostgresCircuitBreakerStore(dbUrl, this.auditStore);
@@ -1053,5 +1349,265 @@ export class CircuitBreakerStoreManager {
     this.historyStore = historyStore;
     this.auditStore = auditStore;
     this.isInitialized = true;
+  }
+}
+
+export interface CircuitBreakerStatus {
+  symbol: string;
+  isTripped: boolean;
+  isEmergencyMode?: boolean;
+  trippedAt?: number;
+  reason?: string;
+  priceChangeBps?: bigint;
+  priceChangePercent?: number;
+  lastValidPriceRaw?: bigint;
+  lastValidPriceUsd?: number;
+  cooldownElapsed?: boolean;
+}
+
+/**
+ * Unified Circuit Breaker Enterprise Service.
+ * Single source of truth connecting MultiOracleAggregator, Router, and on-chain monitors.
+ * Backed strictly by CircuitBreakerStoreManager (Redis, Postgres, or InMemory test store).
+ */
+export class CircuitBreakerService {
+  private static l1StatusCache = new Map<string, CircuitBreakerStatus>();
+  private static l1HistoryCache = new Map<string, PriceSnapshot[]>();
+  private static l1AuditCache: CircuitBreakerAuditLog[] = [];
+
+  public static readonly CIRCUIT_BREAKER_WINDOW_MS = 15_000;
+  public static readonly EMERGENCY_WINDOW_MS = 5_000;
+  public static readonly CIRCUIT_BREAKER_THRESHOLD_BPS = 2000n; // 20.00%
+  public static readonly EMERGENCY_SPIKE_BPS = 1000n; // 10.00%
+  public static readonly CIRCUIT_BREAKER_COOLDOWN_MS = 300_000; // 5 minutes
+
+  public static isTrippedSync(symbol: string): boolean {
+    const key = symbol.toUpperCase();
+    const status = this.l1StatusCache.get(key);
+    return Boolean(status?.isTripped);
+  }
+
+  public static async isTripped(symbol: string): Promise<boolean> {
+    const store = CircuitBreakerStoreManager.getCircuitBreakerStore();
+    return store.isTripped(symbol);
+  }
+
+  public static isEmergencyMode(symbol: string): boolean {
+    const key = symbol.toUpperCase();
+    const status = this.l1StatusCache.get(key);
+    return Boolean(status?.isEmergencyMode && status?.isTripped);
+  }
+
+  public static getStatusSync(symbol: string): CircuitBreakerStatus {
+    const key = symbol.toUpperCase();
+    const cached = this.l1StatusCache.get(key);
+    if (cached) {
+      if (cached.isTripped && cached.trippedAt) {
+        cached.cooldownElapsed = Date.now() - cached.trippedAt >= this.CIRCUIT_BREAKER_COOLDOWN_MS;
+      }
+      return cached;
+    }
+    return {
+      symbol: key,
+      isTripped: false,
+      isEmergencyMode: false,
+    };
+  }
+
+  public static async getStatus(symbol: string): Promise<CircuitBreakerState> {
+    const store = CircuitBreakerStoreManager.getCircuitBreakerStore();
+    return store.getStatus(symbol);
+  }
+
+  public static recordSnapshotSync(symbol: string, priceRaw: bigint): CircuitBreakerStatus {
+    const key = symbol.toUpperCase();
+    const now = Date.now();
+
+    let history = this.l1HistoryCache.get(key);
+    if (!history) {
+      history = [];
+      this.l1HistoryCache.set(key, history);
+    }
+    history.push({ price: priceRaw, timestamp: now });
+    if (history.length > 120) {
+      history.shift();
+    }
+
+    // Persist snapshot to backing store asynchronously
+    const historyStore = CircuitBreakerStoreManager.getPriceHistoryStore();
+    historyStore.recordSnapshot(key, priceRaw, now).catch(() => {});
+
+    // Check if currently tripped
+    const existing = this.l1StatusCache.get(key);
+    if (existing?.isTripped) {
+      const cooldownElapsed = existing.trippedAt
+        ? now - existing.trippedAt >= this.CIRCUIT_BREAKER_COOLDOWN_MS
+        : false;
+      return {
+        ...existing,
+        cooldownElapsed,
+      };
+    }
+
+    // Check 1: Emergency Mode (>10% move in <= 5s)
+    const recent5s = history.filter((s) => now - s.timestamp <= this.EMERGENCY_WINDOW_MS);
+    if (recent5s.length >= 2) {
+      const oldest = recent5s[0];
+      const diff = priceRaw > oldest.price ? priceRaw - oldest.price : oldest.price - priceRaw;
+      const pctChangeBps = oldest.price > 0n ? (diff * 10000n) / oldest.price : 0n;
+
+      if (pctChangeBps >= this.EMERGENCY_SPIKE_BPS) {
+        const pctChangeFloat = Number(pctChangeBps) / 100;
+        const status: CircuitBreakerStatus = {
+          symbol: key,
+          isTripped: true,
+          isEmergencyMode: true,
+          trippedAt: now,
+          priceChangeBps: pctChangeBps,
+          priceChangePercent: pctChangeFloat,
+          reason: `EMERGENCY_HALT: Instant ${pctChangeFloat.toFixed(2)}% price spike detected in ${(now - oldest.timestamp) / 1000}s (Threshold: 10.0%)`,
+          lastValidPriceRaw: oldest.price,
+        };
+        this.l1StatusCache.set(key, status);
+
+        const auditLog: CircuitBreakerAuditLog = {
+          id: `CB-EMERGENCY-${now}-${crypto.randomBytes(4).toString('hex')}`,
+          symbol: key,
+          action: 'EMERGENCY_HALT',
+          operator: 'SYSTEM_CIRCUIT_BREAKER',
+          reason: status.reason || '',
+          timestamp: now,
+          verifiedPriceRaw: priceRaw,
+          priceChangeBps: pctChangeBps,
+        };
+        this.l1AuditCache.unshift(auditLog);
+
+        const cbStore = CircuitBreakerStoreManager.getCircuitBreakerStore();
+        cbStore.trip(key, status.reason || '', priceRaw, pctChangeBps, 'SYSTEM_CIRCUIT_BREAKER').catch(() => {});
+        const auditStore = CircuitBreakerStoreManager.getAuditStore();
+        auditStore.appendLog(auditLog).catch(() => {});
+
+        return status;
+      }
+    }
+
+    // Check 2: Standard Circuit Breaker (>20% move in <= 15s)
+    const recent15s = history.filter((s) => now - s.timestamp <= this.CIRCUIT_BREAKER_WINDOW_MS);
+    if (recent15s.length >= 2) {
+      const oldest = recent15s[0];
+      const diff = priceRaw > oldest.price ? priceRaw - oldest.price : oldest.price - priceRaw;
+      const pctChangeBps = oldest.price > 0n ? (diff * 10000n) / oldest.price : 0n;
+
+      if (pctChangeBps >= this.CIRCUIT_BREAKER_THRESHOLD_BPS) {
+        const pctChangeFloat = Number(pctChangeBps) / 100;
+        const status: CircuitBreakerStatus = {
+          symbol: key,
+          isTripped: true,
+          isEmergencyMode: false,
+          trippedAt: now,
+          priceChangeBps: pctChangeBps,
+          priceChangePercent: pctChangeFloat,
+          reason: `CIRCUIT_BREAKER_ACTIVE: ${pctChangeFloat.toFixed(2)}% volatility spike in ${(now - oldest.timestamp) / 1000}s (Threshold: 20.0%)`,
+          lastValidPriceRaw: oldest.price,
+        };
+        this.l1StatusCache.set(key, status);
+
+        const auditLog: CircuitBreakerAuditLog = {
+          id: `CB-TRIP-${now}-${crypto.randomBytes(4).toString('hex')}`,
+          symbol: key,
+          action: 'TRIP',
+          operator: 'SYSTEM_CIRCUIT_BREAKER',
+          reason: status.reason || '',
+          timestamp: now,
+          verifiedPriceRaw: priceRaw,
+          priceChangeBps: pctChangeBps,
+        };
+        this.l1AuditCache.unshift(auditLog);
+
+        const cbStore = CircuitBreakerStoreManager.getCircuitBreakerStore();
+        cbStore.trip(key, status.reason || '', priceRaw, pctChangeBps, 'SYSTEM_CIRCUIT_BREAKER').catch(() => {});
+        const auditStore = CircuitBreakerStoreManager.getAuditStore();
+        auditStore.appendLog(auditLog).catch(() => {});
+
+        return status;
+      }
+    }
+
+    const healthyStatus: CircuitBreakerStatus = {
+      symbol: key,
+      isTripped: false,
+      isEmergencyMode: false,
+      lastValidPriceRaw: priceRaw,
+    };
+    this.l1StatusCache.set(key, healthyStatus);
+    return healthyStatus;
+  }
+
+  public static resetSync(
+    symbol: string,
+    operator: string = 'GOVERNANCE_TIMELOCK',
+    reason: string = 'Audited oracle price verified clean post-cooldown',
+    verifiedPriceRaw: bigint = 0n
+  ): { success: boolean; message: string } {
+    const key = symbol.toUpperCase();
+    const current = this.l1StatusCache.get(key);
+
+    if (!current || !current.isTripped) {
+      return { success: true, message: `Circuit breaker for ${key} is already clean.` };
+    }
+
+    const now = Date.now();
+    const isAuthorizedGov = operator.startsWith('0x') || operator === 'ADMIN_OVERRIDE_AUTHORIZED';
+    if (!isAuthorizedGov && current.trippedAt && now - current.trippedAt < this.CIRCUIT_BREAKER_COOLDOWN_MS) {
+      const remainingSec = Math.ceil((this.CIRCUIT_BREAKER_COOLDOWN_MS - (now - current.trippedAt)) / 1000);
+      return {
+        success: false,
+        message: `Cannot reset circuit breaker: Cooldown period active (${remainingSec}s remaining).`,
+      };
+    }
+
+    const resetStatus: CircuitBreakerStatus = {
+      symbol: key,
+      isTripped: false,
+      isEmergencyMode: false,
+      lastValidPriceRaw: verifiedPriceRaw > 0n ? verifiedPriceRaw : current.lastValidPriceRaw,
+    };
+    this.l1StatusCache.set(key, resetStatus);
+
+    const auditEntry: CircuitBreakerAuditLog = {
+      id: `CB-RESET-${now}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+      symbol: key,
+      action: 'RESET',
+      operator,
+      reason,
+      timestamp: now,
+      verifiedPriceRaw: verifiedPriceRaw,
+      priceChangeBps: 0n,
+    };
+    this.l1AuditCache.unshift(auditEntry);
+
+    // Write-through to backing store
+    const cbStore = CircuitBreakerStoreManager.getCircuitBreakerStore();
+    cbStore.reset(key, operator, reason, verifiedPriceRaw).catch(() => {});
+    const auditStore = CircuitBreakerStoreManager.getAuditStore();
+    auditStore.appendLog(auditEntry).catch(() => {});
+
+    return {
+      success: true,
+      message: `Circuit breaker for ${key} successfully reset with audit record ${auditEntry.id}.`,
+    };
+  }
+
+  public static getAuditLogsSync(symbol?: string, limit: number = 50): CircuitBreakerAuditLog[] {
+    if (symbol) {
+      const key = symbol.toUpperCase();
+      return this.l1AuditCache.filter((l) => l.symbol === key).slice(0, limit);
+    }
+    return this.l1AuditCache.slice(0, limit);
+  }
+
+  public static async getAuditLogs(symbol?: string, limit: number = 50): Promise<CircuitBreakerAuditLog[]> {
+    const auditStore = CircuitBreakerStoreManager.getAuditStore();
+    return auditStore.getLogs(symbol, limit);
   }
 }
