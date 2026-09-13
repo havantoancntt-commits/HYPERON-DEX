@@ -886,12 +886,30 @@ export class SmartGraphRouter {
 
     const now = Date.now();
     const sources: DexSource[] = DEX_SOURCES.map((src) => {
-      const isChosen = src.name.toLowerCase().includes(optimalRoute.protocol.toLowerCase().split(' ')[0]);
+      const matchSplit = optimalRoute.splits.find((s) => s.dexName.toLowerCase().includes(src.name.toLowerCase()));
+      const matchCandidate = candidates.find((c) => c.protocol.toLowerCase().includes(src.name.toLowerCase()) || c.dexName.toLowerCase().includes(src.name.toLowerCase()));
+      
+      let sharePercent = 0;
+      let expectedOutput = 0;
+      let poolFeePercent = 0;
+
+      if (matchSplit) {
+        sharePercent = matchSplit.percentage;
+        expectedOutput = (parseFloat(optimalRoute.amountOutFormatted) * matchSplit.percentage) / 100;
+        poolFeePercent = matchSplit.feeTierBps ? matchSplit.feeTierBps / 100 : (optimalRoute.feeTierBps ? optimalRoute.feeTierBps / 100 : 0.3);
+      } else if (optimalRoute.splits.length <= 1 && src.name.toLowerCase().includes(optimalRoute.protocol.toLowerCase().split(' ')[0])) {
+        sharePercent = 100;
+        expectedOutput = parseFloat(optimalRoute.amountOutFormatted);
+        poolFeePercent = optimalRoute.feeTierBps ? optimalRoute.feeTierBps / 100 : (optimalRoute.dexName.includes('0.05%') ? 0.05 : optimalRoute.dexName.includes('0.01%') ? 0.01 : 0.3);
+      } else if (matchCandidate) {
+        poolFeePercent = matchCandidate.feeTierBps ? matchCandidate.feeTierBps / 100 : 0.3;
+      }
+
       return {
         ...src,
-        sharePercent: isChosen ? 100 : 0,
-        expectedOutput: isChosen ? parseFloat(optimalRoute.amountOutFormatted) : 0,
-        poolFeePercent: isChosen ? (optimalRoute.dexName.includes('0.05%') ? 0.05 : 0.3) : 0.3,
+        sharePercent,
+        expectedOutput,
+        poolFeePercent,
       };
     });
 

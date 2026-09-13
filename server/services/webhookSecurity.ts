@@ -12,6 +12,7 @@
  */
 
 import crypto from 'crypto';
+import dns from 'dns';
 
 export interface WebhookAuditLog {
   id: string;
@@ -228,6 +229,51 @@ export function validateWebhookUrl(
 }
 
 /**
+ * Validates a target URL against enterprise SSRF rules including live DNS resolution.
+ * Verifies that the resolved IP addresses are not private, loopback, or internal.
+ */
+export async function validateWebhookUrlAsync(
+  rawUrl: string,
+  sourceIp: string = '127.0.0.1'
+): Promise<{ isValid: boolean; reason: string; sanitizedUrl?: string; decision: WebhookAuditLog['decision'] }> {
+  const syncValidation = validateWebhookUrl(rawUrl, sourceIp);
+  if (!syncValidation.isValid || !syncValidation.sanitizedUrl) {
+    return syncValidation;
+  }
+
+  const parsed = new URL(syncValidation.sanitizedUrl);
+  const hostname = parsed.hostname.toLowerCase();
+
+  try {
+    const addresses = await dns.promises.lookup(hostname, { all: true });
+    for (const record of addresses) {
+      if (isPrivateOrInternalIp(record.address)) {
+        const logId = crypto.randomUUID();
+        const res = {
+          isValid: false,
+          reason: `DNS resolution for '${hostname}' returned prohibited internal IP '${record.address}'.`,
+          decision: 'BLOCKED_PRIVATE_IP' as const,
+        };
+        recordAuditLog({ id: logId, timestamp: Date.now(), targetUrl: syncValidation.sanitizedUrl, sourceIp, decision: res.decision, reason: res.reason });
+        return res;
+      }
+    }
+  } catch (dnsErr: any) {
+    // If DNS resolution fails, fail-closed
+    const logId = crypto.randomUUID();
+    const res = {
+      isValid: false,
+      reason: `DNS lookup failed for '${hostname}': ${dnsErr.message || 'Domain not found'}`,
+      decision: 'BLOCKED_UNAUTHORIZED_HOST' as const,
+    };
+    recordAuditLog({ id: logId, timestamp: Date.now(), targetUrl: syncValidation.sanitizedUrl, sourceIp, decision: res.decision, reason: res.reason });
+    return res;
+  }
+
+  return syncValidation;
+}
+
+/**
  * Resolves the active webhook HMAC secret.
  * Enforces strict fail-closed validation in production:
  * If WEBHOOK_SECRET is missing when NODE_ENV === 'production', throws an explicit security error.
@@ -258,6 +304,7 @@ export function resolveWebhookSecret(explicitSecret?: string): string {
 
 /**
  * Dispatches an event payload to a validated webhook destination with HMAC signature.
+ * Enforces redirect: 'error' to prevent redirect-based SSRF bypass.
  */
 export async function dispatchSecureWebhook(
   targetUrl: string,
@@ -267,7 +314,7 @@ export async function dispatchSecureWebhook(
 ): Promise<{ success: boolean; statusCode?: number; error?: string }> {
   const activeSecret = resolveWebhookSecret(secret);
 
-  const validation = validateWebhookUrl(targetUrl);
+  const validation = await validateWebhookUrlAsync(targetUrl);
   if (!validation.isValid || !validation.sanitizedUrl) {
     return { success: false, error: validation.reason };
   }
@@ -294,6 +341,7 @@ export async function dispatchSecureWebhook(
       },
       body: bodyString,
       signal: controller.signal,
+      redirect: 'error', // Never follow redirects to prevent SSRF bypass
     });
 
     clearTimeout(timeout);

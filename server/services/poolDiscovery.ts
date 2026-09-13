@@ -8,13 +8,13 @@
  * - Transparent provenance: returns pool address, blockNumber, timestamp, and status.
  */
 
-import { Address, PublicClient, formatUnits } from 'viem';
+import { Address, PublicClient, formatUnits, getAddress } from 'viem';
 import { getChainClient } from './rpc';
 import { PoolReserves, V3PoolState, CurvePoolState } from './ammEngine';
 import { ROUTER_REGISTRY } from './routerRegistry';
 import { ChainId } from '../../src/types';
 
-export type PoolDiscoveryStatus = 'LIVE' | 'STALE' | 'NO_LIQUIDITY' | 'UNAVAILABLE';
+export type PoolDiscoveryStatus = 'LIVE' | 'STALE' | 'NO_LIQUIDITY' | 'UNAVAILABLE' | 'INVALID_POOL';
 
 export interface VerifiedPoolRecord {
   poolAddress: Address;
@@ -101,6 +101,20 @@ export const UNISWAP_V3_POOL_ABI = [
     inputs: [],
     outputs: [{ name: '', type: 'int24' }],
   },
+  {
+    name: 'token0',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+  },
+  {
+    name: 'token1',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+  },
 ] as const;
 
 export const UNISWAP_V2_FACTORY_ABI = [
@@ -131,61 +145,94 @@ export const UNISWAP_V3_FACTORY_ABI = [
 ] as const;
 
 // Verified Mainnet & Layer 2 Core AMM Pool addresses registry
-export const VERIFIED_CANONICAL_POOLS: Record<string, { address: Address; chainId: ChainId; protocol: any; feeBps: number }> = {
+export const VERIFIED_CANONICAL_POOLS: Record<string, {
+  address: Address;
+  chainId: ChainId;
+  protocol: any;
+  feeBps: number;
+  token0Address: Address;
+  token1Address: Address;
+  tickSpacing?: number;
+}> = {
   // Ethereum Mainnet
   'ethereum:ETH:USDC:v3:500': {
     address: '0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640', // Uniswap V3 0.05% WETH/USDC
     chainId: 'ethereum',
     protocol: 'Uniswap v3',
     feeBps: 5,
+    token0Address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 10,
   },
   'ethereum:ETH:USDC:v3:3000': {
     address: '0x8ad599c3A0ff1De082011EFDDc58f1908eb6e6D8', // Uniswap V3 0.3% WETH/USDC
     chainId: 'ethereum',
     protocol: 'Uniswap v3',
     feeBps: 30,
+    token0Address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
   },
   'ethereum:ETH:USDT:v3:500': {
     address: '0x11b815efB8f581194ae79006d24E0d814B7697F6', // Uniswap V3 0.05% WETH/USDT
     chainId: 'ethereum',
     protocol: 'Uniswap v3',
     feeBps: 5,
+    token0Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    token1Address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+    tickSpacing: 10,
   },
   'ethereum:ETH:USDC:v2': {
     address: '0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc', // Uniswap V2 WETH/USDC
     chainId: 'ethereum',
     protocol: 'Uniswap v2',
     feeBps: 30,
+    token0Address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
   },
   'ethereum:WBTC:ETH:v3:3000': {
     address: '0xCBCdBF44eA42403903479a7884284444209863a7', // Uniswap V3 WBTC/WETH 0.3%
     chainId: 'ethereum',
     protocol: 'Uniswap v3',
     feeBps: 30,
+    token0Address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
   },
   'ethereum:UNI:ETH:v3:3000': {
     address: '0x1d42064Fc4Beb5F8aAF85F4617AE8b3b5B8Bd801', // Uniswap V3 UNI/WETH 0.3%
     chainId: 'ethereum',
     protocol: 'Uniswap v3',
     feeBps: 30,
+    token0Address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
   },
   'ethereum:LINK:ETH:v3:3000': {
     address: '0xa6Cc3C2531FdaA6Ae1A3CA84c2855806728693e8', // Uniswap V3 LINK/WETH 0.3%
     chainId: 'ethereum',
     protocol: 'Uniswap v3',
     feeBps: 30,
+    token0Address: '0x514910771AF9Ca656af840dff83E8264EcF986CA',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
   },
   'ethereum:USDC:USDT:v3:100': {
     address: '0x3416cF6C708Da44DB2624603617534F404801124', // Uniswap V3 USDC/USDT 0.01%
     chainId: 'ethereum',
     protocol: 'Uniswap v3',
     feeBps: 1,
+    token0Address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    token1Address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+    tickSpacing: 1,
   },
   'ethereum:USDC:USDT:curve': {
     address: '0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7', // Curve 3pool (DAI/USDC/USDT)
     chainId: 'ethereum',
     protocol: 'Curve',
     feeBps: 4,
+    token0Address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    token1Address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
   },
   // Base Mainnet
   'base:ETH:USDC:v3:500': {
@@ -193,6 +240,9 @@ export const VERIFIED_CANONICAL_POOLS: Record<string, { address: Address; chainI
     chainId: 'base',
     protocol: 'Uniswap v3',
     feeBps: 5,
+    token0Address: '0x4200000000000000000000000000000000000006',
+    token1Address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    tickSpacing: 10,
   },
   // Arbitrum One
   'arbitrum:ETH:USDC:v3:500': {
@@ -200,12 +250,18 @@ export const VERIFIED_CANONICAL_POOLS: Record<string, { address: Address; chainI
     chainId: 'arbitrum',
     protocol: 'Uniswap v3',
     feeBps: 5,
+    token0Address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+    token1Address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+    tickSpacing: 10,
   },
   'arbitrum:ARB:ETH:v3:3000': {
     address: '0xC6F780497A95e246EB9449f5e4770916DCd6396A', // Uniswap V3 Arb ARB/WETH
     chainId: 'arbitrum',
     protocol: 'Uniswap v3',
     feeBps: 30,
+    token0Address: '0x912CE59144191C1204E64559FE8253a0e49E6548',
+    token1Address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+    tickSpacing: 60,
   },
   // BSC Mainnet
   'bsc:BNB:USDT:v2': {
@@ -213,6 +269,8 @@ export const VERIFIED_CANONICAL_POOLS: Record<string, { address: Address; chainI
     chainId: 'bsc',
     protocol: 'PancakeSwap',
     feeBps: 25,
+    token0Address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
+    token1Address: '0x55d398326f99059fF775485246999027B3197955',
   },
   // Polygon Mainnet
   'polygon:POL:USDC:v2': {
@@ -220,6 +278,8 @@ export const VERIFIED_CANONICAL_POOLS: Record<string, { address: Address; chainI
     chainId: 'polygon',
     protocol: 'QuickSwap',
     feeBps: 30,
+    token0Address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+    token1Address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
   },
 };
 
@@ -295,7 +355,7 @@ export class PoolDiscoveryService {
       const blockNumber = await withTimeout(client.getBlockNumber()).catch(() => null);
 
       if (poolEntry.protocol === 'Uniswap v3') {
-        const [slot0, liquidity] = await withTimeout(Promise.all([
+        const [slot0, liquidity, readToken0, readToken1, readTickSpacing] = await withTimeout(Promise.all([
           client.readContract({
             address: poolAddress,
             abi: UNISWAP_V3_POOL_ABI,
@@ -306,17 +366,50 @@ export class PoolDiscoveryService {
             abi: UNISWAP_V3_POOL_ABI,
             functionName: 'liquidity',
           } as any) as Promise<bigint>,
+          client.readContract({
+            address: poolAddress,
+            abi: UNISWAP_V3_POOL_ABI,
+            functionName: 'token0',
+          } as any).catch(() => poolEntry.token0Address) as Promise<Address>,
+          client.readContract({
+            address: poolAddress,
+            abi: UNISWAP_V3_POOL_ABI,
+            functionName: 'token1',
+          } as any).catch(() => poolEntry.token1Address) as Promise<Address>,
+          client.readContract({
+            address: poolAddress,
+            abi: UNISWAP_V3_POOL_ABI,
+            functionName: 'tickSpacing',
+          } as any).catch(() => poolEntry.tickSpacing ?? (poolEntry.feeBps === 5 ? 10 : 60)) as Promise<number>,
         ]));
 
         const sqrtPriceX96 = slot0[0];
         const tick = slot0[1];
 
+        const rawToken0 = readToken0 || poolEntry.token0Address;
+        const rawToken1 = readToken1 || poolEntry.token1Address;
+
+        // Zero-address strictly forbidden
+        if (
+          !rawToken0 ||
+          !rawToken1 ||
+          rawToken0 === '0x0000000000000000000000000000000000000000' ||
+          rawToken1 === '0x0000000000000000000000000000000000000000' ||
+          rawToken0.toLowerCase() === rawToken1.toLowerCase()
+        ) {
+          return null;
+        }
+
+        const token0Address = getAddress(rawToken0);
+        const token1Address = getAddress(rawToken1);
+        const tickSpacing = Number(readTickSpacing) || (poolEntry.feeBps === 5 ? 10 : 60);
+
         const record: VerifiedPoolRecord = {
           poolAddress,
           chainId,
           dexProtocol: 'Uniswap v3',
-          token0Address: '0x0000000000000000000000000000000000000000',
-          token1Address: '0x0000000000000000000000000000000000000000',
+          token0Address,
+          token1Address,
           token0Symbol,
           token1Symbol,
           token0Decimals,
@@ -329,7 +422,7 @@ export class PoolDiscoveryService {
             sqrtPriceX96,
             liquidity,
             tick,
-            tickSpacing: poolEntry.feeBps === 5 ? 10 : 60,
+            tickSpacing,
             feeTierBps: poolEntry.feeBps,
             token0Decimals,
             token1Decimals,
@@ -341,21 +434,49 @@ export class PoolDiscoveryService {
         poolCache.set(canonicalKey, record);
         return record;
       } else if (poolEntry.protocol === 'Uniswap v2' || poolEntry.protocol === 'PancakeSwap' || poolEntry.protocol === 'QuickSwap') {
-        const reservesData = (await withTimeout(client.readContract({
-          address: poolAddress,
-          abi: UNISWAP_V2_PAIR_ABI,
-          functionName: 'getReserves',
-        } as any))) as [bigint, bigint, number];
+        const [reservesData, readToken0, readToken1] = await withTimeout(Promise.all([
+          client.readContract({
+            address: poolAddress,
+            abi: UNISWAP_V2_PAIR_ABI,
+            functionName: 'getReserves',
+          } as any) as Promise<[bigint, bigint, number]>,
+          client.readContract({
+            address: poolAddress,
+            abi: UNISWAP_V2_PAIR_ABI,
+            functionName: 'token0',
+          } as any).catch(() => poolEntry.token0Address) as Promise<Address>,
+          client.readContract({
+            address: poolAddress,
+            abi: UNISWAP_V2_PAIR_ABI,
+            functionName: 'token1',
+          } as any).catch(() => poolEntry.token1Address) as Promise<Address>,
+        ]));
 
         const reserve0 = reservesData[0];
         const reserve1 = reservesData[1];
+
+        const rawToken0 = readToken0 || poolEntry.token0Address;
+        const rawToken1 = readToken1 || poolEntry.token1Address;
+
+        if (
+          !rawToken0 ||
+          !rawToken1 ||
+          rawToken0 === '0x0000000000000000000000000000000000000000' ||
+          rawToken1 === '0x0000000000000000000000000000000000000000' ||
+          rawToken0.toLowerCase() === rawToken1.toLowerCase()
+        ) {
+          return null;
+        }
+
+        const token0Address = getAddress(rawToken0);
+        const token1Address = getAddress(rawToken1);
 
         const record: VerifiedPoolRecord = {
           poolAddress,
           chainId,
           dexProtocol: poolEntry.protocol,
-          token0Address: '0x0000000000000000000000000000000000000000',
-          token1Address: '0x0000000000000000000000000000000000000000',
+          token0Address,
+          token1Address,
           token0Symbol,
           token1Symbol,
           token0Decimals,

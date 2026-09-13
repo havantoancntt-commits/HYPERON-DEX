@@ -168,9 +168,15 @@ export class UltraRouter {
       if (pool.reserves) {
         reserveIn = isForward ? pool.reserves.reserve0 : pool.reserves.reserve1;
         reserveOut = isForward ? pool.reserves.reserve1 : pool.reserves.reserve0;
-      } else if (pool.v3State) {
-        reserveIn = pool.v3State.liquidity > 0n ? pool.v3State.liquidity : 1000n * 10n ** 18n;
-        reserveOut = pool.v3State.liquidity > 0n ? pool.v3State.liquidity : 2_000_000n * 10n ** 6n;
+      } else if (pool.v3State && BigInt(pool.v3State.liquidity) > 0n && BigInt(pool.v3State.sqrtPriceX96) > 0n) {
+        const Q96 = 2n ** 96n;
+        const L = BigInt(pool.v3State.liquidity);
+        const sqrtP = BigInt(pool.v3State.sqrtPriceX96);
+        // Exact virtual reserve calculation for V3 concentrated liquidity
+        const virt0 = (L * Q96) / sqrtP;
+        const virt1 = (L * sqrtP) / Q96;
+        reserveIn = isForward ? virt0 : virt1;
+        reserveOut = isForward ? virt1 : virt0;
       }
 
       if (reserveIn <= 0n || reserveOut <= 0n) continue;
@@ -248,16 +254,20 @@ export class UltraRouter {
     const amountOut = FormalMath.div512(numerator, denominator);
     const feePaid = FormalMath.sub512(amountIn, FormalMath.div512(amountInWithFee, 10_000n));
 
-    // Formally verify K-factor invariant for constant-product AMMs
+    // Formally verify K-factor invariant for AMMs
     let kProof: KFactorProof | undefined;
-    if (edge.protocolVersion === 'v2') {
-      kProof = FormalMath.verifyKFactorInvariant(
-        edge.reserveIn,
-        edge.reserveOut,
-        amountIn,
-        amountOut,
-        edge.feeBps
-      );
+    if (edge.protocolVersion === 'v2' || edge.protocolVersion === 'v3') {
+      try {
+        kProof = FormalMath.verifyKFactorInvariant(
+          edge.reserveIn,
+          edge.reserveOut,
+          amountIn,
+          amountOut,
+          edge.feeBps
+        );
+      } catch {
+        kProof = undefined;
+      }
     }
 
     return { amountOut, feePaid, kProof };

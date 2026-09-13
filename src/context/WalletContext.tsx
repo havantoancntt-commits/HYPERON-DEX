@@ -227,9 +227,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           params: [
             {
               from: address,
-              to: '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45', // Spanner Router
-              value: '0x0',
-              data: '0x',
+              to: txData.targetAddress || '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
+              value: txData.valueHex || '0x0',
+              data: txData.calldata || '0x',
             },
           ],
         });

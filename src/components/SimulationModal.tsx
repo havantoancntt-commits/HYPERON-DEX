@@ -12,12 +12,21 @@ export const SimulationModal: React.FC = () => {
   if (!activeSimulation) return null;
 
   const handleConfirmAndSign = async () => {
+    if (!activeQuote) {
+      addToast({
+        title: 'Báo Giá Không Hợp Lệ',
+        message: 'Không tìm thấy báo giá đã được xác thực cho giao dịch này.',
+        type: 'error',
+      });
+      return;
+    }
+
     setIsExecuting(true);
     try {
-      const fromToken = activeQuote?.fromToken?.symbol || 'ETH';
-      const toToken = activeQuote?.toToken?.symbol || 'USDC';
-      const fromAmount = activeQuote?.fromAmount || 1.0;
-      const toAmount = activeQuote?.expectedOutput || 0;
+      const fromToken = activeQuote.fromToken.symbol;
+      const toToken = activeQuote.toToken.symbol;
+      const fromAmount = activeQuote.fromAmount;
+      const toAmount = activeQuote.expectedOutput;
 
       const tx = await executeTransaction({
         chainId: (chainId as any) || 'ethereum',
@@ -28,6 +37,9 @@ export const SimulationModal: React.FC = () => {
         toAmount,
         gasSpentGwei: 19,
         gasSpentUsd: activeSimulation.gasCostUsd || 1.85,
+        targetAddress: activeSimulation.routerAddress || activeSimulation.toAddress,
+        calldata: activeSimulation.calldata,
+        valueHex: activeSimulation.valueHex,
       });
 
       addToast({

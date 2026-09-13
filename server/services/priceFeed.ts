@@ -338,7 +338,7 @@ async function _doSyncRealTimePrices(now: number): Promise<void> {
   if (success) {
     // Stablecoin validation
     ['USDC', 'USDT'].forEach((stb) => {
-      if (priceCache[stb]) {
+      if (priceCache[stb] && priceCache[stb].priceUsd !== null && priceCache[stb].priceUsd > 0) {
         priceCache[stb].lastUpdated = now;
         priceCache[stb].status = 'LIVE';
         priceCache[stb].ageMs = 0;

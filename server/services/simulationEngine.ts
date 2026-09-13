@@ -497,6 +497,12 @@ export class SimulationEngine {
       warnings,
       simulationLogs,
       blockNumberSimulated: currentBlock,
+      calldata,
+      valueHex: isNativeIn ? `0x${amountInRaw.toString(16)}` : '0x0',
+      routerAddress: routerSpender,
+      quoteId: quote.quoteId,
+      amountInRaw: amountInRaw.toString(),
+      minAmountOutRaw: amountOutMinRaw.toString(),
     };
   }
 }

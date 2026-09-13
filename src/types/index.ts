@@ -225,6 +225,12 @@ export interface TransactionSimulation {
   warnings: string[];
   simulationLogs: string[];
   blockNumberSimulated: number;
+  calldata?: string;
+  valueHex?: string;
+  routerAddress?: string;
+  quoteId?: string;
+  amountInRaw?: string;
+  minAmountOutRaw?: string;
 }
 
 export interface OrderBookEntry {
@@ -482,6 +488,9 @@ export interface TransactionHistoryItem {
   timestamp: number;
   blockNumber: number;
   correlationId: string;
+  targetAddress?: string;
+  calldata?: string;
+  valueHex?: string;
 }
 
 export interface AIAgentIntent {
