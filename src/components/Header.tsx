@@ -35,7 +35,13 @@ import {
   Sun,
   Moon,
   Terminal,
-  Languages
+  Languages,
+  ArrowRightLeft,
+  Shield,
+  ShieldAlert,
+  ShieldX,
+  Eye,
+  Check
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -48,7 +54,14 @@ export const Header: React.FC = () => {
     balances, 
     connectWallet, 
     disconnectWallet, 
+    switchWallet,
     isDemoMode,
+    isWatchOnly,
+    recentAccounts,
+    sandboxAccounts,
+    activeSandboxIndex,
+    switchSandboxAccount,
+    tokenApprovals,
     toggleDemoMode,
     mevProtected,
     setMevProtected,
@@ -116,6 +129,49 @@ export const Header: React.FC = () => {
         type: 'info',
       });
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const [walletMenuTab, setWalletMenuTab] = useState<'overview' | 'switch' | 'security'>('overview');
+  const [isSwitchingWallet, setIsSwitchingWallet] = useState<string | null>(null);
+
+  const handleQuickSwitch = async (type: any) => {
+    setIsSwitchingWallet(type);
+    try {
+      await switchWallet(type);
+      addToast({
+        title: 'Wallet Migrated',
+        message: `Successfully switched active session to ${String(type).toUpperCase()}.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      addToast({
+        title: 'Switch Failed',
+        message: err?.message || 'Failed to switch provider.',
+        type: 'error',
+      });
+    } finally {
+      setIsSwitchingWallet(null);
+    }
+  };
+
+  const handleHeaderDisconnect = async (zeroTrust = false) => {
+    try {
+      await disconnectWallet({ zeroTrust });
+      setShowWalletMenu(false);
+      addToast({
+        title: zeroTrust ? 'Zero-Trust Purge Completed' : 'Session Disconnected',
+        message: zeroTrust 
+          ? 'Revoked approvals, invalidated cryptographic session, and reset local ledger.'
+          : 'Active Web3 session cleanly terminated.',
+        type: zeroTrust ? 'warning' : 'info',
+      });
+    } catch (err: any) {
+      addToast({
+        title: 'Disconnect Failed',
+        message: err?.message || 'Error terminating session.',
+        type: 'error',
+      });
     }
   };
 
@@ -462,27 +518,38 @@ export const Header: React.FC = () => {
                 id="header-wallet-user-btn"
                 className="flex items-center gap-2 px-3 sm:px-3.5 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-all shadow-lg shadow-blue-900/40 font-mono shrink-0 border border-cyan-400/20"
               >
-                <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shrink-0" />
+                <div
+                  className={`h-2 w-2 rounded-full animate-pulse shadow-sm shrink-0 ${
+                    isWatchOnly ? 'bg-amber-400' : isDemoMode ? 'bg-cyan-400' : 'bg-emerald-400'
+                  }`}
+                />
                 <Wallet className="w-3.5 h-3.5 text-cyan-200 shrink-0" />
                 <span>{shortenAddress(address, 4)}</span>
                 <span className="hidden md:inline text-blue-200 text-[11px] font-normal border-l border-blue-400/30 pl-2">
                   ${(totalWalletApprox ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </span>
-                {walletType === 'sandbox' && (
+                {isWatchOnly ? (
                   <span className="hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-mono font-bold border border-amber-400/30 uppercase">
+                    Watch
+                  </span>
+                ) : walletType === 'sandbox' ? (
+                  <span className="hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-cyan-400/20 text-cyan-300 font-mono font-bold border border-cyan-400/30 uppercase">
                     Demo
                   </span>
-                )}
+                ) : null}
                 <ChevronDown className="w-3.5 h-3.5 text-white/80 shrink-0" />
               </button>
 
               {showWalletMenu && (
                 <div 
-                  className="absolute right-0 mt-2 w-80 rounded-2xl bg-[#0D111A] border border-white/10 shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-100"
+                  className="absolute right-0 mt-2 w-84 sm:w-96 rounded-2xl bg-[#0D111A] border border-white/10 shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-3"
                 >
-                  <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
+                  {/* Account Header */}
+                  <div className="flex items-center justify-between pb-2.5 border-b border-white/[0.08]">
                     <div>
-                      <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider font-bold">Non-Custodial Account</div>
+                      <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider font-bold">
+                        {isWatchOnly ? 'Watch-Only Account' : 'Non-Custodial Account'}
+                      </div>
                       <div className="text-xs font-mono font-bold text-white flex items-center gap-2 mt-1">
                         <span>{shortenAddress(address, 6)}</span>
                         <button
@@ -490,97 +557,273 @@ export const Header: React.FC = () => {
                           className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
                           title="Copy Full Address"
                         >
-                          <Copy className="w-3.5 h-3.5" />
+                          {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-sans font-semibold">
-                          Secured
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded border font-sans font-semibold ${
+                            isWatchOnly
+                              ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                              : isDemoMode
+                              ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          }`}
+                        >
+                          {isWatchOnly ? 'Read-Only' : isDemoMode ? 'Sandbox' : 'Secured'}
                         </span>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Portfolio breakdown */}
-                  <div className="py-3 space-y-2">
-                    <div className="flex justify-between text-[10px] text-slate-400 font-mono uppercase tracking-wider font-bold">
-                      <span>Live Balances</span>
-                      <span className="text-cyan-400">${(totalWalletApprox ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
-                    </div>
-
-                    <div className="space-y-1 font-mono text-xs">
-                      <div className="flex justify-between py-1.5 px-2.5 rounded-xl bg-[#080B12] border border-white/[0.06]">
-                        <span className="text-slate-400">ETH Balance</span>
-                        <span className="text-white font-bold">{ethBalance.toFixed(4)} ETH (${((ethBalance ?? 0) * (ethPrice ?? 0)).toFixed(2)})</span>
-                      </div>
-                      <div className="flex justify-between py-1.5 px-2.5 rounded-xl bg-[#080B12] border border-white/[0.06]">
-                        <span className="text-slate-400">USDC Liquidity</span>
-                        <span className="text-white font-bold">${(usdcBalance ?? 0).toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between py-1.5 px-2.5 rounded-xl bg-[#080B12] border border-white/[0.06]">
-                        <span className="text-slate-400">HYPR Token</span>
-                        <span className="text-cyan-400 font-bold">{((balances.HYPR ?? balances.AETH) ?? 2500).toLocaleString()} HYPR</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Quick Action Navigation */}
-                  <div className="pt-2 border-t border-white/[0.08] space-y-1">
                     <button
                       onClick={() => {
                         openAccountModal();
                         setShowWalletMenu(false);
                       }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-cyan-400 hover:bg-cyan-500/10 transition-colors cursor-pointer font-medium"
+                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-cyan-400 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                     >
-                      <span className="flex items-center gap-2">
-                        <ShieldCheck className="w-3.5 h-3.5" /> Account Details & Faucet
-                      </span>
-                      <ArrowUpRight className="w-3.5 h-3.5" />
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Hub</span>
                     </button>
+                  </div>
+
+                  {/* Wallet Menu Mini-Tabs */}
+                  <div className="flex border-b border-white/[0.08] pb-1 gap-1 text-[11px] font-semibold">
+                    <button
+                      onClick={() => setWalletMenuTab('overview')}
+                      className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        walletMenuTab === 'overview'
+                          ? 'bg-white/10 text-white font-bold'
+                          : 'text-slate-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <Wallet className="w-3 h-3 text-cyan-400" />
+                      <span>Overview</span>
+                    </button>
+                    <button
+                      onClick={() => setWalletMenuTab('switch')}
+                      className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        walletMenuTab === 'switch'
+                          ? 'bg-white/10 text-white font-bold'
+                          : 'text-slate-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <ArrowRightLeft className="w-3 h-3 text-indigo-400" />
+                      <span>Switch</span>
+                    </button>
+                    <button
+                      onClick={() => setWalletMenuTab('security')}
+                      className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        walletMenuTab === 'security'
+                          ? 'bg-white/10 text-white font-bold'
+                          : 'text-slate-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <Shield className="w-3 h-3 text-emerald-400" />
+                      <span>Security</span>
+                    </button>
+                  </div>
+
+                  {/* TAB 1: OVERVIEW */}
+                  {walletMenuTab === 'overview' && (
+                    <div className="space-y-2.5">
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono uppercase tracking-wider font-bold">
+                        <span>Live Balances</span>
+                        <span className="text-cyan-400">
+                          ${(totalWalletApprox ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                        </span>
+                      </div>
+
+                      <div className="space-y-1 font-mono text-xs">
+                        <div className="flex justify-between py-1.5 px-2.5 rounded-xl bg-[#080B12] border border-white/[0.06]">
+                          <span className="text-slate-400">ETH Balance</span>
+                          <span className="text-white font-bold">{ethBalance.toFixed(4)} ETH (${((ethBalance ?? 0) * (ethPrice ?? 0)).toFixed(2)})</span>
+                        </div>
+                        <div className="flex justify-between py-1.5 px-2.5 rounded-xl bg-[#080B12] border border-white/[0.06]">
+                          <span className="text-slate-400">USDC Liquidity</span>
+                          <span className="text-white font-bold">${(usdcBalance ?? 0).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between py-1.5 px-2.5 rounded-xl bg-[#080B12] border border-white/[0.06]">
+                          <span className="text-slate-400">HYPR Token</span>
+                          <span className="text-cyan-400 font-bold">{((balances.HYPR ?? balances.AETH) ?? 2500).toLocaleString()} HYPR</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-1 space-y-1">
+                        <button
+                          onClick={() => {
+                            openAccountModal();
+                            setShowWalletMenu(false);
+                          }}
+                          className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs text-cyan-400 hover:bg-cyan-500/10 transition-colors cursor-pointer font-medium"
+                        >
+                          <span className="flex items-center gap-2">
+                            <ShieldCheck className="w-3.5 h-3.5" /> Account Details & Faucet
+                          </span>
+                          <ArrowUpRight className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveView('portfolio');
+                            setShowWalletMenu(false);
+                          }}
+                          className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-xs text-slate-300 hover:bg-white/[0.05] transition-colors cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2 font-medium">
+                            <Sliders className="w-3.5 h-3.5 text-blue-400" /> Full Portfolio Ledger
+                          </span>
+                          <ArrowUpRight className="w-3.5 h-3.5 text-slate-500" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* TAB 2: QUICK SWITCH */}
+                  {walletMenuTab === 'switch' && (
+                    <div className="space-y-2.5 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+                      <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider font-bold">
+                        1-Click Provider Switch
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { id: 'metamask', name: 'MetaMask' },
+                          { id: 'rabby', name: 'Rabby' },
+                          { id: 'coinbase', name: 'Coinbase' },
+                          { id: 'okx', name: 'OKX Web3' },
+                          { id: 'phantom', name: 'Phantom' },
+                          { id: 'rainbow', name: 'Rainbow' },
+                        ].map((w) => {
+                          const isCurrent = walletType === w.id && !isWatchOnly;
+                          return (
+                            <button
+                              key={w.id}
+                              onClick={() => handleQuickSwitch(w.id)}
+                              disabled={isCurrent || isSwitchingWallet === w.id}
+                              className={`p-2 rounded-xl text-left border text-xs font-semibold transition-all cursor-pointer flex items-center justify-between ${
+                                isCurrent
+                                  ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-300'
+                                  : 'bg-black/40 border-white/5 hover:border-white/20 text-slate-300 hover:text-white'
+                              }`}
+                            >
+                              <span>{w.name}</span>
+                              {isCurrent ? (
+                                <Check className="w-3 h-3 text-cyan-400" />
+                              ) : isSwitchingWallet === w.id ? (
+                                <RefreshCw className="w-3 h-3 animate-spin text-slate-400" />
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Sandbox Profiles */}
+                      <div className="pt-1">
+                        <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider font-bold mb-1">
+                          Institutional Sandbox
+                        </div>
+                        <div className="space-y-1">
+                          {sandboxAccounts.map((acc, idx) => {
+                            const isCurrent = walletType === 'sandbox' && activeSandboxIndex === idx && !isWatchOnly;
+                            return (
+                              <button
+                                key={acc.address}
+                                onClick={() => {
+                                  switchSandboxAccount(idx);
+                                  addToast({
+                                    title: 'Profile Switched',
+                                    message: `Active: ${acc.name}`,
+                                    type: 'info',
+                                  });
+                                }}
+                                className={`w-full p-2 rounded-xl text-left border text-xs font-semibold transition-all cursor-pointer flex items-center justify-between ${
+                                  isCurrent
+                                    ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300'
+                                    : 'bg-black/40 border-white/5 hover:border-white/20 text-slate-300 hover:text-white'
+                                }`}
+                              >
+                                <span className="truncate">{acc.name}</span>
+                                <span className="text-[10px] font-mono text-slate-400 shrink-0 ml-1">
+                                  {acc.balances.ETH} ETH
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          openAccountModal();
+                          setShowWalletMenu(false);
+                        }}
+                        className="w-full py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-cyan-300 text-xs font-semibold text-center border border-white/10 transition-colors cursor-pointer"
+                      >
+                        Watch-Only / Impersonate Address & More →
+                      </button>
+                    </div>
+                  )}
+
+                  {/* TAB 3: SECURITY & DISCONNECT */}
+                  {walletMenuTab === 'security' && (
+                    <div className="space-y-2.5">
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">SIWE Authentication:</span>
+                          <span className={`font-mono font-bold ${isSiweAuthenticated ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            {isSiweAuthenticated ? 'VERIFIED' : 'UNSIGNED'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">Active Token Allowances:</span>
+                          <span className="font-mono text-slate-200">
+                            {Object.values(tokenApprovals).filter(Boolean).length} tokens approved
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Disconnect Actions */}
+                      <div className="space-y-1.5 pt-1">
+                        <button
+                          onClick={() => handleHeaderDisconnect(false)}
+                          className="w-full py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold transition-colors flex items-center justify-between cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2">
+                            <LogOut className="w-3.5 h-3.5 text-slate-400" /> Standard Disconnect
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">Clean exit</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleHeaderDisconnect(true)}
+                          className="w-full py-2 px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-xs font-bold transition-colors flex items-center justify-between cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2">
+                            <ShieldX className="w-3.5 h-3.5 text-rose-400" /> Zero-Trust Security Purge
+                          </span>
+                          <span className="text-[10px] text-rose-400 font-mono">Revoke & Purge</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Connect New / Full Modal Footer Link */}
+                  <div className="pt-2 border-t border-white/[0.08] flex items-center justify-between text-[11px]">
                     <button
                       onClick={() => {
                         openConnectModal();
                         setShowWalletMenu(false);
                       }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-indigo-300 hover:bg-indigo-500/10 transition-colors cursor-pointer font-medium"
+                      className="text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 cursor-pointer"
                     >
-                      <span className="flex items-center gap-2">
-                        <Wallet className="w-3.5 h-3.5" /> Switch / Connect New Wallet
-                      </span>
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setActiveView('portfolio');
-                        setShowWalletMenu(false);
-                      }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-slate-300 hover:bg-white/[0.05] transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2 font-medium">
-                        <Sliders className="w-3.5 h-3.5 text-blue-400" /> Full Portfolio Ledger
-                      </span>
-                      <ArrowUpRight className="w-3.5 h-3.5 text-slate-500" />
+                      <Wallet className="w-3 h-3" /> Connect Another Wallet
                     </button>
                     <button
                       onClick={() => {
                         toggleDemoMode();
                         setShowWalletMenu(false);
                       }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-amber-400 hover:bg-amber-500/10 transition-colors font-mono cursor-pointer"
+                      className="text-amber-400 hover:text-amber-300 font-mono cursor-pointer"
                     >
-                      <span className="flex items-center gap-2">
-                        <RefreshCw className="w-3.5 h-3.5" /> Toggle Mode: {isDemoMode ? 'Demo Sandbox' : 'Live RPC'}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        disconnectWallet();
-                        setShowWalletMenu(false);
-                      }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2 font-medium">
-                        <LogOut className="w-3.5 h-3.5" /> Disconnect Session
-                      </span>
+                      {isDemoMode ? 'Demo Sandbox' : 'Live RPC'}
                     </button>
                   </div>
                 </div>

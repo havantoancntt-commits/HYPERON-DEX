@@ -35,7 +35,9 @@ import {
   Ticket,
   Trophy,
   ArrowDownUp,
-  Wallet
+  Wallet,
+  LogOut,
+  ArrowRightLeft
 } from 'lucide-react';
 
 interface NavItem {
@@ -52,9 +54,9 @@ interface NavSection {
 }
 
 export const Navigation: React.FC = () => {
-  const { activeView, setActiveView } = useExchange();
+  const { activeView, setActiveView, addToast } = useExchange();
   const { t } = useI18n();
-  const { isConnected, address, balances, openConnectModal, openAccountModal } = useWallet();
+  const { isConnected, address, balances, isWatchOnly, disconnectWallet, openConnectModal, openAccountModal } = useWallet();
   const totalWalletApprox = (balances.ETH || 0) * 3200 + (balances.USDC || 0);
 
   const sections: NavSection[] = [
@@ -199,25 +201,52 @@ export const Navigation: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div className="p-3 bg-[#0D111A] border border-cyan-500/20 hover:border-cyan-500/40 rounded-2xl space-y-2 transition-colors">
+            <div className="p-3 bg-[#0D111A] border border-cyan-500/20 hover:border-cyan-500/40 rounded-2xl space-y-2.5 transition-colors">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono text-slate-300 uppercase font-bold flex items-center gap-1.5">
-                  <Wallet className="w-3.5 h-3.5 text-emerald-400" /> Wallet Active
+                  <Wallet className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{isWatchOnly ? 'Watch-Only' : 'Wallet Active'}</span>
                 </span>
-                <span className="flex items-center gap-1 text-[9px] font-mono text-emerald-400 font-bold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Online
+                <span className={`flex items-center gap-1 text-[9px] font-mono font-bold ${isWatchOnly ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${isWatchOnly ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                  <span>{isWatchOnly ? 'Read-Only' : 'Online'}</span>
                 </span>
               </div>
               <div className="flex items-center justify-between font-mono text-xs text-white font-bold">
                 <span>{shortenAddress(address, 4)}</span>
                 <span className="text-cyan-400 text-[11px]">${(totalWalletApprox ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
               </div>
+              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                <button
+                  onClick={openAccountModal}
+                  className="py-1.5 px-2 bg-white/[0.04] hover:bg-cyan-500/10 border border-white/10 hover:border-cyan-500/30 text-slate-300 hover:text-cyan-300 text-[10px] font-medium rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
+                  title="Account Hub & Faucet"
+                >
+                  <ShieldCheck className="w-3 h-3 text-cyan-400" />
+                  <span>Hub</span>
+                </button>
+                <button
+                  onClick={openConnectModal}
+                  className="py-1.5 px-2 bg-white/[0.04] hover:bg-indigo-500/10 border border-white/10 hover:border-indigo-500/30 text-slate-300 hover:text-indigo-300 text-[10px] font-medium rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
+                  title="Switch Wallet Provider"
+                >
+                  <ArrowRightLeft className="w-3 h-3 text-indigo-400" />
+                  <span>Switch</span>
+                </button>
+              </div>
               <button
-                onClick={openAccountModal}
-                className="w-full py-1.5 bg-white/[0.04] hover:bg-cyan-500/10 border border-white/10 hover:border-cyan-500/30 text-slate-300 hover:text-cyan-300 text-[11px] font-medium rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                onClick={async () => {
+                  await disconnectWallet();
+                  addToast({
+                    title: 'Wallet Disconnected',
+                    message: 'Active Web3 session cleanly disconnected.',
+                    type: 'info',
+                  });
+                }}
+                className="w-full py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-[10px] font-bold rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1.5"
               >
-                <ShieldCheck className="w-3 h-3 text-cyan-400" />
-                <span>Account & Faucet</span>
+                <LogOut className="w-3 h-3" />
+                <span>Disconnect Session</span>
               </button>
             </div>
           )}
