@@ -35,6 +35,11 @@ export function getConfiguredOrigins(): string[] {
   const envOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
     : [];
+  const isProduction = process.env.NODE_ENV === 'production';
+  // In production, localhost is disabled unless explicitly specified in ALLOWED_ORIGINS
+  if (isProduction) {
+    return envOrigins;
+  }
   return [...DEFAULT_DEV_ORIGINS, ...envOrigins];
 }
 

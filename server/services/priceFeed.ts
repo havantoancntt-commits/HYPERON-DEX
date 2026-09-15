@@ -335,43 +335,34 @@ async function _doSyncRealTimePrices(now: number): Promise<void> {
     }
   }
 
-  if (success) {
-    // Stablecoin validation
-    ['USDC', 'USDT'].forEach((stb) => {
-      if (priceCache[stb] && priceCache[stb].priceUsd !== null && priceCache[stb].priceUsd > 0) {
-        priceCache[stb].lastUpdated = now;
-        priceCache[stb].status = 'LIVE';
-        priceCache[stb].ageMs = 0;
+  // Hyperon AMM native tokens: must be derived strictly from verified on-chain pool reserves.
+  // Never use hardcoded synthetic ratios per Zero-Synthetic Data Policy.
+  try {
+    const { poolDiscovery } = await import('./poolDiscovery');
+    const hyprPools = await poolDiscovery.discoverAllPairPools('ethereum', 'HYPR', 'ETH', 18, 18);
+    const liveHyprPool = hyprPools.find((p) => p.status === 'LIVE' && p.reserves && p.reserves.reserve0 > 0n && p.reserves.reserve1 > 0n);
+    if (liveHyprPool && liveHyprPool.reserves && priceCache['ETH']?.priceUsd && priceCache['ETH']?.status === 'LIVE') {
+      const r0 = liveHyprPool.reserves.reserve0;
+      const r1 = liveHyprPool.reserves.reserve1;
+      const HYPR_ADDR = '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0';
+      const isHyprToken0 = liveHyprPool.token0Address.toLowerCase() === HYPR_ADDR;
+      const ethReserve = isHyprToken0 ? r1 : r0;
+      const hyprReserve = isHyprToken0 ? r0 : r1;
+      if (hyprReserve > 0n && ethReserve > 0n) {
+        const ratio = Number(ethReserve) / Number(hyprReserve);
+        const hyprPrice = Number((priceCache['ETH'].priceUsd * ratio).toFixed(4));
+        priceCache['HYPR'] = {
+          ...priceCache['HYPR'],
+          priceUsd: hyprPrice,
+          lastUpdated: now,
+          status: 'LIVE',
+          ageMs: 0,
+          source: 'Hyperon DEX On-Chain Pool Reserves (HYPR/ETH)',
+        };
       }
-    });
-
-    // Hyperon AMM native tokens: must be derived strictly from verified on-chain pool reserves.
-    // Never use hardcoded synthetic ratios (e.g. 0.001415) per Zero-Synthetic Data Policy.
-    try {
-      const { poolDiscovery } = await import('./poolDiscovery');
-      const hyprPools = await poolDiscovery.discoverAllPairPools('ethereum', 'HYPR', 'ETH', 18, 18);
-      const liveHyprPool = hyprPools.find((p) => p.status === 'LIVE' && p.reserves && p.reserves.reserve0 > 0n && p.reserves.reserve1 > 0n);
-      if (liveHyprPool && liveHyprPool.reserves && priceCache['ETH']?.priceUsd) {
-        const r0 = liveHyprPool.reserves.reserve0;
-        const r1 = liveHyprPool.reserves.reserve1;
-        const ethReserve = liveHyprPool.token0Symbol === 'ETH' ? r0 : r1;
-        const hyprReserve = liveHyprPool.token0Symbol === 'HYPR' ? r0 : r1;
-        if (hyprReserve > 0n) {
-          const ratio = Number(ethReserve) / Number(hyprReserve);
-          const hyprPrice = Number((priceCache['ETH'].priceUsd * ratio).toFixed(4));
-          priceCache['HYPR'] = {
-            ...priceCache['HYPR'],
-            priceUsd: hyprPrice,
-            lastUpdated: now,
-            status: 'LIVE',
-            ageMs: 0,
-            source: 'Hyperon DEX On-Chain Pool Reserves (HYPR/ETH)',
-          };
-        }
-      }
-    } catch {
-      // Do not invent fake synthetic price if no on-chain pool exists
     }
+  } catch {
+    // Do not invent fake synthetic price if no on-chain pool exists
   }
 
   // Update stale/unavailable status based on elapsed time without modifying lastUpdated

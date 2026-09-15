@@ -213,6 +213,7 @@ export interface TransactionSimulation {
   // Formatted representations
   gasEstimated: number;
   gasEstimatedUnits: number;
+  gasEstimationSource?: 'RPC_ESTIMATE_WITH_BUFFER' | 'PROTOCOL_SAFETY_BUFFER' | 'UNAVAILABLE';
   gasCostUsd: number;
   balanceBefore: number;
   balanceAfter: number;

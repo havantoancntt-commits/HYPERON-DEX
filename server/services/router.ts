@@ -343,14 +343,21 @@ export class SmartGraphRouter {
 
     // Evaluate quotes on each discovered on-chain pool using pure invariant math
     for (const pool of directPools) {
+      const wrappedNative = routerConfig.wrappedNativeAddress?.toLowerCase();
+      const normFromAddr = fromToken.address.toLowerCase();
+      const effectiveFromAddr = (fromToken.isNative || normFromAddr === '0x0000000000000000000000000000000000000000' || normFromAddr === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
+        ? wrappedNative
+        : normFromAddr;
+      const isToken0In = effectiveFromAddr
+        ? pool.token0Address.toLowerCase() === effectiveFromAddr
+        : (fromToken.isNative && pool.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase());
       if (pool.dexProtocol === 'Uniswap v3' && pool.v3State) {
-        const isToken0In = pool.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
         const q = uniV3.computeQuoteWithV3State(effectiveAmountInRaw, decimalsIn, decimalsOut, pool.v3State, isToken0In);
         if (q.status === 'AVAILABLE' && q.amountOutRaw > 0n && q.priceImpactPercent < 50.0) {
           singlePoolCandidates.push({ pool, quote: q });
         }
       } else if (pool.reserves) {
-        const q = uniV2.computeQuote(effectiveAmountInRaw, decimalsIn, decimalsOut, pool.reserves, pool.feeBps);
+        const q = uniV2.computeQuote(effectiveAmountInRaw, decimalsIn, decimalsOut, pool.reserves, pool.feeBps, isToken0In);
         if (q.status === 'AVAILABLE' && q.amountOutRaw > 0n && q.priceImpactPercent < 50.0) {
           singlePoolCandidates.push({ pool, quote: q });
         }
@@ -401,11 +408,11 @@ export class SmartGraphRouter {
 
         for (const p1 of hop1Pools) {
           let q1: AMMQuoteResult | null = null;
+          const isToken0In1 = p1.token0Address.toLowerCase() === fromToken.address.toLowerCase();
           if (p1.dexProtocol === 'Uniswap v3' && p1.v3State) {
-            const isToken0In = p1.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
-            q1 = uniV3.computeQuoteWithV3State(effectiveAmountInRaw, decimalsIn, midDecimals, p1.v3State, isToken0In);
+            q1 = uniV3.computeQuoteWithV3State(effectiveAmountInRaw, decimalsIn, midDecimals, p1.v3State, isToken0In1);
           } else if (p1.reserves) {
-            q1 = uniV2.computeQuote(effectiveAmountInRaw, decimalsIn, midDecimals, p1.reserves, p1.feeBps);
+            q1 = uniV2.computeQuote(effectiveAmountInRaw, decimalsIn, midDecimals, p1.reserves, p1.feeBps, isToken0In1);
           }
 
           if (!q1 || q1.status !== 'AVAILABLE' || q1.amountOutRaw <= 0n || q1.priceImpactPercent >= 50.0) {
@@ -414,11 +421,11 @@ export class SmartGraphRouter {
 
           for (const p2 of hop2Pools) {
             let q2: AMMQuoteResult | null = null;
+            const isToken0In2 = p2.token0Address.toLowerCase() === resolvedMid.address.toLowerCase();
             if (p2.dexProtocol === 'Uniswap v3' && p2.v3State) {
-              const isToken0In = p2.token0Symbol.toUpperCase() === resolvedMid.symbol.toUpperCase();
-              q2 = uniV3.computeQuoteWithV3State(q1.amountOutRaw, midDecimals, decimalsOut, p2.v3State, isToken0In);
+              q2 = uniV3.computeQuoteWithV3State(q1.amountOutRaw, midDecimals, decimalsOut, p2.v3State, isToken0In2);
             } else if (p2.reserves) {
-              q2 = uniV2.computeQuote(q1.amountOutRaw, midDecimals, decimalsOut, p2.reserves, p2.feeBps);
+              q2 = uniV2.computeQuote(q1.amountOutRaw, midDecimals, decimalsOut, p2.reserves, p2.feeBps, isToken0In2);
             }
 
             if (!q2 || q2.status !== 'AVAILABLE' || q2.amountOutRaw <= 0n || q2.priceImpactPercent >= 50.0) {
@@ -562,11 +569,11 @@ export class SmartGraphRouter {
       // Helper function to evaluate quote on a pool
       const computePoolQuote = (pool: VerifiedPoolRecord, inputRaw: bigint): AMMQuoteResult | null => {
         if (inputRaw <= 0n) return null;
+        const isToken0In = pool.token0Address.toLowerCase() === fromToken.address.toLowerCase();
         if (pool.dexProtocol === 'Uniswap v3' && pool.v3State) {
-          const isToken0In = pool.token0Symbol.toUpperCase() === fromToken.symbol.toUpperCase();
           return uniV3.computeQuoteWithV3State(inputRaw, decimalsIn, decimalsOut, pool.v3State, isToken0In);
         } else if (pool.reserves) {
-          return uniV2.computeQuote(inputRaw, decimalsIn, decimalsOut, pool.reserves, pool.feeBps);
+          return uniV2.computeQuote(inputRaw, decimalsIn, decimalsOut, pool.reserves, pool.feeBps, isToken0In);
         }
         return null;
       };

@@ -13,6 +13,7 @@ import { tokenResolver } from './tokenResolver';
 import { UniswapV2Adapter, UniswapV3Adapter, CurveAdapter, BalancerAdapter } from './ammEngine';
 import { getUsdPrice } from './priceFeed';
 import { getLiveGasPrice } from './rpc';
+import { ROUTER_REGISTRY } from './routerRegistry';
 
 export interface LiquidityEdge {
   poolId: string;
@@ -161,7 +162,30 @@ export class UltraRouter {
       // Zero Synthetic Data: skip pools with no verified reserves
       if (!pool.reserves && !pool.v3State && !pool.curveState) continue;
 
-      const isForward = pool.token0Symbol.toUpperCase() === tokenInSymbol.toUpperCase();
+      const normT0 = pool.token0Address.toLowerCase();
+      const normT1 = pool.token1Address.toLowerCase();
+      const normIn = tokenInObj.address.toLowerCase();
+      const wrappedNative = ROUTER_REGISTRY[chainKey]?.wrappedNativeAddress?.toLowerCase();
+      const effectiveIn = (tokenInObj.isNative || normIn === '0x0000000000000000000000000000000000000000' || normIn === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
+        ? (wrappedNative || normIn)
+        : normIn;
+
+      let isForward: boolean;
+      if (effectiveIn === normT0) {
+        isForward = true;
+      } else if (effectiveIn === normT1) {
+        isForward = false;
+      } else if (tokenInObj.isNative) {
+        if (pool.token0Symbol.toUpperCase() === tokenInObj.symbol.toUpperCase()) {
+          isForward = true;
+        } else if (pool.token1Symbol.toUpperCase() === tokenInObj.symbol.toUpperCase()) {
+          isForward = false;
+        } else {
+          continue;
+        }
+      } else {
+        continue;
+      }
       let reserveIn = 0n;
       let reserveOut = 0n;
 

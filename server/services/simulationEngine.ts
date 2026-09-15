@@ -429,7 +429,8 @@ export class SimulationEngine {
       }
     }
 
-    // Estimate gas if balance & allowance are sufficient
+    // Estimate gas if balance & allowance are sufficient with safety margin
+    let gasEstimationSource: 'RPC_ESTIMATE_WITH_BUFFER' | 'PROTOCOL_SAFETY_BUFFER' | 'UNAVAILABLE' = 'PROTOCOL_SAFETY_BUFFER';
     if (hasSufficientBalance && isAllowanceApproved) {
       try {
         const estGas = await client.estimateGas({
@@ -438,10 +439,16 @@ export class SimulationEngine {
           data: calldata,
           value: isNativeIn ? amountInRaw : 0n,
         });
-        gasEstimated = Number(estGas);
+        // Apply 20% safety buffer for AMM tick traversal / dynamic state drift
+        const bufferedGas = (estGas * 120n) / 100n;
+        gasEstimated = Number(bufferedGas);
+        gasEstimationSource = 'RPC_ESTIMATE_WITH_BUFFER';
       } catch {
         gasEstimated = 145000;
+        gasEstimationSource = 'PROTOCOL_SAFETY_BUFFER';
       }
+    } else {
+      gasEstimationSource = 'UNAVAILABLE';
     }
 
     const gasCostUsd = nativePriceUsd > 0 && gasGwei !== null ? Number(((gasEstimated * gasGwei * 1e-9) * nativePriceUsd).toFixed(2)) : 0;
@@ -485,6 +492,7 @@ export class SimulationEngine {
       toAddress: routerSpender,
       gasEstimated,
       gasEstimatedUnits: gasEstimated,
+      gasEstimationSource,
       gasCostUsd,
       balanceBefore: parseFloat(balanceFormatted) || 0,
       balanceAfter: Math.max(0, (parseFloat(balanceFormatted) || 0) - quote.fromAmount),
