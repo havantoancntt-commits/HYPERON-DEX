@@ -37,8 +37,10 @@ import {
   ArrowDownUp,
   Wallet,
   LogOut,
-  ArrowRightLeft
+  ArrowRightLeft,
+  ChevronUp
 } from 'lucide-react';
+import { MobileWalletDrawer } from './MobileWalletDrawer';
 
 interface NavItem {
   id: ProductView;
@@ -57,6 +59,7 @@ export const Navigation: React.FC = () => {
   const { activeView, setActiveView, addToast } = useExchange();
   const { t } = useI18n();
   const { isConnected, address, balances, isWatchOnly, disconnectWallet, openConnectModal, openAccountModal } = useWallet();
+  const [isMobileWalletDrawerOpen, setIsMobileWalletDrawerOpen] = useState(false);
   const totalWalletApprox = (balances.ETH || 0) * 3200 + (balances.USDC || 0);
 
   const sections: NavSection[] = [
@@ -219,34 +222,35 @@ export const Navigation: React.FC = () => {
               <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                 <button
                   onClick={openAccountModal}
-                  className="py-1.5 px-2 bg-white/[0.04] hover:bg-cyan-500/10 border border-white/10 hover:border-cyan-500/30 text-slate-300 hover:text-cyan-300 text-[10px] font-medium rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
-                  title="Account Hub & Faucet"
+                  className="py-1.5 px-2 bg-white/[0.04] hover:bg-cyan-500/10 border border-white/10 hover:border-cyan-500/30 text-slate-200 hover:text-cyan-300 text-[10px] font-semibold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
+                  title="Mở Quản trị Tài khoản Hub"
                 >
                   <ShieldCheck className="w-3 h-3 text-cyan-400" />
-                  <span>Hub</span>
+                  <span>Quản trị Ví</span>
                 </button>
                 <button
                   onClick={openConnectModal}
-                  className="py-1.5 px-2 bg-white/[0.04] hover:bg-indigo-500/10 border border-white/10 hover:border-indigo-500/30 text-slate-300 hover:text-indigo-300 text-[10px] font-medium rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
-                  title="Switch Wallet Provider"
+                  className="py-1.5 px-2 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white text-[10px] font-semibold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
+                  title="Chuyển đổi nhà cung cấp ví Web3 (Switch Wallet)"
                 >
                   <ArrowRightLeft className="w-3 h-3 text-indigo-400" />
-                  <span>Switch</span>
+                  <span>{t('wallet.switch') || 'Đổi ví'}</span>
                 </button>
               </div>
               <button
                 onClick={async () => {
                   await disconnectWallet();
                   addToast({
-                    title: 'Wallet Disconnected',
-                    message: 'Active Web3 session cleanly disconnected.',
+                    title: 'Đã ngắt kết nối ví',
+                    message: 'Phiên Web3 đã được ngắt kết nối an toàn.',
                     type: 'info',
                   });
                 }}
-                className="w-full py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-[10px] font-bold rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1.5"
+                className="w-full py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 text-[10px] font-bold rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1.5"
+                title="Ngắt kết nối ví Web3 hiện tại"
               >
-                <LogOut className="w-3 h-3" />
-                <span>Disconnect Session</span>
+                <LogOut className="w-3 h-3 text-rose-400" />
+                <span>{t('wallet.disconnect') || 'Ngắt kết nối ví'}</span>
               </button>
             </div>
           )}
@@ -271,45 +275,81 @@ export const Navigation: React.FC = () => {
       </aside>
 
       {/* Mobile Bottom Navigation Dock */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#07090E]/95 backdrop-blur-xl border-t border-white/10 px-2 py-2 flex items-center justify-around">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#07090E]/95 backdrop-blur-2xl border-t border-white/10 px-3 py-1.5 flex items-center justify-between pb-safe shadow-2xl">
+        {/* Main 4 Navigation Tabs */}
         {[
-          { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
-          { id: 'swap', label: t('nav.swap'), icon: ArrowLeftRight },
-          { id: 'trade', label: t('nav.trade'), icon: LineChart },
+          { id: 'dashboard', label: t('nav.dashboard') || 'Tổng quan', icon: LayoutDashboard },
+          { id: 'swap', label: t('nav.swap') || 'Swap', icon: ArrowLeftRight },
+          { id: 'trade', label: t('nav.trade') || 'Trade', icon: LineChart },
           { id: 'cross-chain', label: 'Bridge', icon: ArrowDownUp },
-          { 
-            id: isConnected ? 'portfolio' : 'wallet_connect', 
-            label: isConnected ? shortenAddress(address, 3) : (t('trade.connect_wallet') || 'Connect'), 
-            icon: Wallet,
-            isConnectAction: !isConnected 
-          },
         ].map((item) => {
           const Icon = item.icon;
           const isActive = activeView === item.id;
           return (
             <button
               key={item.id}
-              onClick={() => {
-                if (item.isConnectAction) {
-                  openConnectModal();
-                } else {
-                  setActiveView(item.id as ProductView);
-                }
-              }}
-              className={`flex flex-col items-center gap-1 p-1 rounded-xl transition-all cursor-pointer ${
-                item.isConnectAction
-                  ? 'text-cyan-400 font-extrabold animate-pulse'
-                  : isActive
-                  ? 'text-cyan-400 font-bold scale-105'
+              onClick={() => setActiveView(item.id as ProductView)}
+              className={`flex flex-col items-center justify-center min-w-[54px] py-1 px-1.5 rounded-xl transition-all cursor-pointer ${
+                isActive
+                  ? 'text-cyan-400 font-bold'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Icon className="w-4 h-4" />
-              <span className="text-[10px] font-medium">{item.label}</span>
+              <div className={`relative p-1 rounded-lg transition-colors ${isActive ? 'bg-cyan-500/15' : ''}`}>
+                <Icon className="w-4 h-4" />
+                {isActive && (
+                  <span className="w-1 h-1 rounded-full bg-cyan-400 absolute -bottom-0.5 left-1/2 -translate-x-1/2 shadow-sm shadow-cyan-400" />
+                )}
+              </div>
+              <span className="text-[10px] font-medium tracking-tight mt-0.5">{item.label}</span>
             </button>
           );
         })}
+
+        {/* Dedicated Web3 Wallet Hub Button (Sole Wallet Control in Red Circle) */}
+        {!isConnected ? (
+          <button
+            onClick={openConnectModal}
+            id="mobile-wallet-hub-btn"
+            className="flex flex-col items-center justify-center min-w-[68px] py-1 px-2.5 rounded-xl bg-gradient-to-b from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-cyan-900/50 border border-cyan-300/40 active:scale-95 transition-all cursor-pointer group shrink-0"
+            title="Kết nối ví Web3 phi tập trung"
+          >
+            <div className="relative flex items-center justify-center">
+              <span className="w-2 h-2 rounded-full bg-cyan-200 absolute -top-0.5 -right-1 animate-ping opacity-80" />
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-300 absolute -top-0.5 -right-1" />
+              <Wallet className="w-4 h-4 text-white group-hover:scale-110 transition-transform" />
+            </div>
+            <span className="text-[10px] font-extrabold tracking-tight mt-0.5 text-cyan-100 whitespace-nowrap">
+              {t('trade.connect_wallet') || 'Kết nối ví'}
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={() => setIsMobileWalletDrawerOpen(true)}
+            id="mobile-wallet-hub-btn"
+            className="flex flex-col items-center justify-center min-w-[68px] py-1 px-2.5 rounded-xl bg-gradient-to-b from-emerald-950/50 via-[#0C121F] to-[#070A12] hover:bg-emerald-950/70 text-emerald-300 shadow-md shadow-emerald-950/60 border border-emerald-500/50 active:scale-95 transition-all cursor-pointer group shrink-0 font-mono"
+            title="Mở Trung tâm Quản trị & Điều khiển Ví Web3"
+          >
+            <div className="flex items-center gap-1">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+              </span>
+              <Wallet className="w-3.5 h-3.5 text-emerald-300 group-hover:text-white transition-colors" />
+              <ChevronUp className="w-3 h-3 text-emerald-400/80 group-hover:text-emerald-300 transition-transform group-hover:-translate-y-0.5" />
+            </div>
+            <span className="text-[10px] font-bold text-white tracking-tighter mt-0.5 whitespace-nowrap">
+              {shortenAddress(address, 3)}
+            </span>
+          </button>
+        )}
       </nav>
+
+      {/* Global Mobile Web3 Wallet Hub Drawer (Portal-Mounted) */}
+      <MobileWalletDrawer
+        isOpen={isMobileWalletDrawerOpen}
+        onClose={() => setIsMobileWalletDrawerOpen(false)}
+      />
     </>
   );
 };

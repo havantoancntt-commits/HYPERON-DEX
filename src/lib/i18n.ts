@@ -78,6 +78,9 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'wallet.connected': 'Connected',
     'wallet.disconnected': 'Disconnected',
     'wallet.address': 'Wallet Address',
+    'wallet.disconnect': 'Disconnect Wallet',
+    'wallet.switch': 'Switch Wallet',
+    'wallet.zero_trust': 'Zero-Trust Purge',
 
     // Trading & Actions
     'trade.swap': 'Swap',
@@ -181,6 +184,9 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     'wallet.connected': 'Đã kết nối',
     'wallet.disconnected': 'Chưa kết nối',
     'wallet.address': 'Địa chỉ ví',
+    'wallet.disconnect': 'Ngắt kết nối ví',
+    'wallet.switch': 'Chuyển đổi ví',
+    'wallet.zero_trust': 'Xóa phiên Zero-Trust',
 
     // Trading & Actions
     'trade.swap': 'Hoán Đổi',

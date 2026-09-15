@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useExchange } from '../context/ExchangeContext';
 import { useWallet } from '../context/WalletContext';
 import { ShieldCheck, AlertTriangle, CheckCircle2, Terminal, Lock, RefreshCw, Zap } from 'lucide-react';
@@ -60,8 +61,8 @@ export const SimulationModal: React.FC = () => {
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150 overflow-y-auto">
+  const modalNode = (
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[99999] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150 overflow-y-auto">
       <div className="w-full max-w-xl rounded-3xl bg-[#090C12] border border-cyan-500/30 shadow-2xl p-4 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
@@ -230,4 +231,6 @@ export const SimulationModal: React.FC = () => {
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalNode, document.body) : null;
 };

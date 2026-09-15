@@ -5,6 +5,8 @@ import { I18nProvider, useI18n } from './context/I18nContext';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import { SimulationModal } from './components/SimulationModal';
+import { WalletConnectionModal } from './components/WalletConnectionModal';
+import { AccountDetailsModal } from './components/AccountDetailsModal';
 import { ToastContainer } from './components/ToastContainer';
 import { motion, AnimatePresence } from 'motion/react';
 import { soundManager } from './lib/sound';
@@ -162,6 +164,10 @@ const MainLayout: React.FC = () => {
 
       {/* Pre-Flight Transaction Simulation Modal */}
       <SimulationModal />
+
+      {/* Global Web3 Modals */}
+      <WalletConnectionModal />
+      <AccountDetailsModal />
 
       {/* Toast Notification Container */}
       <ToastContainer />

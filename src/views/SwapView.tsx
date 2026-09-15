@@ -3,7 +3,7 @@ import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
 import { useI18n } from '../context/I18nContext';
 import { Token, SwapQuote } from '../types';
-import { formatCurrency, formatCrypto } from '../lib/utils';
+import { formatCurrency, formatCrypto, shortenAddress } from '../lib/utils';
 import { TokenLogo, DexProtocolIcon } from '../components/CryptoIcon';
 import {
   ArrowDownUp,
@@ -28,7 +28,10 @@ import {
   AlertCircle,
   AlertTriangle,
   Copy,
-  Activity
+  Activity,
+  LogOut,
+  Wallet,
+  ArrowRightLeft
 } from 'lucide-react';
 
 /**
@@ -63,7 +66,21 @@ export const sanitizeAmountInput = (value: string, maxDecimals: number = 18): st
 };
 
 export const SwapView: React.FC = () => {
-  const { balances, isConnected, connectWallet, openConnectModal, slippage, setSlippage, mevProtected, setMevProtected, address, chainId } = useWallet();
+  const {
+    balances,
+    isConnected,
+    connectWallet,
+    openConnectModal,
+    openAccountModal,
+    disconnectWallet,
+    walletType,
+    slippage,
+    setSlippage,
+    mevProtected,
+    setMevProtected,
+    address,
+    chainId
+  } = useWallet();
   const { selectedPair, setActiveSimulation, setActiveQuote, addToast, getLiveToken, liveTokens } = useExchange();
   const { t } = useI18n();
 
@@ -258,10 +275,11 @@ export const SwapView: React.FC = () => {
 
     if (!isConnected || !address) {
       addToast({
-        title: 'Yêu Cầu Kết Nối Ví',
-        message: 'Vui lòng kết nối ví Web3 để mô phỏng và thực thi giao dịch hoán đổi an toàn.',
+        title: 'Cần kết nối ví',
+        message: 'Vui lòng kết nối ví Web3 bằng nút Ví ở thanh điều hướng dưới cùng để thực thi hoán đổi.',
         type: 'warning',
       });
+      openConnectModal();
       return;
     }
 
@@ -750,16 +768,7 @@ export const SwapView: React.FC = () => {
 
         {/* SOLID, NON-FLICKERING ACTION BUTTON */}
         <div className="pt-2">
-          {!isConnected ? (
-            <button
-              onClick={openConnectModal}
-              id="swap-connect-wallet-btn"
-              className="w-full py-4 bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-cyan-900/25 transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              <Zap className="w-4 h-4 fill-white" />
-              <span>{t('trade.connect_wallet')}</span>
-            </button>
-          ) : isUnverifiedToken ? (
+          {isUnverifiedToken ? (
             <button
               disabled
               className="w-full py-4 bg-rose-500/10 border border-rose-500/30 text-rose-400 font-bold text-sm rounded-2xl cursor-not-allowed flex items-center justify-center gap-2"

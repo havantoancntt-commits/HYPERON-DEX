@@ -129,6 +129,11 @@ export const CrossChainView: React.FC = () => {
 
   const handleExecuteBridge = async () => {
     if (!isConnected) {
+      addToast({
+        title: 'Cần kết nối ví',
+        message: 'Vui lòng kết nối ví Web3 bằng nút Ví ở thanh điều hướng dưới cùng để thực hiện chuyển cầu.',
+        type: 'warning',
+      });
       openConnectModal();
       return;
     }
@@ -462,22 +467,17 @@ export const CrossChainView: React.FC = () => {
             <button
               onClick={handleExecuteBridge}
               disabled={isLoadingQuote || isExecuting}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 hover:from-blue-500 hover:via-indigo-500 hover:to-cyan-400 text-white font-bold text-sm shadow-xl shadow-blue-900/30 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 hover:from-blue-500 hover:via-indigo-500 hover:to-cyan-400 text-white font-bold text-sm shadow-xl shadow-blue-900/30 transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.99]"
             >
               {isExecuting ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
                   <span>Executing ZK Bridge Relaying...</span>
                 </>
-              ) : isConnected ? (
+              ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
                   <span>Execute Exclusive Cross-Chain Swap</span>
-                </>
-              ) : (
-                <>
-                  <Lock className="w-4 h-4" />
-                  <span>Connect Wallet to Bridge</span>
                 </>
               )}
             </button>

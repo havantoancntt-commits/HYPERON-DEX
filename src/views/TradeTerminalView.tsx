@@ -264,6 +264,11 @@ export const TradeTerminalView: React.FC = () => {
 
   const handlePlaceOrder = async () => {
     if (!isConnected) {
+      addToast({
+        title: 'Cần kết nối ví',
+        message: 'Vui lòng kết nối ví Web3 bằng nút Ví ở thanh điều hướng dưới cùng để ký lệnh.',
+        type: 'warning',
+      });
       openConnectModal();
       return;
     }
@@ -1040,28 +1045,17 @@ export const TradeTerminalView: React.FC = () => {
           </div>
 
           {/* Place Order CTA */}
-          {!isConnected ? (
-            <button
-              onClick={openConnectModal}
-              id="terminal-connect-wallet-btn"
-              className="w-full py-3.5 bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-xl shadow-cyan-900/40 transition-all cursor-pointer flex items-center justify-center gap-2 border border-cyan-400/20 active:scale-95"
-            >
-              <Wallet className="w-4 h-4 text-white" />
-              <span>{t('trade.connect_wallet') || 'Connect Wallet'}</span>
-            </button>
-          ) : (
-            <button
-              onClick={handlePlaceOrder}
-              id="terminal-place-order-btn"
-              className={`w-full py-3.5 rounded-xl font-extrabold text-xs transition-all shadow-xl cursor-pointer ${
-                side === 'buy'
-                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-900/30'
-                  : 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white shadow-rose-900/30'
-              }`}
-            >
-              {side === 'buy' ? t('trade.buy') : t('trade.sell')} {activePair.symbol} NOW
-            </button>
-          )}
+          <button
+            onClick={handlePlaceOrder}
+            id="terminal-place-order-btn"
+            className={`w-full py-3.5 rounded-xl font-extrabold text-xs transition-all shadow-xl cursor-pointer active:scale-[0.99] ${
+              side === 'buy'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-900/30'
+                : 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white shadow-rose-900/30'
+            }`}
+          >
+            {side === 'buy' ? t('trade.buy') : t('trade.sell')} {activePair.symbol} NOW
+          </button>
         </div>
       </div>
 
