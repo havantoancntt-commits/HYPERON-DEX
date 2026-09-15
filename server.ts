@@ -39,6 +39,7 @@ import {
   getCircuitBreakerAuditLogs,
 } from './server/services/multiOracleAggregator';
 import { corsSecurityMiddleware } from './server/middleware/corsSecurity';
+import { hyperonCrossChainEngine } from './server/services/crossChainEngine';
 
 const app = express();
 const PORT = 3000;
@@ -1132,51 +1133,111 @@ app.get('/api/ai/signals', async (req: Request, res: Response) => {
 });
 
 // -------------------------------------------------------------
-// 10. Cross-Chain Routes & Liquidity Pools
+// 10. Cross-Chain Routes & Proprietary Liquidity Engine
 // -------------------------------------------------------------
-app.get('/api/crosschain/routes', (req: Request, res: Response) => {
+app.get('/api/crosschain/routes', async (req: Request, res: Response) => {
   try {
     const fromChain = (req.query.fromChain as any) || 'ethereum';
     const toChain = (req.query.toChain as any) || 'arbitrum';
     const amount = parseFloat(req.query.amount as string) || 1.0;
+    const fromToken = (req.query.fromToken as string) || 'ETH';
+    const toToken = (req.query.toToken as string) || 'ETH';
+
+    const quote = await hyperonCrossChainEngine.computeCrossChainQuote({
+      fromChain,
+      toChain,
+      fromTokenAddress: '0x0000000000000000000000000000000000000000',
+      fromTokenSymbol: fromToken,
+      fromTokenDecimals: 18,
+      toTokenAddress: '0x0000000000000000000000000000000000000000',
+      toTokenSymbol: toToken,
+      toTokenDecimals: 18,
+      amount,
+    });
 
     res.json({
-      routes: [
-        {
-          id: 'bridge-stargate',
-          protocolName: 'Stargate v2 (LayerZero CCIP)',
-          logo: '⭐',
-          fromChain,
-          toChain,
-          fromToken: 'ETH',
-          toToken: 'ETH',
-          estimatedTimeMin: 2,
-          bridgeFeeUsd: 1.2,
-          gasCostUsd: 2.4,
-          receivedAmount: Number((amount * 0.9992).toFixed(6)),
-          securityRating: 'Very High',
-          protocolTvlUsd: 480000000,
-        },
-        {
-          id: 'bridge-across',
-          protocolName: 'Across Protocol v3 (Optimistic Intent)',
-          logo: '⚡',
-          fromChain,
-          toChain,
-          fromToken: 'ETH',
-          toToken: 'ETH',
-          estimatedTimeMin: 1,
-          bridgeFeeUsd: 0.85,
-          gasCostUsd: 1.95,
-          receivedAmount: Number((amount * 0.9995).toFixed(6)),
-          securityRating: 'Very High',
-          protocolTvlUsd: 310000000,
-        },
-      ],
+      quote,
+      routes: quote.allRoutes,
     });
   } catch (err: unknown) {
     console.error('[HYPERON-DEX] Crosschain routes error:', err);
     res.status(500).json({ error: 'Failed to retrieve cross-chain routes' });
+  }
+});
+
+app.post('/api/crosschain/quote', async (req: Request, res: Response) => {
+  try {
+    const {
+      fromChain,
+      toChain,
+      fromTokenAddress,
+      fromTokenSymbol,
+      fromTokenDecimals,
+      toTokenAddress,
+      toTokenSymbol,
+      toTokenDecimals,
+      amount,
+      slippagePercent,
+      userAddress,
+      refuelDestinationGasAmount,
+    } = req.body;
+
+    if (!fromChain || !toChain || !fromTokenSymbol || !toTokenSymbol || !amount) {
+      return res.status(400).json({ error: 'MISSING_PARAMETERS: fromChain, toChain, fromTokenSymbol, toTokenSymbol, and amount are required' });
+    }
+
+    const quote = await hyperonCrossChainEngine.computeCrossChainQuote({
+      fromChain,
+      toChain,
+      fromTokenAddress: fromTokenAddress || '0x0000000000000000000000000000000000000000',
+      fromTokenSymbol,
+      fromTokenDecimals: fromTokenDecimals || 18,
+      toTokenAddress: toTokenAddress || '0x0000000000000000000000000000000000000000',
+      toTokenSymbol,
+      toTokenDecimals: toTokenDecimals || 18,
+      amount: parseFloat(amount),
+      slippagePercent: slippagePercent ? parseFloat(slippagePercent) : 0.5,
+      userAddress,
+      refuelDestinationGasAmount: refuelDestinationGasAmount ? parseFloat(refuelDestinationGasAmount) : 0,
+    });
+
+    res.json({ quote });
+  } catch (err: any) {
+    console.error('[HYPERON-DEX] Crosschain quote error:', err);
+    res.status(400).json({ error: err?.message || 'Failed to calculate cross-chain quote' });
+  }
+});
+
+app.post('/api/crosschain/execute', (req: Request, res: Response) => {
+  try {
+    const { quote, userAddress, sourceTxHash } = req.body;
+    if (!quote || !quote.quoteId) {
+      return res.status(400).json({ error: 'MISSING_QUOTE: A valid cross-chain quote is required for execution' });
+    }
+
+    const status = hyperonCrossChainEngine.executeCrossChainIntent(
+      quote,
+      userAddress || '0x71C28B932F99B52EDb3C0257B4393608F79E9E42',
+      sourceTxHash
+    );
+
+    res.json({ status });
+  } catch (err: any) {
+    console.error('[HYPERON-DEX] Crosschain execute error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to execute cross-chain intent' });
+  }
+});
+
+app.get('/api/crosschain/track/:intentId', (req: Request, res: Response) => {
+  try {
+    const { intentId } = req.params;
+    const status = hyperonCrossChainEngine.getIntentStatus(intentId);
+    if (!status) {
+      return res.status(404).json({ error: 'INTENT_NOT_FOUND' });
+    }
+    res.json({ status });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to track cross-chain intent' });
   }
 });
 

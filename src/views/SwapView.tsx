@@ -63,7 +63,7 @@ export const sanitizeAmountInput = (value: string, maxDecimals: number = 18): st
 };
 
 export const SwapView: React.FC = () => {
-  const { balances, isConnected, connectWallet, slippage, setSlippage, mevProtected, setMevProtected, address, chainId } = useWallet();
+  const { balances, isConnected, connectWallet, openConnectModal, slippage, setSlippage, mevProtected, setMevProtected, address, chainId } = useWallet();
   const { selectedPair, setActiveSimulation, setActiveQuote, addToast, getLiveToken, liveTokens } = useExchange();
   const { t } = useI18n();
 
@@ -752,7 +752,8 @@ export const SwapView: React.FC = () => {
         <div className="pt-2">
           {!isConnected ? (
             <button
-              onClick={() => connectWallet('demo')}
+              onClick={openConnectModal}
+              id="swap-connect-wallet-btn"
               className="w-full py-4 bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-cyan-900/25 transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               <Zap className="w-4 h-4 fill-white" />

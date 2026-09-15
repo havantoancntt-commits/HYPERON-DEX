@@ -472,6 +472,81 @@ export interface CrossChainBridgeRoute {
   receivedAmount: number;
   securityRating: 'Very High' | 'High' | 'Medium';
   protocolTvlUsd: number;
+  mevProtected?: boolean;
+  zkAttestation?: boolean;
+  protocolBadge?: 'FASTEST' | 'BEST_RETURN' | 'DECENTRALIZED' | 'RECOMMENDED';
+}
+
+export interface CrossChainStep {
+  stepIndex: number;
+  name: string;
+  description: string;
+  status: 'pending' | 'active' | 'completed' | 'failed';
+  timestamp?: number;
+  txHash?: string;
+  explorerUrl?: string;
+}
+
+export interface CrossChainSwapQuote {
+  quoteId: string;
+  intentHash: string;
+  fromChain: ChainId;
+  toChain: ChainId;
+  fromToken: Token;
+  toToken: Token;
+  fromAmount: number;
+  fromAmountRaw: string;
+  expectedToAmount: number;
+  expectedToAmountRaw: string;
+  minToAmount: number;
+  minToAmountRaw: string;
+  bridgeAsset: string;
+  selectedRoute: CrossChainBridgeRoute;
+  allRoutes: CrossChainBridgeRoute[];
+  sourceSwapRequired: boolean;
+  destinationSwapRequired: boolean;
+  priceImpactPercent: number;
+  slippagePercent: number;
+  gasOnDestinationUsd: number;
+  gasOnDestinationAmount: number;
+  gasOnDestinationSymbol: string;
+  breakdown: {
+    sourceDexFeeUsd: number;
+    bridgeProtocolFeeUsd: number;
+    destinationGasCostUsd: number;
+    relayerFeeUsd: number;
+    totalFeesUsd: number;
+    netSavingsUsd: number;
+  };
+  estimatedTotalTimeSec: number;
+  expiresAt: number;
+  createdAt: number;
+}
+
+export interface CrossChainExecutionStatus {
+  intentId: string;
+  quoteId: string;
+  intentHash: string;
+  status: 'SUBMITTED' | 'SOURCE_CONFIRMED' | 'ZK_ATTESTATION_RELAY' | 'DESTINATION_SETTLEMENT' | 'COMPLETED' | 'FAILED';
+  currentStepIndex: number;
+  fromChain: ChainId;
+  toChain: ChainId;
+  fromToken: string;
+  toToken: string;
+  fromAmount: number;
+  expectedToAmount: number;
+  receivedAmount?: number;
+  sourceTxHash: string;
+  destinationTxHash?: string;
+  sourceExplorerUrl: string;
+  destinationExplorerUrl?: string;
+  sourceBlockNumber?: number;
+  destinationBlockNumber?: number;
+  protocolName: string;
+  steps: CrossChainStep[];
+  startedAt: number;
+  completedAt?: number;
+  errorMessage?: string;
 }
 
 export interface TransactionHistoryItem {

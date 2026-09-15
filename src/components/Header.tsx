@@ -7,6 +7,8 @@ import { ChainId } from '../types';
 import { shortenAddress, formatCurrency } from '../lib/utils';
 import { ChainLogo, TokenLogo, Hyperon3DLogo } from './CryptoIcon';
 import { soundManager } from '../lib/sound';
+import { ConnectWalletModal } from './ConnectWalletModal';
+import { AccountDetailsModal } from './AccountDetailsModal';
 import { 
   ShieldCheck, 
   Fuel, 
@@ -41,6 +43,7 @@ export const Header: React.FC = () => {
     isConnected, 
     address, 
     chainId, 
+    walletType,
     switchChain, 
     balances, 
     connectWallet, 
@@ -48,7 +51,10 @@ export const Header: React.FC = () => {
     isDemoMode,
     toggleDemoMode,
     mevProtected,
-    setMevProtected 
+    setMevProtected,
+    openConnectModal,
+    openAccountModal,
+    isSiweAuthenticated,
   } = useWallet();
 
   const { 
@@ -270,7 +276,7 @@ export const Header: React.FC = () => {
           {/* Sound FX Toggle Button */}
           <button
             onClick={toggleSound}
-            className={`p-2 rounded-xl border transition-all cursor-pointer ${
+            className={`hidden lg:flex p-2 rounded-xl border transition-all cursor-pointer ${
               soundActive 
                 ? 'bg-[#0D111A] border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 shadow-sm shadow-cyan-500/10' 
                 : 'bg-[#0D111A] border-white/[0.08] text-slate-500 hover:text-slate-300 hover:bg-white/5'
@@ -281,7 +287,7 @@ export const Header: React.FC = () => {
           </button>
 
           {/* Theme Switcher */}
-          <div className="relative">
+          <div className="relative hidden md:block">
             <button
               onClick={() => {
                 setShowThemeMenu(!showThemeMenu);
@@ -448,19 +454,26 @@ export const Header: React.FC = () => {
             )}
           </div>
 
-          {/* Non-Custodial Wallet Pill */}
+          {/* Non-Custodial Wallet Pill or Connect Wallet CTA */}
           {isConnected ? (
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
                 onClick={() => setShowWalletMenu(!showWalletMenu)}
-                className="flex items-center gap-2.5 px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-all shadow-lg shadow-blue-900/30 font-mono"
+                id="header-wallet-user-btn"
+                className="flex items-center gap-2 px-3 sm:px-3.5 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-all shadow-lg shadow-blue-900/40 font-mono shrink-0 border border-cyan-400/20"
               >
-                <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shadow-sm" />
+                <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shrink-0" />
+                <Wallet className="w-3.5 h-3.5 text-cyan-200 shrink-0" />
                 <span>{shortenAddress(address, 4)}</span>
-                <span className="hidden sm:inline text-blue-200 text-[11px] font-normal border-l border-blue-400/30 pl-2">
+                <span className="hidden md:inline text-blue-200 text-[11px] font-normal border-l border-blue-400/30 pl-2">
                   ${(totalWalletApprox ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 </span>
-                <ChevronDown className="w-3.5 h-3.5 text-white/80" />
+                {walletType === 'sandbox' && (
+                  <span className="hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-mono font-bold border border-amber-400/30 uppercase">
+                    Demo
+                  </span>
+                )}
+                <ChevronDown className="w-3.5 h-3.5 text-white/80 shrink-0" />
               </button>
 
               {showWalletMenu && (
@@ -513,6 +526,30 @@ export const Header: React.FC = () => {
                   <div className="pt-2 border-t border-white/[0.08] space-y-1">
                     <button
                       onClick={() => {
+                        openAccountModal();
+                        setShowWalletMenu(false);
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-cyan-400 hover:bg-cyan-500/10 transition-colors cursor-pointer font-medium"
+                    >
+                      <span className="flex items-center gap-2">
+                        <ShieldCheck className="w-3.5 h-3.5" /> Account Details & Faucet
+                      </span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        openConnectModal();
+                        setShowWalletMenu(false);
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-indigo-300 hover:bg-indigo-500/10 transition-colors cursor-pointer font-medium"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Wallet className="w-3.5 h-3.5" /> Switch / Connect New Wallet
+                      </span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
                         setActiveView('portfolio');
                         setShowWalletMenu(false);
                       }}
@@ -551,11 +588,12 @@ export const Header: React.FC = () => {
             </div>
           ) : (
             <button
-              onClick={() => connectWallet('demo')}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white text-xs font-bold rounded-xl cursor-pointer transition-all shadow-lg shadow-blue-900/30 font-sans"
+              onClick={openConnectModal}
+              id="header-connect-wallet-btn"
+              className="flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:via-cyan-400 hover:to-indigo-500 text-white text-xs sm:text-sm font-extrabold rounded-xl cursor-pointer transition-all shadow-xl shadow-cyan-900/40 hover:shadow-cyan-500/30 border border-cyan-400/30 active:scale-95 shrink-0 z-20"
             >
-              <Wallet className="w-3.5 h-3.5" />
-              <span>Connect Wallet</span>
+              <Wallet className="w-4 h-4 text-white shrink-0 animate-pulse" />
+              <span className="tracking-wide">{t('trade.connect_wallet') || 'Connect Wallet'}</span>
             </button>
           )}
         </div>
@@ -630,6 +668,9 @@ export const Header: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Modals */}
+      <ConnectWalletModal />
+      <AccountDetailsModal />
     </header>
   );
 };

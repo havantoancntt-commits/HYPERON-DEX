@@ -1,23 +1,36 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { createPublicClient, http, formatEther, Address, createWalletClient, custom } from 'viem';
+import { createPublicClient, http, formatEther, Address } from 'viem';
 import { mainnet, base, arbitrum, optimism, bsc, polygon } from 'viem/chains';
 import { ChainId, TransactionHistoryItem } from '../types';
-import { SUPPORTED_CHAINS, VERIFIED_TOKENS } from '../lib/constants';
+import { SUPPORTED_CHAINS } from '../lib/constants';
+
+export type SupportedWalletType = 'metamask' | 'coinbase' | 'walletconnect' | 'phantom' | 'injected' | 'sandbox' | null;
 
 interface WalletContextType {
   isConnected: boolean;
   address: string;
   chainId: ChainId;
-  walletType: 'metamask' | 'coinbase' | 'walletconnect' | 'injected' | 'sandbox' | null;
+  walletType: SupportedWalletType;
   balances: Record<string, number>;
   isDemoMode: boolean;
   transactions: TransactionHistoryItem[];
   slippage: number;
   mevProtected: boolean;
   gasSpeed: 'standard' | 'fast' | 'instant';
-  connectWallet: (type?: 'metamask' | 'coinbase' | 'walletconnect' | 'injected' | 'sandbox' | 'demo') => Promise<void>;
+  isConnectModalOpen: boolean;
+  isAccountModalOpen: boolean;
+  isSiweAuthenticated: boolean;
+  siweSession: { address: string; nonce: string; verifiedAt: number } | null;
+  openConnectModal: () => void;
+  closeConnectModal: () => void;
+  openAccountModal: () => void;
+  closeAccountModal: () => void;
+  connectWallet: (type?: SupportedWalletType | 'demo') => Promise<void>;
   disconnectWallet: () => void;
   switchChain: (newChainId: ChainId) => Promise<void>;
+  authenticateSiwe: () => Promise<boolean>;
+  requestFaucetFunds: (tokenSymbol: string, amount: number) => void;
+  resetBalances: () => void;
   setSlippage: (slippage: number) => void;
   setMevProtected: (enabled: boolean) => void;
   setGasSpeed: (speed: 'standard' | 'fast' | 'instant') => void;
@@ -41,31 +54,66 @@ const CHAIN_MAP = {
   polygon,
 };
 
+const HEX_CHAIN_TO_ID: Record<string, ChainId> = {
+  '0x1': 'ethereum',
+  '0x2105': 'base',
+  '0xa4b1': 'arbitrum',
+  '0xa': 'optimism',
+  '0x38': 'bsc',
+  '0x89': 'polygon',
+};
+
+const INITIAL_BALANCES: Record<string, number> = {
+  ETH: 4.85,
+  USDC: 14250.0,
+  USDT: 5600.0,
+  WBTC: 0.38,
+  UNI: 240.0,
+  HYPR: 2500.0,
+  AETH: 2500.0,
+  LINK: 120.0,
+  AAVE: 15.0,
+  ARB: 850.0,
+  OP: 420.0,
+  BNB: 3.5,
+  POL: 1200.0,
+};
+
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isConnected, setIsConnected] = useState<boolean>(true);
-  const [address, setAddress] = useState<string>('0x71C28B932F99B52EDb3C0257B4393608F79E9E42');
+  const [isConnected, setIsConnected] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('hyperon_wallet_connected') === 'true';
+    }
+    return false;
+  });
+  const [address, setAddress] = useState<string>(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('hyperon_wallet_connected') === 'true') {
+      return localStorage.getItem('hyperon_wallet_address') || '0x71C28B932F99B52EDb3C0257B4393608F79E9E42';
+    }
+    return '';
+  });
   const [chainId, setChainId] = useState<ChainId>('ethereum');
-  const [walletType, setWalletType] = useState<'metamask' | 'coinbase' | 'walletconnect' | 'injected' | 'sandbox' | null>('sandbox');
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [walletType, setWalletType] = useState<SupportedWalletType>(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('hyperon_wallet_connected') === 'true') {
+      return (localStorage.getItem('hyperon_wallet_type') as SupportedWalletType) || 'sandbox';
+    }
+    return null;
+  });
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('hyperon_wallet_type') === 'sandbox';
+    }
+    return false;
+  });
   const [slippage, setSlippage] = useState<number>(0.5);
   const [mevProtected, setMevProtected] = useState<boolean>(true);
   const [gasSpeed, setGasSpeed] = useState<'standard' | 'fast' | 'instant'>('fast');
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState<boolean>(false);
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState<boolean>(false);
+  const [isSiweAuthenticated, setIsSiweAuthenticated] = useState<boolean>(false);
+  const [siweSession, setSiweSession] = useState<{ address: string; nonce: string; verifiedAt: number } | null>(null);
 
-  const [balances, setBalances] = useState<Record<string, number>>({
-    ETH: 4.85,
-    USDC: 14250.0,
-    USDT: 5600.0,
-    WBTC: 0.38,
-    UNI: 240.0,
-    HYPR: 2500.0,
-    AETH: 2500.0,
-    LINK: 120.0,
-    AAVE: 15.0,
-    ARB: 850.0,
-    OP: 420.0,
-    BNB: 3.5,
-    POL: 1200.0,
-  });
+  const [balances, setBalances] = useState<Record<string, number>>({ ...INITIAL_BALANCES });
 
   const [tokenApprovals, setTokenApprovals] = useState<Record<string, boolean>>({
     USDC: true,
@@ -96,6 +144,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     },
   ]);
 
+  const openConnectModal = useCallback(() => setIsConnectModalOpen(true), []);
+  const closeConnectModal = useCallback(() => setIsConnectModalOpen(false), []);
+  const openAccountModal = useCallback(() => setIsAccountModalOpen(true), []);
+  const closeAccountModal = useCallback(() => setIsAccountModalOpen(false), []);
+
   // Query live on-chain balance when an injected wallet is connected
   const refreshBalances = useCallback(async () => {
     if (!address || !address.startsWith('0x') || address.length !== 42) return;
@@ -116,7 +169,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           ETH: ethVal,
         }));
       }
-    } catch (err) {
+    } catch {
       // In sandbox mode or RPC failover, retain initialized balances
     }
   }, [address, chainId]);
@@ -125,10 +178,49 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     refreshBalances();
   }, [refreshBalances]);
 
-  // Check for existing Web3 injected account on mount
+  // Subscribe to EIP-1193 Web3 provider events (accountsChanged, chainChanged, disconnect)
   useEffect(() => {
-    if (typeof window !== 'undefined' && (window as any).ethereum) {
-      (window as any).ethereum
+    if (typeof window === 'undefined' || !(window as any).ethereum) return;
+    const provider = (window as any).ethereum;
+
+    const handleAccountsChanged = (accounts: string[]) => {
+      if (accounts && accounts.length > 0) {
+        setAddress(accounts[0]);
+        setIsConnected(true);
+        setIsSiweAuthenticated(false);
+        setSiweSession(null);
+        refreshBalances();
+      } else {
+        // User locked or disconnected their wallet
+        setIsConnected(false);
+        setWalletType(null);
+        setIsSiweAuthenticated(false);
+        setSiweSession(null);
+      }
+    };
+
+    const handleChainChanged = (chainHex: string) => {
+      const detectedChainId = HEX_CHAIN_TO_ID[chainHex.toLowerCase()];
+      if (detectedChainId) {
+        setChainId(detectedChainId);
+        refreshBalances();
+      }
+    };
+
+    const handleDisconnect = () => {
+      setIsConnected(false);
+      setWalletType(null);
+      setIsSiweAuthenticated(false);
+      setSiweSession(null);
+    };
+
+    try {
+      provider.on?.('accountsChanged', handleAccountsChanged);
+      provider.on?.('chainChanged', handleChainChanged);
+      provider.on?.('disconnect', handleDisconnect);
+
+      // Check initially connected accounts
+      provider
         .request({ method: 'eth_accounts' })
         .then((accounts: string[]) => {
           if (accounts && accounts.length > 0) {
@@ -139,11 +231,37 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           }
         })
         .catch(() => {});
+    } catch {
+      // Ignore provider initialization errors
     }
-  }, []);
 
-  const connectWallet = async (type: 'metamask' | 'coinbase' | 'walletconnect' | 'injected' | 'sandbox' | 'demo' = 'injected') => {
-    if (typeof window !== 'undefined' && (window as any).ethereum && type !== 'sandbox' && type !== 'demo') {
+    return () => {
+      try {
+        provider.removeListener?.('accountsChanged', handleAccountsChanged);
+        provider.removeListener?.('chainChanged', handleChainChanged);
+        provider.removeListener?.('disconnect', handleDisconnect);
+      } catch {
+        // Ignore teardown errors
+      }
+    };
+  }, [refreshBalances]);
+
+  const connectWallet = async (type: SupportedWalletType | 'demo' = 'injected') => {
+    if (type === 'sandbox' || type === 'demo') {
+      setWalletType('sandbox');
+      setIsConnected(true);
+      setAddress('0x71C28B932F99B52EDb3C0257B4393608F79E9E42');
+      setIsDemoMode(true);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('hyperon_wallet_connected', 'true');
+        localStorage.setItem('hyperon_wallet_address', '0x71C28B932F99B52EDb3C0257B4393608F79E9E42');
+        localStorage.setItem('hyperon_wallet_type', 'sandbox');
+      }
+      closeConnectModal();
+      return;
+    }
+
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
       try {
         const accounts = await (window as any).ethereum.request({
           method: 'eth_requestAccounts',
@@ -151,25 +269,54 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (accounts && accounts[0]) {
           setAddress(accounts[0]);
           setIsConnected(true);
-          setWalletType(type === 'metamask' ? 'metamask' : 'injected');
+          const resolvedType: SupportedWalletType = type === 'metamask' 
+            ? 'metamask' 
+            : type === 'coinbase' 
+            ? 'coinbase' 
+            : type === 'phantom' 
+            ? 'phantom' 
+            : 'injected';
+          setWalletType(resolvedType);
           setIsDemoMode(false);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('hyperon_wallet_connected', 'true');
+            localStorage.setItem('hyperon_wallet_address', accounts[0]);
+            localStorage.setItem('hyperon_wallet_type', resolvedType);
+          }
+          closeConnectModal();
           await refreshBalances();
           return;
         }
-      } catch (err) {
-        console.warn('User rejected injected Web3 connection, falling back to non-custodial sandbox:', err);
+      } catch (err: any) {
+        console.warn('User rejected injected Web3 connection, falling back to sandbox mode:', err);
+        throw new Error(err?.message || 'Connection request rejected by user');
       }
     }
 
-    // Explicit non-custodial sandbox connection
+    // Explicit fallback to non-custodial institutional sandbox
     setWalletType('sandbox');
     setIsConnected(true);
     setAddress('0x71C28B932F99B52EDb3C0257B4393608F79E9E42');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('hyperon_wallet_connected', 'true');
+      localStorage.setItem('hyperon_wallet_address', '0x71C28B932F99B52EDb3C0257B4393608F79E9E42');
+      localStorage.setItem('hyperon_wallet_type', 'sandbox');
+    }
+    closeConnectModal();
   };
 
   const disconnectWallet = () => {
     setIsConnected(false);
     setWalletType(null);
+    setAddress('');
+    setIsSiweAuthenticated(false);
+    setSiweSession(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('hyperon_wallet_connected');
+      localStorage.removeItem('hyperon_wallet_address');
+      localStorage.removeItem('hyperon_wallet_type');
+    }
+    closeAccountModal();
   };
 
   const switchChain = async (newChainId: ChainId) => {
@@ -183,7 +330,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           params: [{ chainId: chainHex }],
         });
       } catch (switchError: any) {
-        // Chain not yet added to user wallet
         if (switchError.code === 4902 && chainConfig) {
           try {
             await (window as any).ethereum.request({
@@ -206,6 +352,54 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
+  const authenticateSiwe = async (): Promise<boolean> => {
+    try {
+      // Step 1: Request fresh cryptographic nonce from backend
+      const nonceRes = await fetch(`/api/auth/nonce?address=${address}&chainId=1`);
+      let nonce = '';
+      if (nonceRes.ok) {
+        const data = await nonceRes.json();
+        nonce = data.nonce;
+      }
+      if (!nonce) {
+        nonce = `0x${Date.now().toString(16)}${Math.random().toString(16).substring(2, 10)}`;
+      }
+
+      const domain = typeof window !== 'undefined' ? window.location.host : 'hyperon.dex';
+      const issuedAt = new Date().toISOString();
+      const siweMessage = `${domain} wants you to sign in with your Ethereum account:\n${address}\n\nSign in with Ethereum to authenticate with HYPERON-DEX Non-Custodial Engine.\n\nURI: https://${domain}\nVersion: 1\nChain ID: 1\nNonce: ${nonce}\nIssued At: ${issuedAt}`;
+
+      if (typeof window !== 'undefined' && (window as any).ethereum && walletType !== 'sandbox') {
+        await (window as any).ethereum.request({
+          method: 'personal_sign',
+          params: [siweMessage, address],
+        });
+      }
+
+      setIsSiweAuthenticated(true);
+      setSiweSession({
+        address,
+        nonce,
+        verifiedAt: Date.now(),
+      });
+      return true;
+    } catch (err) {
+      console.warn('SIWE Authentication failed:', err);
+      return false;
+    }
+  };
+
+  const requestFaucetFunds = (tokenSymbol: string, amount: number) => {
+    setBalances((prev) => ({
+      ...prev,
+      [tokenSymbol]: (prev[tokenSymbol] || 0) + amount,
+    }));
+  };
+
+  const resetBalances = () => {
+    setBalances({ ...INITIAL_BALANCES });
+  };
+
   const toggleDemoMode = () => {
     setIsDemoMode((prev) => !prev);
   };
@@ -214,11 +408,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     txData: Omit<TransactionHistoryItem, 'id' | 'timestamp' | 'status' | 'txHash' | 'blockNumber' | 'correlationId'>
   ): Promise<TransactionHistoryItem> => {
     const randomHex = typeof crypto !== 'undefined' && crypto.getRandomValues
-      ? Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+      ? Array.from(crypto.getRandomValues(new Uint8Array(4))).map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase()
       : Date.now().toString(16).toUpperCase();
     const correlationId = `CORR-${randomHex}`;
 
-    // Request actual on-chain signature if live injected wallet is active
     let txHash = '';
     if (typeof window !== 'undefined' && (window as any).ethereum && walletType !== 'sandbox') {
       try {
@@ -248,13 +441,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (walletType !== 'sandbox') {
         throw new Error('Transaction submission failed: no valid transaction hash returned by wallet provider.');
       }
-      // Deterministic sandbox transaction hash for local simulation testing
       txHash = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('')}`;
     }
 
-    // Query live block number
     let currentBlock = 0;
     try {
       if (typeof window !== 'undefined' && (window as any).ethereum) {
@@ -272,8 +463,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       currentBlock = 0;
     }
 
-    // Update state balances
-    if (txData.type === 'SWAP' && txData.fromToken && txData.toToken && txData.fromAmount && txData.toAmount) {
+    // Deduct / credit state balances
+    if ((txData.type === 'SWAP' || txData.type === 'BRIDGE') && txData.fromToken && txData.toToken && txData.fromAmount && txData.toAmount) {
       setBalances((prev) => ({
         ...prev,
         [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
@@ -331,9 +522,20 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         slippage,
         mevProtected,
         gasSpeed,
+        isConnectModalOpen,
+        isAccountModalOpen,
+        isSiweAuthenticated,
+        siweSession,
+        openConnectModal,
+        closeConnectModal,
+        openAccountModal,
+        closeAccountModal,
         connectWallet,
         disconnectWallet,
         switchChain,
+        authenticateSiwe,
+        requestFaucetFunds,
+        resetBalances,
         setSlippage,
         setMevProtected,
         setGasSpeed,

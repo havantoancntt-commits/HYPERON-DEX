@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useExchange, ProductView } from '../context/ExchangeContext';
 import { useI18n } from '../context/I18nContext';
+import { useWallet } from '../context/WalletContext';
+import { shortenAddress } from '../lib/utils';
 import {
   LayoutDashboard,
   ArrowLeftRight,
@@ -31,7 +33,9 @@ import {
   CreditCard,
   Landmark,
   Ticket,
-  Trophy
+  Trophy,
+  ArrowDownUp,
+  Wallet
 } from 'lucide-react';
 
 interface NavItem {
@@ -50,6 +54,8 @@ interface NavSection {
 export const Navigation: React.FC = () => {
   const { activeView, setActiveView } = useExchange();
   const { t } = useI18n();
+  const { isConnected, address, balances, openConnectModal, openAccountModal } = useWallet();
+  const totalWalletApprox = (balances.ETH || 0) * 3200 + (balances.USDC || 0);
 
   const sections: NavSection[] = [
     {
@@ -169,6 +175,54 @@ export const Navigation: React.FC = () => {
           </div>
         </div>
 
+        {/* Non-Custodial Web3 Wallet Status Card */}
+        <div className="pb-3">
+          {!isConnected ? (
+            <div className="p-3.5 bg-gradient-to-br from-blue-950/40 via-[#0B0F19] to-cyan-950/30 border border-cyan-500/30 rounded-2xl space-y-2.5 shadow-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono text-slate-300 uppercase font-bold flex items-center gap-1.5">
+                  <Wallet className="w-3.5 h-3.5 text-cyan-400" /> Web3 Account
+                </span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono font-bold">
+                  OFFLINE
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-snug">
+                Kết nối ví phi tập trung để giao dịch, swap cross-chain và quản trị tài sản.
+              </p>
+              <button
+                onClick={openConnectModal}
+                className="w-full py-2 bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-extrabold rounded-xl cursor-pointer transition-all shadow-md shadow-cyan-900/30 flex items-center justify-center gap-2 border border-cyan-400/20 active:scale-95"
+              >
+                <Wallet className="w-3.5 h-3.5" />
+                <span>{t('trade.connect_wallet') || 'Connect Wallet'}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="p-3 bg-[#0D111A] border border-cyan-500/20 hover:border-cyan-500/40 rounded-2xl space-y-2 transition-colors">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono text-slate-300 uppercase font-bold flex items-center gap-1.5">
+                  <Wallet className="w-3.5 h-3.5 text-emerald-400" /> Wallet Active
+                </span>
+                <span className="flex items-center gap-1 text-[9px] font-mono text-emerald-400 font-bold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Online
+                </span>
+              </div>
+              <div className="flex items-center justify-between font-mono text-xs text-white font-bold">
+                <span>{shortenAddress(address, 4)}</span>
+                <span className="text-cyan-400 text-[11px]">${(totalWalletApprox ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+              </div>
+              <button
+                onClick={openAccountModal}
+                className="w-full py-1.5 bg-white/[0.04] hover:bg-cyan-500/10 border border-white/10 hover:border-cyan-500/30 text-slate-300 hover:text-cyan-300 text-[11px] font-medium rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5"
+              >
+                <ShieldCheck className="w-3 h-3 text-cyan-400" />
+                <span>Account & Faucet</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Zero-Trust Security Shield Badge */}
         <div className="pb-4">
           <div 
@@ -188,22 +242,37 @@ export const Navigation: React.FC = () => {
       </aside>
 
       {/* Mobile Bottom Navigation Dock */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#07090E]/95 backdrop-blur-xl border-t border-white/10 px-3 py-2 flex items-center justify-around">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#07090E]/95 backdrop-blur-xl border-t border-white/10 px-2 py-2 flex items-center justify-around">
         {[
           { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
           { id: 'swap', label: t('nav.swap'), icon: ArrowLeftRight },
           { id: 'trade', label: t('nav.trade'), icon: LineChart },
-          { id: 'ai-intelligence', label: t('nav.analytics'), icon: Activity },
-          { id: 'portfolio', label: t('nav.portfolio'), icon: PieChart },
+          { id: 'cross-chain', label: 'Bridge', icon: ArrowDownUp },
+          { 
+            id: isConnected ? 'portfolio' : 'wallet_connect', 
+            label: isConnected ? shortenAddress(address, 3) : (t('trade.connect_wallet') || 'Connect'), 
+            icon: Wallet,
+            isConnectAction: !isConnected 
+          },
         ].map((item) => {
           const Icon = item.icon;
           const isActive = activeView === item.id;
           return (
             <button
               key={item.id}
-              onClick={() => setActiveView(item.id as ProductView)}
+              onClick={() => {
+                if (item.isConnectAction) {
+                  openConnectModal();
+                } else {
+                  setActiveView(item.id as ProductView);
+                }
+              }}
               className={`flex flex-col items-center gap-1 p-1 rounded-xl transition-all cursor-pointer ${
-                isActive ? 'text-cyan-400 font-bold scale-105' : 'text-slate-400 hover:text-white'
+                item.isConnectAction
+                  ? 'text-cyan-400 font-extrabold animate-pulse'
+                  : isActive
+                  ? 'text-cyan-400 font-bold scale-105'
+                  : 'text-slate-400 hover:text-white'
               }`}
             >
               <Icon className="w-4 h-4" />
