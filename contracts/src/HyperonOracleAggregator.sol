@@ -190,13 +190,7 @@ contract HyperonOracleAggregator is Ownable2Step, IERC7528PriceOracle {
 
     // --- Core Multi-Oracle Consensus Engine (Fail-Closed) ---
 
-    /**
-     * @notice Fetches live observations from all active on-chain feeds, validates freshness,
-     * strips outliers deviating from the median, computes weighted consensus, and evaluates
-     * circuit breaker volatility conditions.
-     * FAIL-CLOSED: Returns (0, 0) if quorum is not met or circuit breaker is tripped.
-     */
-    function updateConsensusFromFeeds(address asset) public returns (uint256 consensusPrice, uint256 confidenceBps) {
+    function _calculateLiveFeedConsensus(address asset) internal returns (uint256 consensusPrice, uint256 survivingCount) {
         OracleSource[] storage sources = assetSources[asset];
         AssetConfig storage config = assetConfigs[asset];
         uint256 sourceLen = sources.length;
@@ -205,7 +199,6 @@ contract HyperonOracleAggregator is Ownable2Step, IERC7528PriceOracle {
         uint256 maxDev = config.maxDeviationBps > 0 ? config.maxDeviationBps : 500;
 
         if (sourceLen == 0) {
-            assetStates[asset] = OracleState.INVALID;
             return (0, 0);
         }
 
@@ -229,20 +222,37 @@ contract HyperonOracleAggregator is Ownable2Step, IERC7528PriceOracle {
             }
         }
 
-        // 2. Verify Quorum (FAIL-CLOSED: Never return stale price as trusted baseline)
+        // 2. Verify Quorum
         if (validCount < minQuorum) {
-            assetStates[asset] = OracleState.INSUFFICIENT_QUORUM;
-            emit QuorumFailed(asset, validCount, minQuorum);
             return (0, 0);
         }
 
         // 3. Outlier rejection and weighted consensus calculation
-        (uint256 price, uint256 survivingCount) = _calculateConsensusPrice(asset, observations, validCount, maxDev);
+        return _calculateConsensusPrice(asset, observations, validCount, maxDev);
+    }
+
+    /**
+     * @notice Fetches live observations from all active on-chain feeds, validates freshness,
+     * strips outliers deviating from the median, computes weighted consensus, and evaluates
+     * circuit breaker volatility conditions.
+     * FAIL-CLOSED: Returns (0, 0) if quorum is not met or circuit breaker is tripped.
+     */
+    function updateConsensusFromFeeds(address asset) public returns (uint256 consensusPrice, uint256 confidenceBps) {
+        OracleSource[] storage sources = assetSources[asset];
+        AssetConfig storage config = assetConfigs[asset];
+        uint256 sourceLen = sources.length;
+
+        uint256 minQuorum = config.minQuorum > 0 ? config.minQuorum : 2;
+
+        if (sourceLen == 0) {
+            assetStates[asset] = OracleState.INVALID;
+            return (0, 0);
+        }
+
+        (uint256 price, uint256 survivingCount) = _calculateLiveFeedConsensus(asset);
 
         if (survivingCount < minQuorum || price == 0) {
-            assetStates[asset] = (validCount - survivingCount > 0)
-                ? OracleState.OUTLIER_REJECTED
-                : OracleState.INSUFFICIENT_QUORUM;
+            assetStates[asset] = OracleState.INSUFFICIENT_QUORUM;
             emit QuorumFailed(asset, survivingCount, minQuorum);
             return (0, 0);
         }
@@ -257,7 +267,7 @@ contract HyperonOracleAggregator is Ownable2Step, IERC7528PriceOracle {
         }
 
         // 5. Dynamic Confidence Score
-        confidenceBps = _calculateConfidence(survivingCount, validCount, sourceLen);
+        confidenceBps = _calculateConfidence(survivingCount, survivingCount, sourceLen);
 
         // 6. Update trusted baseline only after full verification passes
         consensusPrice = price;
@@ -401,6 +411,8 @@ contract HyperonOracleAggregator is Ownable2Step, IERC7528PriceOracle {
     }
 
     function _evaluateCircuitBreaker(address asset, AssetConfig storage config, uint256 newPrice) internal {
+        if (config.circuitBreakerTripped) return;
+
         uint256 lastPrice = config.lastRecordedPrice;
         uint256 lastTime = config.lastPriceTimestamp;
         uint256 nowTime = block.timestamp;
@@ -452,9 +464,10 @@ contract HyperonOracleAggregator is Ownable2Step, IERC7528PriceOracle {
 
         // If feeds exist, verify that the provided verifiedPrice does not deviate egregiously from active feeds
         OracleSource[] storage sources = assetSources[asset];
-        if (sources.length >= (config.minQuorum > 0 ? config.minQuorum : 2)) {
-            (uint256 liveConsensus, ) = updateConsensusFromFeeds(asset);
-            if (liveConsensus > 0) {
+        uint256 requiredQuorum = config.minQuorum > 0 ? config.minQuorum : 2;
+        if (sources.length >= requiredQuorum) {
+            (uint256 liveConsensus, uint256 survivingCount) = _calculateLiveFeedConsensus(asset);
+            if (liveConsensus > 0 && survivingCount >= requiredQuorum) {
                 uint256 diff = verifiedPrice > liveConsensus ? verifiedPrice - liveConsensus : liveConsensus - verifiedPrice;
                 uint256 devBps = (diff * BPS_DENOMINATOR) / liveConsensus;
                 if (devBps > (config.maxDeviationBps > 0 ? config.maxDeviationBps : 500)) {

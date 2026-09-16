@@ -32,8 +32,6 @@ import {
   Rocket,
   CreditCard,
   Landmark,
-  Ticket,
-  Trophy,
   ArrowDownUp,
   Wallet,
   LogOut,
@@ -88,7 +86,6 @@ export const Navigation: React.FC = () => {
     {
       title: t('nav.section.defi'),
       items: [
-        { id: 'lottery', label: t('nav.lottery'), icon: Trophy, badge: '$647K Pot', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/30' },
         { id: 'launchpad', label: t('nav.launchpad'), icon: Rocket, badge: 'Anti-Rug', badgeColor: 'bg-pink-500/10 text-pink-400 border-pink-500/20' },
         { id: 'lending', label: t('nav.lending'), icon: Landmark, badge: 'AI Radar', badgeColor: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
         { id: 'staking', label: t('nav.staking'), icon: Lock, badge: '35% APY', badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },

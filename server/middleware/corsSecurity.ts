@@ -91,17 +91,6 @@ export function classifyRoute(path: string, method: string): RouteCategory {
     return RouteCategory.RELAY_TRANSACTION;
   }
 
-  // Wallet-authenticated state mutations (lottery actions, claims, etc.)
-  if (
-    normalizedPath.startsWith('/api/lottery/buy') ||
-    normalizedPath.startsWith('/api/lottery/claim') ||
-    normalizedPath.startsWith('/api/lottery/deposit-savings') ||
-    normalizedPath.startsWith('/api/lottery/syndicate/join') ||
-    normalizedPath.startsWith('/api/lottery/syndicate/claim')
-  ) {
-    return RouteCategory.AUTHENTICATED;
-  }
-
   // Public telemetry, pricing, oracle consensus and market reads
   return RouteCategory.PUBLIC_READ;
 }

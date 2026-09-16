@@ -33,7 +33,6 @@ import {
   resolveSimulationRouter,
   simulationEngine,
 } from '../server/services/simulationEngine';
-import { deriveWinningDigitsFromSeed, generateCryptographicTicketNumbers } from '../server/services/lotteryEngine';
 import { DEX_ERROR_CODES } from '../src/lib/errorCodes';
 import { validateAndCleanCandles } from '../server/services/marketData';
 import { poolDiscovery } from '../server/services/poolDiscovery';
@@ -332,17 +331,6 @@ async function runTests() {
   const ethSecurity = await scanTokenSecurity('0x0000000000000000000000000000000000000000', 'ETH', 'ethereum');
   assert(ethSecurity.securityScore === 100, 'Native ETH receives 100/100 score');
   assert(ethSecurity.isHoneypot === false, 'Native ETH is not a honeypot');
-
-  // -------------------------------------------------------------
-  // Test 8: Provably Fair Chainlink VRF 2.5
-  // -------------------------------------------------------------
-  console.log('\n--- 8. Chainlink VRF 2.5 Cryptographic Lottery ---');
-  const seed = '0x8f4d9b23c5e81a0293817f763abdf543918a992bc6643210aa39ec77281ab091';
-  const digits1 = deriveWinningDigitsFromSeed(seed);
-  const digits2 = deriveWinningDigitsFromSeed(seed);
-
-  assert(digits1.length === 6, 'VRF derives exactly 6 digits');
-  assert(JSON.stringify(digits1) === JSON.stringify(digits2), 'VRF derivation is 100% deterministic given the same seed');
 
   // -------------------------------------------------------------
   // Test 9: Dynamic Fee Tier, Router Address, and ABI Resolution
@@ -799,8 +787,8 @@ async function runTests() {
   assert(isOriginAllowed('') === false, 'CORS strictly rejects empty origin');
 
   assert(classifyRoute('/api/relay', 'POST') === RouteCategory.RELAY_TRANSACTION, 'Classifies /api/relay as RELAY_TRANSACTION');
+  assert(classifyRoute('/api/swaps/simulate', 'POST') === RouteCategory.RELAY_TRANSACTION, 'Classifies /api/swaps/simulate as RELAY_TRANSACTION');
   assert(classifyRoute('/api/admin/system', 'GET') === RouteCategory.PRIVILEGED, 'Classifies /api/admin/* as PRIVILEGED');
-  assert(classifyRoute('/api/lottery/buy', 'POST') === RouteCategory.AUTHENTICATED, 'Classifies /api/lottery/buy as AUTHENTICATED');
   assert(classifyRoute('/api/prices/realtime', 'GET') === RouteCategory.PUBLIC_READ, 'Classifies /api/prices/realtime as PUBLIC_READ');
 
   // -------------------------------------------------------------

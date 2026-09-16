@@ -19,7 +19,6 @@ import { PerpetualsView } from './views/PerpetualsView';
 import { TradeTerminalView } from './views/TradeTerminalView';
 import { MarketsView } from './views/MarketsView';
 import { TokenDetailsView } from './views/TokenDetailsView';
-import { LotteryView } from './views/LotteryView';
 import { LiquidityView } from './views/LiquidityView';
 import { StakingView } from './views/StakingView';
 import { LendingView } from './views/LendingView';
@@ -71,8 +70,6 @@ const MainLayout: React.FC = () => {
         return <MarketsView />;
       case 'token-details':
         return <TokenDetailsView />;
-      case 'lottery':
-        return <LotteryView />;
       case 'liquidity':
         return <LiquidityView />;
       case 'staking':

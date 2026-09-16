@@ -5,7 +5,7 @@
 
 HYPERON-DEX is an institutional-grade, AI-native decentralized exchange (DEX) aggregator and Web3 trading terminal built with **TypeScript**, **Express**, **Vite**, **React 19**, **viem**, **Foundry**, **Solidity 0.8.28**, and **Tailwind CSS**.
 
-The platform provides mathematically verified on-chain routing, dynamic split optimization, real-time pre-flight transaction simulations (`eth_call`), bytecode-level honeypot & vulnerability scanning, and provably fair Chainlink VRF 2.5 lottery games—with **zero synthetic data** and **strict BigInt precision**.
+The platform provides mathematically verified on-chain routing, dynamic split optimization, real-time pre-flight transaction simulations (`eth_call`), and bytecode-level honeypot & vulnerability scanning—with **zero synthetic data** and **strict BigInt precision**.
 
 ---
 

@@ -8,11 +8,12 @@
 import { createHash, randomBytes } from 'crypto';
 import { formatUnits, parseUnits } from 'viem';
 import { FormalMath, KFactorProof } from './FormalMath';
-import { poolDiscovery } from './poolDiscovery';
+import { poolDiscovery, VerifiedPoolRecord } from './poolDiscovery';
 import { tokenResolver } from './tokenResolver';
 import { UniswapV2Adapter, UniswapV3Adapter, CurveAdapter, BalancerAdapter } from './ammEngine';
+import { canonicalQuoteEngine } from './canonicalQuoteEngine';
 import { getUsdPrice } from './priceFeed';
-import { getLiveGasPrice } from './rpc';
+import { getLiveGasPrice, getLiveBlockNumber } from './rpc';
 import { ROUTER_REGISTRY } from './routerRegistry';
 
 export interface LiquidityEdge {
@@ -28,6 +29,9 @@ export interface LiquidityEdge {
   gasCostUnits: number;
   protocolVersion: 'v2' | 'v3' | 'curve' | 'balancer';
   lastBlockNumber?: number;
+  poolRecord?: VerifiedPoolRecord;
+  tokenInAddress?: string;
+  tokenOutAddress?: string;
 }
 
 export interface HeatmapCacheEntry {
@@ -235,12 +239,19 @@ export class UltraRouter {
         gasCostUnits,
         protocolVersion,
         lastBlockNumber: pool.lastBlockNumber ? Number(pool.lastBlockNumber) : undefined,
+        poolRecord: pool,
+        tokenInAddress: tokenInObj.address,
+        tokenOutAddress: tokenOutObj.address,
       });
     }
 
+    const liveBlockNum = (discovered.find((p) => p.lastBlockNumber !== null && p.lastBlockNumber !== undefined)?.lastBlockNumber)
+      ?? (await getLiveBlockNumber(chainKey).then((r) => r.data).catch(() => null))
+      ?? 0n;
+
     this.heatmapCache.set(cacheKey, {
       edges,
-      lastUpdatedBlock: 21_850_000,
+      lastUpdatedBlock: Number(liveBlockNum),
       cachedAtTimestamp: now,
     });
 
@@ -265,7 +276,33 @@ export class UltraRouter {
       return { amountOut: 0n, feePaid: 0n };
     }
 
-    // Uniswap v2 constant-product exact arithmetic:
+    if (edge.poolRecord) {
+      const quote = canonicalQuoteEngine.computeExactInput({
+        chainId: edge.poolRecord.chainId,
+        tokenIn: {
+          address: edge.tokenInAddress || edge.poolRecord.token0Address,
+          symbol: edge.tokenIn,
+          decimals: edge.tokenInDecimals,
+        },
+        tokenOut: {
+          address: edge.tokenOutAddress || edge.poolRecord.token1Address,
+          symbol: edge.tokenOut,
+          decimals: edge.tokenOutDecimals,
+        },
+        amountInRaw: amountIn,
+        pool: edge.poolRecord,
+      });
+
+      if (quote.status === 'AVAILABLE' && quote.amountOutRaw > 0n) {
+        return {
+          amountOut: quote.amountOutRaw,
+          feePaid: quote.feePaidRaw,
+          kProof: quote.kProof,
+        };
+      }
+    }
+
+    // Uniswap v2 constant-product exact arithmetic via FormalMath (fallback if poolRecord not attached):
     // dy = (reserveOut * amountIn * (10000 - feeBps)) / (reserveIn * 10000 + amountIn * (10000 - feeBps))
     const feeMultiplier = BigInt(10_000 - edge.feeBps);
     const amountInWithFee = FormalMath.mul512(amountIn, feeMultiplier);
@@ -280,7 +317,7 @@ export class UltraRouter {
 
     // Formally verify K-factor invariant for AMMs
     let kProof: KFactorProof | undefined;
-    if (edge.protocolVersion === 'v2' || edge.protocolVersion === 'v3') {
+    if (edge.reserveIn > 0n && edge.reserveOut > 0n && amountOut > 0n) {
       try {
         kProof = FormalMath.verifyKFactorInvariant(
           edge.reserveIn,

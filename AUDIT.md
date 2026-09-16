@@ -34,8 +34,7 @@ HYPERON-DEX has undergone a comprehensive multi-layered security audit, formal m
 | **5. Smart Router & Comparison** | 7/7 | Real pool matrix; zero artificial percentage multipliers; slippage bound | ✅ PASS |
 | **6. Transaction Simulation** | 3/3 | Real on-chain `eth_call`; gas estimation; wallet address assertion | ✅ PASS |
 | **7. EVM Disassembler Forensics** | 4/4 | `PUSH` operand isolation; `SELFDESTRUCT` detection; native asset immunity | ✅ PASS |
-| **8. Chainlink VRF 2.5 Lottery** | 2/2 | Cryptographic seed derivation; deterministic prize assignment | ✅ PASS |
-| **9. Dynamic Fee Tier & Router** | 8/8 | Uniswap v3 fee tier resolution (500, 3000, 10000); Router ABI routing | ✅ PASS |
+| **8. Dynamic Fee Tier & Router** | 8/8 | Uniswap v3 fee tier resolution (500, 3000, 10000); Router ABI routing | ✅ PASS |
 | **10. Gas-Aware Split Optimizer** | 3/3 | TokenOut gas cost quantification; split efficiency verification | ✅ PASS |
 | **11. Uniswap V3 Zero-Synthetic Data** | 2/2 | Concentrated liquidity requirement; rejection of synthetic V2 approximations | ✅ PASS |
 | **12. Strict Chain Boundary Isolation** | 5/5 | Arbitrum vs. Ethereum native address segregation | ✅ PASS |

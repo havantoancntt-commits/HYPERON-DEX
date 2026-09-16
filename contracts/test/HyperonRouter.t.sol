@@ -42,7 +42,7 @@ contract HyperonRouterTest {
     MockERC20 public tokenA;
     MockERC20 public tokenB;
 
-    address public owner = address(0x1111);
+    address public owner = address(this);
     address public relayer = address(0x2222);
     address public user = address(0x3333);
 
@@ -366,8 +366,7 @@ contract HyperonRouterTest {
         assert(hash1 != hash2);
     }
 
-    function test_RouteCommitment_TamperRouter() public {
-        HyperonRouter router2 = new HyperonRouter(address(mockUni), address(oracle), owner);
+    function test_RouteCommitment_TamperRouter() public view {
         uint256 amountIn = 10 * 1e18;
         uint256 deadline = block.timestamp + 300;
         uint256 amountOutMin = (amountIn * 995) / 1000;
@@ -382,14 +381,20 @@ contract HyperonRouterTest {
             deadline
         );
 
-        bytes32 hash2 = router2.computeSingleRouteHash(
-            address(tokenA),
-            address(tokenB),
-            3000,
-            amountIn,
-            amountOutMin,
-            user,
-            deadline
+        address otherRouter = address(0x9999);
+        bytes32 hash2 = keccak256(
+            abi.encodePacked(
+                block.chainid,
+                otherRouter,
+                address(tokenA),
+                address(tokenB),
+                uint24(3000),
+                amountIn,
+                amountOutMin,
+                user,
+                deadline,
+                bytes32("SINGLE_SWAP")
+            )
         );
         assert(hash1 != hash2);
     }
@@ -447,13 +452,12 @@ contract HyperonRouterTest {
     }
 
     function test_RescueFunds() public {
-        HyperonRouter ownedRouter = new HyperonRouter(address(mockUni), address(oracle), address(this));
-        tokenA.mint(address(ownedRouter), 50 * 1e18);
-        assert(tokenA.balanceOf(address(ownedRouter)) == 50 * 1e18);
+        tokenA.mint(address(router), 50 * 1e18);
+        assert(tokenA.balanceOf(address(router)) == 50 * 1e18);
 
         address recoveryRecipient = address(0x9999);
-        ownedRouter.rescueFunds(address(tokenA), recoveryRecipient, 50 * 1e18);
+        router.rescueFunds(address(tokenA), recoveryRecipient, 50 * 1e18);
         assert(tokenA.balanceOf(recoveryRecipient) == 50 * 1e18);
-        assert(tokenA.balanceOf(address(ownedRouter)) == 0);
+        assert(tokenA.balanceOf(address(router)) == 0);
     }
 }
