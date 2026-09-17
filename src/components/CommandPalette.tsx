@@ -21,6 +21,7 @@ import {
   Command,
   ExternalLink,
   Zap,
+  Compass,
 } from 'lucide-react';
 
 interface CommandPaletteProps {
@@ -86,6 +87,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     { id: 'markets', label: 'Global Markets Overview', desc: 'Real-time market tickers, volume & depth', icon: <Activity className="w-4 h-4 text-emerald-400" /> },
     { id: 'portfolio', label: 'Portfolio Analytics', desc: 'Track asset distribution, PnL & historical yields', icon: <Wallet className="w-4 h-4 text-indigo-400" /> },
     { id: 'ai-intelligence', label: 'AI Intelligence Center', desc: 'Quantitative sentiment, predictive curves & signals', icon: <Sparkles className="w-4 h-4 text-cyan-300" /> },
+    { id: 'ai-copilot', label: 'AI Portfolio Copilot', desc: 'Algorithmic risk diagnostic & delta-neutral hedging copilot', icon: <Compass className="w-4 h-4 text-cyan-400" /> },
     { id: 'onchain-radar', label: 'On-Chain Radar', desc: 'Smart money tracker, whale flows & mempool scanner', icon: <Activity className="w-4 h-4 text-amber-400" /> },
     { id: 'security-center', label: 'Security & Audit Center', desc: 'Bytecode risk scanner, MEV firewall & audit reports', icon: <Shield className="w-4 h-4 text-emerald-300" /> },
     { id: 'transactions', label: 'Activity & On-Chain History', desc: 'Confirmed transactions, blocks & gas telemetry', icon: <Activity className="w-4 h-4 text-slate-400" /> },

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
-import { BrainCircuit, Send, Sparkles, ShieldCheck, ArrowRight, CheckCircle2, User, Bot, AlertTriangle } from 'lucide-react';
+import { Compass, Send, Sparkles, ShieldCheck, ArrowRight, CheckCircle2, User, Bot, AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '../lib/utils';
 
 interface ChatMessage {
@@ -105,8 +105,8 @@ export const AIPortfolioCopilotView: React.FC = () => {
       {/* Header Banner */}
       <div className="rounded-2xl bg-[#0A0A0A] border border-white/5 p-5 shadow-2xl flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
-            <BrainCircuit className="w-6 h-6" />
+          <div className="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+            <Compass className="w-6 h-6" />
           </div>
           <div>
             <h1 className="text-xl font-bold text-white flex items-center gap-2">

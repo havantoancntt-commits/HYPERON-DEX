@@ -1458,6 +1458,11 @@ app.get('/api/admin/metrics', async (req: Request, res: Response) => {
         totalVolume24hUsd: 184500000,
         activeQuotesPerSec: 142,
         averageQuoteLatencyMs: 24,
+        aiModelQuotaUsage: {
+          requests24h: 3840,
+          tokenConsumption: '14.2M tokens',
+          averageLatencyMs: 142,
+        },
         latestBlocks: {
           ethereum: ethBlock.data ? Number(ethBlock.data) : null,
           base: baseBlock.data ? Number(baseBlock.data) : null,
