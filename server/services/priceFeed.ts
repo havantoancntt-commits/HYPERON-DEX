@@ -54,9 +54,26 @@ function createEmptyPriceEntry(symbol: string): PriceEntry {
 // Initial state: strictly zero fake bootstrap prices
 export const priceCache: Record<string, PriceEntry> = {
   ETH: createEmptyPriceEntry('ETH'),
+  WETH: createEmptyPriceEntry('WETH'),
   USDC: createEmptyPriceEntry('USDC'),
   USDT: createEmptyPriceEntry('USDT'),
   WBTC: createEmptyPriceEntry('WBTC'),
+  DAI: createEmptyPriceEntry('DAI'),
+  USDe: createEmptyPriceEntry('USDe'),
+  SOL: createEmptyPriceEntry('SOL'),
+  PEPE: createEmptyPriceEntry('PEPE'),
+  SHIB: createEmptyPriceEntry('SHIB'),
+  MKR: createEmptyPriceEntry('MKR'),
+  LDO: createEmptyPriceEntry('LDO'),
+  PENDLE: createEmptyPriceEntry('PENDLE'),
+  CRV: createEmptyPriceEntry('CRV'),
+  FET: createEmptyPriceEntry('FET'),
+  RENDER: createEmptyPriceEntry('RENDER'),
+  wstETH: createEmptyPriceEntry('wstETH'),
+  DOGE: createEmptyPriceEntry('DOGE'),
+  AVAX: createEmptyPriceEntry('AVAX'),
+  SUI: createEmptyPriceEntry('SUI'),
+  NEAR: createEmptyPriceEntry('NEAR'),
   UNI: createEmptyPriceEntry('UNI'),
   HYPR: createEmptyPriceEntry('HYPR'),
   AETH: createEmptyPriceEntry('AETH'),
@@ -66,6 +83,13 @@ export const priceCache: Record<string, PriceEntry> = {
   OP: createEmptyPriceEntry('OP'),
   BNB: createEmptyPriceEntry('BNB'),
   POL: createEmptyPriceEntry('POL'),
+  GMX: createEmptyPriceEntry('GMX'),
+  AERO: createEmptyPriceEntry('AERO'),
+  BRETT: createEmptyPriceEntry('BRETT'),
+  DEGEN: createEmptyPriceEntry('DEGEN'),
+  cbETH: createEmptyPriceEntry('cbETH'),
+  CAKE: createEmptyPriceEntry('CAKE'),
+  QUICK: createEmptyPriceEntry('QUICK'),
 };
 
 const SYMBOL_MAP: Record<string, string> = {
@@ -82,10 +106,26 @@ const SYMBOL_MAP: Record<string, string> = {
   SOLUSDT: 'SOL',
   AVAXUSDT: 'AVAX',
   USDCUSDT: 'USDC',
+  DAIUSDT: 'DAI',
+  PEPEUSDT: 'PEPE',
+  SHIBUSDT: 'SHIB',
+  MKRUSDT: 'MKR',
+  LDOUSDT: 'LDO',
+  PENDLEUSDT: 'PENDLE',
+  CRVUSDT: 'CRV',
+  FETUSDT: 'FET',
+  RENDERUSDT: 'RENDER',
+  RNDRUSDT: 'RENDER',
+  DOGEUSDT: 'DOGE',
+  SUIUSDT: 'SUI',
+  NEARUSDT: 'NEAR',
+  GMXUSDT: 'GMX',
+  CAKEUSDT: 'CAKE',
 };
 
 const COINGECKO_MAP: Record<string, string> = {
   ethereum: 'ETH',
+  weth: 'WETH',
   bitcoin: 'WBTC',
   uniswap: 'UNI',
   chainlink: 'LINK',
@@ -97,6 +137,29 @@ const COINGECKO_MAP: Record<string, string> = {
   'matic-network': 'POL',
   'usd-coin': 'USDC',
   tether: 'USDT',
+  dai: 'DAI',
+  'ethena-usde': 'USDe',
+  solana: 'SOL',
+  pepe: 'PEPE',
+  'shiba-inu': 'SHIB',
+  maker: 'MKR',
+  'lido-dao': 'LDO',
+  pendle: 'PENDLE',
+  'curve-dao-token': 'CRV',
+  'fetch-ai': 'FET',
+  'render-token': 'RENDER',
+  'wrapped-steth': 'wstETH',
+  dogecoin: 'DOGE',
+  'avalanche-2': 'AVAX',
+  sui: 'SUI',
+  near: 'NEAR',
+  gmx: 'GMX',
+  'aerodrome-finance': 'AERO',
+  brett: 'BRETT',
+  'degen-base': 'DEGEN',
+  'coinbase-wrapped-staked-eth': 'cbETH',
+  'pancakeswap-token': 'CAKE',
+  quickswap: 'QUICK',
 };
 
 const CRYPTOCOMPARE_MAP: Record<string, string> = {
@@ -111,6 +174,23 @@ const CRYPTOCOMPARE_MAP: Record<string, string> = {
   BNB: 'BNB',
   POL: 'POL',
   MATIC: 'POL',
+  SOL: 'SOL',
+  AVAX: 'AVAX',
+  DAI: 'DAI',
+  PEPE: 'PEPE',
+  SHIB: 'SHIB',
+  MKR: 'MKR',
+  LDO: 'LDO',
+  PENDLE: 'PENDLE',
+  CRV: 'CRV',
+  FET: 'FET',
+  RENDER: 'RENDER',
+  RNDR: 'RENDER',
+  DOGE: 'DOGE',
+  SUI: 'SUI',
+  NEAR: 'NEAR',
+  GMX: 'GMX',
+  CAKE: 'CAKE',
 };
 
 // Max freshness threshold: 30 seconds
@@ -363,6 +443,25 @@ async function _doSyncRealTimePrices(now: number): Promise<void> {
     }
   } catch {
     // Do not invent fake synthetic price if no on-chain pool exists
+  }
+
+  // WETH 1:1 Parity Oracle with ETH
+  if (priceCache['ETH'] && priceCache['ETH'].priceUsd !== null && priceCache['WETH']) {
+    priceCache['WETH'] = {
+      ...priceCache['WETH'],
+      priceUsd: priceCache['ETH'].priceUsd,
+      prevPrice: priceCache['WETH'].priceUsd,
+      change24h: priceCache['ETH'].change24h,
+      high24h: priceCache['ETH'].high24h,
+      low24h: priceCache['ETH'].low24h,
+      volume24h: priceCache['ETH'].volume24h,
+      marketCapUsd: priceCache['ETH'].marketCapUsd,
+      lastUpdated: priceCache['ETH'].lastUpdated,
+      tickDirection: priceCache['ETH'].tickDirection,
+      status: priceCache['ETH'].status,
+      source: 'Canonical 1:1 WETH/ETH Parity Oracle',
+      ageMs: priceCache['ETH'].ageMs,
+    };
   }
 
   // Update stale/unavailable status based on elapsed time without modifying lastUpdated

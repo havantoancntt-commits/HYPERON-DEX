@@ -64,6 +64,8 @@ interface ExchangeContextType {
   // Real-time price oracle state
   livePrices: Record<string, LivePriceData>;
   liveTokens: Token[];
+  customTokens: Token[];
+  addCustomToken: (token: Token) => void;
   getLiveToken: (symbol: string) => Token;
   getLivePrice: (symbol: string) => number;
   lastPriceUpdate: number;
@@ -101,6 +103,29 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [lastPriceUpdate, setLastPriceUpdate] = useState<number>(Date.now());
   const [isPriceLive, setIsPriceLive] = useState<boolean>(true);
   const [tickDirections, setTickDirections] = useState<Record<string, 'up' | 'down' | 'same'>>({});
+  const [customTokens, setCustomTokens] = useState<Token[]>(() => {
+    try {
+      const saved = localStorage.getItem('hyperon_custom_tokens');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const addCustomToken = useCallback((token: Token) => {
+    setCustomTokens((prev) => {
+      if (prev.some((t) => t.address.toLowerCase() === token.address.toLowerCase() && t.chainId === token.chainId)) {
+        return prev;
+      }
+      const updated = [...prev, token];
+      try {
+        localStorage.setItem('hyperon_custom_tokens', JSON.stringify(updated));
+      } catch {
+        // LocalStorage fallback
+      }
+      return updated;
+    });
+  }, []);
 
   // Real-time Polling from Server Price Oracle
   const fetchLivePrices = useCallback(async () => {
@@ -133,7 +158,8 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [fetchLivePrices]);
 
   // Derived live tokens with real-time dynamic pricing
-  const liveTokens: Token[] = VERIFIED_TOKENS.map((token) => {
+  const allKnownTokens = [...VERIFIED_TOKENS, ...customTokens];
+  const liveTokens: Token[] = allKnownTokens.map((token) => {
     const live = livePrices[token.symbol];
     if (live && typeof live.priceUsd === 'number' && !isNaN(live.priceUsd) && live.priceUsd > 0) {
       return {
@@ -269,6 +295,8 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         openSwapWithSignal,
         livePrices,
         liveTokens,
+        customTokens,
+        addCustomToken,
         getLiveToken,
         getLivePrice,
         lastPriceUpdate,

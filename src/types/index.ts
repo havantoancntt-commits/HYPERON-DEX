@@ -82,7 +82,7 @@ export interface Token {
   logoUrl: string;
   isVerified: boolean;
   isNative?: boolean;
-  category: 'Layer 1' | 'Layer 2' | 'DeFi' | 'AI' | 'Meme' | 'Stablecoin' | 'Infrastructure';
+  category: 'Layer 1' | 'Layer 2' | 'DeFi' | 'AI' | 'Meme' | 'Stablecoin' | 'Infrastructure' | 'Liquid Staking';
 }
 
 export interface DexSource {

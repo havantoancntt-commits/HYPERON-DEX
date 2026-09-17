@@ -6,6 +6,7 @@ import { VERIFIED_TOKENS } from '../lib/constants';
 import { OrderBook, TradeRecord, OrderType, UserOrder, CandleData } from '../types';
 import { formatCurrency, formatCrypto, formatTimeAgo } from '../lib/utils';
 import { TokenLogo } from '../components/CryptoIcon';
+import { ProCandlestickChart } from '../components/ProCandlestickChart';
 import {
   TrendingUp,
   ArrowUpRight,
@@ -96,10 +97,8 @@ export const TradeTerminalView: React.FC = () => {
   };
 
   const [candles, setCandles] = useState<CandleData[]>([]);
-  const [hoveredCandle, setHoveredCandle] = useState<CandleData | null>(null);
   const [orderBook, setOrderBook] = useState<OrderBook | null>(null);
   const [recentTrades, setRecentTrades] = useState<TradeRecord[]>([]);
-  const [activeIndicator, setActiveIndicator] = useState<'EMA' | 'RSI' | 'MACD' | 'VOL'>('EMA');
 
   const [userOrders, setUserOrders] = useState<UserOrder[]>([
     {
@@ -188,7 +187,7 @@ export const TradeTerminalView: React.FC = () => {
       const signal = activeController.signal;
 
       try {
-        const res = await fetch(`/api/prices/history?symbol=${activeSymbol}&timeframe=${timeframe}&count=34`, {
+        const res = await fetch(`/api/prices/history?symbol=${activeSymbol}&timeframe=${timeframe}&count=48`, {
           signal,
         });
         if (signal.aborted) return;
@@ -393,21 +392,6 @@ export const TradeTerminalView: React.FC = () => {
   // Calculate high and low from candles
   const candleHighs = candles.map((c) => c.high);
   const candleLows = candles.map((c) => c.low);
-  const maxPrice = candleHighs.length ? Math.max(...candleHighs) : activePair.priceUsd;
-  const minPrice = candleLows.length ? Math.min(...candleLows) : activePair.priceUsd;
-  const priceRange = maxPrice - minPrice || 1;
-
-  const closes = useMemo(() => candles.map((c) => c.close), [candles]);
-  const ema7 = useMemo(() => {
-    if (closes.length < 7) return null;
-    const k = 2 / (7 + 1);
-    return closes.reduce((acc, val) => (val - acc) * k + acc, closes[0]);
-  }, [closes]);
-  const ema25 = useMemo(() => {
-    if (closes.length < 25) return null;
-    const k = 2 / (25 + 1);
-    return closes.reduce((acc, val) => (val - acc) * k + acc, closes[0]);
-  }, [closes]);
 
   return (
     <div className="space-y-4 pb-12">
@@ -487,141 +471,19 @@ export const TradeTerminalView: React.FC = () => {
       {/* Main Terminal Grid: Chart (Left 7 Cols) + Orderbook (Middle 2.5 Cols) + Execution Form (Right 2.5 Cols) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Candlestick & Price Chart Area (7 Cols) */}
-        <div className="lg:col-span-7 rounded-2xl bg-[#0D111A] border border-white/[0.08] p-4 flex flex-col justify-between min-h-[500px] shadow-xl">
-          {/* Chart Header Bar with Timeframes & Indicators */}
-          <div className="flex flex-wrap items-center justify-between pb-3 border-b border-white/[0.08] gap-2">
-            <div className="flex items-center gap-1">
-              {(['1m', '5m', '15m', '1h', '4h', '1D'] as const).map((tf) => (
-                <button
-                  key={tf}
-                  onClick={() => setTimeframe(tf)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all cursor-pointer ${
-                    timeframe === tf ? 'bg-blue-600 text-white font-bold shadow-sm' : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-                  }`}
-                >
-                  {tf}
-                </button>
-              ))}
-            </div>
-
-            {/* Indicators Selector */}
-            <div className="flex items-center gap-1.5 text-[11px] font-mono">
-              {(['EMA', 'RSI', 'MACD', 'VOL'] as const).map((ind) => (
-                <button
-                  key={ind}
-                  onClick={() => setActiveIndicator(ind)}
-                  className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
-                    activeIndicator === ind
-                      ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30 font-bold'
-                      : 'border-white/[0.06] text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {ind}
-                </button>
-              ))}
-            </div>
-
-            {/* Hovered / Current Candle Inspector */}
-            <div className="hidden sm:flex items-center gap-2.5 text-xs text-slate-400 font-mono">
-              {hoveredCandle ? (
-                <>
-                  <span>O: <strong className="text-slate-200">${hoveredCandle.open}</strong></span>
-                  <span>H: <strong className="text-emerald-400">${hoveredCandle.high}</strong></span>
-                  <span>L: <strong className="text-rose-400">${hoveredCandle.low}</strong></span>
-                  <span>C: <strong className="text-white">${hoveredCandle.close}</strong></span>
-                  <span>V: <strong className="text-cyan-400">{hoveredCandle.volume}</strong></span>
-                </>
-              ) : (
-                <>
-                  <span>EMA(7): <strong className="text-amber-400">{ema7 !== null ? `$${ema7.toFixed(2)}` : '—'}</strong></span>
-                  <span>EMA(25): <strong className="text-purple-400">{ema25 !== null ? `$${ema25.toFixed(2)}` : '—'}</strong></span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Interactive Visual Real-Time Candlestick Chart */}
-          <div className="flex-1 py-4 flex flex-col justify-end relative select-none">
-            {/* Horizontal Grid price levels */}
-            <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-20">
-              <div className="border-b border-white/20 w-full flex justify-end text-[10px] font-mono text-slate-400 pr-2 pt-0.5">
-                ${maxPrice.toFixed(2)}
-              </div>
-              <div className="border-b border-white/10 w-full flex justify-end text-[10px] font-mono text-slate-400 pr-2">
-                ${((maxPrice + minPrice) / 2).toFixed(2)}
-              </div>
-              <div className="border-b border-white/20 w-full flex justify-end text-[10px] font-mono text-slate-400 pr-2 pb-0.5">
-                ${minPrice.toFixed(2)}
-              </div>
-            </div>
-
-            {/* Real Candlesticks Rendered from dynamic OHLCV data */}
-            <div className="h-72 w-full flex items-end justify-between gap-1 px-2 relative z-10">
-              {candles.map((candle, idx) => {
-                const isGreen = candle.close >= candle.open;
-                const bodyTop = Math.max(candle.open, candle.close);
-                const bodyBottom = Math.min(candle.open, candle.close);
-                
-                // Position calculations in %
-                const highPct = ((candle.high - minPrice) / priceRange) * 100;
-                const lowPct = ((candle.low - minPrice) / priceRange) * 100;
-                const bodyTopPct = ((bodyTop - minPrice) / priceRange) * 100;
-                const bodyBottomPct = ((bodyBottom - minPrice) / priceRange) * 100;
-                
-                const wickHeight = Math.max(highPct - lowPct, 2);
-                const bodyHeight = Math.max(bodyTopPct - bodyBottomPct, 2);
-
-                return (
-                  <div
-                    key={idx}
-                    onMouseEnter={() => setHoveredCandle(candle)}
-                    onMouseLeave={() => setHoveredCandle(null)}
-                    className="flex-1 flex flex-col items-center justify-end h-full group cursor-pointer relative"
-                  >
-                    {/* Wick */}
-                    <div
-                      className={`w-[1.5px] absolute ${isGreen ? 'bg-emerald-400' : 'bg-rose-400'}`}
-                      style={{
-                        bottom: `${Math.min(Math.max(lowPct, 2), 98)}%`,
-                        height: `${Math.min(Math.max(wickHeight, 3), 96)}%`,
-                      }}
-                    />
-                    {/* Body */}
-                    <div
-                      className={`w-full max-w-[14px] rounded-[1px] z-10 transition-all ${
-                        isGreen ? 'bg-emerald-500 group-hover:bg-emerald-400' : 'bg-rose-500 group-hover:bg-rose-400'
-                      } ${hoveredCandle === candle ? 'ring-2 ring-white scale-110 shadow-lg' : ''}`}
-                      style={{
-                        position: 'absolute',
-                        bottom: `${Math.min(Math.max(bodyBottomPct, 2), 98)}%`,
-                        height: `${Math.min(Math.max(bodyHeight, 2.5), 96)}%`,
-                      }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Active Live Price Marker */}
-            <div
-              className="absolute right-0 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-mono text-[11px] font-extrabold px-2.5 py-1 rounded-l-lg shadow-xl transition-all duration-300 flex items-center gap-1.5"
-              style={{
-                bottom: `${Math.min(Math.max(((activePair.priceUsd - minPrice) / priceRange) * 100, 5), 95)}%`,
-              }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-              ${activePair.priceUsd.toFixed(2)}
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between text-[11px] font-mono text-slate-400">
-            <span>24h Low: ${candleLows.length > 0 ? Math.min(...candleLows).toFixed(2) : activePair.priceUsd.toFixed(2)}</span>
-            <span className="flex items-center gap-1.5 text-cyan-400 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-              Spread: {orderBook?.spreadPercent || '0.04'}%
-            </span>
-            <span>24h High: ${candleHighs.length > 0 ? Math.max(...candleHighs).toFixed(2) : activePair.priceUsd.toFixed(2)}</span>
-          </div>
+        <div className="lg:col-span-7 flex flex-col min-h-[480px]">
+          <ProCandlestickChart
+            candles={candles}
+            symbol={activeSymbol}
+            currentPrice={activePair.priceUsd}
+            tickDirection={tickDir}
+            timeframe={timeframe}
+            onTimeframeChange={setTimeframe}
+            high24h={candleHighs.length > 0 ? Math.max(...candleHighs) : activePair.priceUsd * 1.02}
+            low24h={candleLows.length > 0 ? Math.min(...candleLows) : activePair.priceUsd * 0.98}
+            spreadPercent={orderBook?.spreadPercent || 0.0004}
+            className="flex-1"
+          />
         </div>
 
         {/* Order Book & Recent Trades (2.5 Cols) */}

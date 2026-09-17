@@ -238,7 +238,7 @@ export class SmartGraphRouter {
       amount,
       slippage = 0.5,
       chainId = 'ethereum',
-      allowMultiHop = false,
+      allowMultiHop = true,
     } = params;
 
     const rawAmountStr = typeof amount === 'number' ? amount.toString() : amount;

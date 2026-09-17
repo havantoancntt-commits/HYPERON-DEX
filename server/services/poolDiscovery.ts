@@ -281,6 +281,150 @@ export const VERIFIED_CANONICAL_POOLS: Record<string, {
     token0Address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
     token1Address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
   },
+  'polygon:POL:WETH:v2': {
+    address: '0xadb2da44e70e3a30745c944d6abE9ce6214441E9', // QuickSwap WPOL/WETH
+    chainId: 'polygon',
+    protocol: 'QuickSwap',
+    feeBps: 30,
+    token0Address: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+    token1Address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
+  },
+  // Expanded Popular Ethereum Pools
+  'ethereum:ETH:PEPE:v3:3000': {
+    address: '0x11950d141EcB863F01007AdD7D1A342041227b58', // Uniswap V3 PEPE/WETH 0.3%
+    chainId: 'ethereum',
+    protocol: 'Uniswap v3',
+    feeBps: 30,
+    token0Address: '0x6982508145454Ce325dDbE47a25d4ec3d2311933',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
+  },
+  'ethereum:ETH:SHIB:v3:3000': {
+    address: '0x811beEd0119b4afCE20D2583EB608C6F7Af1954f', // Uniswap V3 SHIB/WETH 0.3%
+    chainId: 'ethereum',
+    protocol: 'Uniswap v3',
+    feeBps: 30,
+    token0Address: '0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
+  },
+  'ethereum:ETH:DAI:v3:500': {
+    address: '0x60594a405d53811d3BC4766596EFD80fd545A270', // Uniswap V3 DAI/WETH 0.05%
+    chainId: 'ethereum',
+    protocol: 'Uniswap v3',
+    feeBps: 5,
+    token0Address: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 10,
+  },
+  'ethereum:ETH:DAI:v3:3000': {
+    address: '0xC2e9F25Be6257c210d7Adf0D4Cd6E3E881ba25f8', // Uniswap V3 DAI/WETH 0.3%
+    chainId: 'ethereum',
+    protocol: 'Uniswap v3',
+    feeBps: 30,
+    token0Address: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
+  },
+  'ethereum:ETH:SOL:v3:3000': {
+    address: '0x127452f3f9cDc0389b0Bf59ce6131aA3bd359053', // Uniswap V3 SOL/WETH 0.3%
+    chainId: 'ethereum',
+    protocol: 'Uniswap v3',
+    feeBps: 30,
+    token0Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    token1Address: '0xD31a59c85aE9D8edEFeC411D44926B18ACa5D78f',
+    tickSpacing: 60,
+  },
+  'ethereum:ETH:MKR:v3:3000': {
+    address: '0xe8c6c9227491C0a8156A0106A0204d881BB7E531', // Uniswap V3 MKR/WETH 0.3%
+    chainId: 'ethereum',
+    protocol: 'Uniswap v3',
+    feeBps: 30,
+    token0Address: '0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
+  },
+  'ethereum:ETH:LDO:v3:3000': {
+    address: '0xa3f558aebAecAf0e11cA4b21a9C80429790585CF', // Uniswap V3 LDO/WETH 0.3%
+    chainId: 'ethereum',
+    protocol: 'Uniswap v3',
+    feeBps: 30,
+    token0Address: '0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
+  },
+  'ethereum:ETH:PENDLE:v3:3000': {
+    address: '0xa962657e28a4901f40e02e1c9eec58f50c008320', // Uniswap V3 PENDLE/WETH 0.3%
+    chainId: 'ethereum',
+    protocol: 'Uniswap v3',
+    feeBps: 30,
+    token0Address: '0x808507121B80c02388fAd14726482e061B8da827',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
+  },
+  'ethereum:ETH:wstETH:v3:100': {
+    address: '0x109830a1AAaD605BbF02a9dFA7B0B92EC2FB7dAa', // Uniswap V3 wstETH/WETH 0.01%
+    chainId: 'ethereum',
+    protocol: 'Uniswap v3',
+    feeBps: 1,
+    token0Address: '0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 1,
+  },
+  'ethereum:ETH:FET:v3:3000': {
+    address: '0xd36113bf8D4e21a8d05ee0eAE93F9b69b2F64aF1', // Uniswap V3 FET/WETH 0.3%
+    chainId: 'ethereum',
+    protocol: 'Uniswap v3',
+    feeBps: 30,
+    token0Address: '0xaea46A60368A7bD060eec7DF8CBa43b7EF41Ad85',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
+  },
+  'ethereum:ETH:RENDER:v3:3000': {
+    address: '0x918903c14828E44d0D328c68a4746F9d65C47029', // Uniswap V3 RENDER/WETH 0.3%
+    chainId: 'ethereum',
+    protocol: 'Uniswap v3',
+    feeBps: 30,
+    token0Address: '0x6De037ef9aD2725EB40118Bb1702EBb27e4Aeb24',
+    token1Address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    tickSpacing: 60,
+  },
+  // Expanded Popular Base Pools
+  'base:ETH:AERO:v2': {
+    address: '0x2223762888D16912440307bb5cdd8178129e9A95', // Aerodrome AERO/WETH
+    chainId: 'base',
+    protocol: 'Uniswap v2',
+    feeBps: 30,
+    token0Address: '0x4200000000000000000000000000000000000006',
+    token1Address: '0x940181a94A35A4569E4529A3CDfB74e48FD98AE3',
+  },
+  'base:ETH:BRETT:v2': {
+    address: '0x7F876a44c7e6eb5c1D3524b0F635d2d092C5E0E4', // BRETT/WETH
+    chainId: 'base',
+    protocol: 'Uniswap v2',
+    feeBps: 30,
+    token0Address: '0x4200000000000000000000000000000000000006',
+    token1Address: '0x532f27101965dd16442E59d40670FaF5eBB142E4',
+  },
+  // Expanded Popular Arbitrum Pools
+  'arbitrum:ETH:GMX:v3:3000': {
+    address: '0x80A9ae39310abf666A87C743d6ebBD0E8C42158E', // Uniswap V3 GMX/WETH 0.3%
+    chainId: 'arbitrum',
+    protocol: 'Uniswap v3',
+    feeBps: 30,
+    token0Address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+    token1Address: '0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a',
+    tickSpacing: 60,
+  },
+  // Expanded Popular BSC Pools
+  'bsc:BNB:CAKE:v2': {
+    address: '0x0eD7e52944161450477ee417DE9Cd3a859b14fD0', // PancakeSwap V2 CAKE/WBNB
+    chainId: 'bsc',
+    protocol: 'PancakeSwap',
+    feeBps: 25,
+    token0Address: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82',
+    token1Address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
+  },
 };
 
 // In-memory cache for live on-chain pool states with 3-second freshness TTL

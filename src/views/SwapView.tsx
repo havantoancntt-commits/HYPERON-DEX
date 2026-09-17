@@ -31,8 +31,18 @@ import {
   Activity,
   LogOut,
   Wallet,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Plus,
+  ExternalLink,
 } from 'lucide-react';
+
+const POPULAR_SYMBOLS = new Set([
+  'ETH', 'WETH', 'USDC', 'USDT', 'WBTC', 'SOL', 'PEPE', 'SHIB', 'DAI',
+  'UNI', 'AAVE', 'LINK', 'MKR', 'PENDLE', 'ARB', 'OP', 'POL', 'DOGE',
+  'AVAX', 'SUI', 'NEAR', 'FET', 'RENDER', 'wstETH', 'GMX', 'CAKE', 'AERO'
+]);
+
+const QUICK_SELECT_SYMBOLS = ['ETH', 'USDC', 'USDT', 'WBTC', 'SOL', 'PEPE', 'SHIB', 'DAI', 'UNI', 'ARB'];
 
 /**
  * Production-grade sanitizer for numeric token amounts:
@@ -81,7 +91,7 @@ export const SwapView: React.FC = () => {
     address,
     chainId
   } = useWallet();
-  const { selectedPair, setActiveSimulation, setActiveQuote, addToast, getLiveToken, liveTokens } = useExchange();
+  const { selectedPair, setActiveSimulation, setActiveQuote, addToast, getLiveToken, liveTokens, addCustomToken } = useExchange();
   const { t } = useI18n();
 
   const [fromSymbol, setFromSymbol] = useState<string>(selectedPair.base?.symbol || 'ETH');
@@ -105,6 +115,12 @@ export const SwapView: React.FC = () => {
   const [hasCopiedHash, setHasCopiedHash] = useState<boolean>(false);
   const [isSwapping, setIsSwapping] = useState<boolean>(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+
+  // Dynamic remote token resolution state
+  const [isResolvingRemote, setIsResolvingRemote] = useState<boolean>(false);
+  const [remoteTokenResult, setRemoteTokenResult] = useState<Token | null>(null);
+  const [remoteTokenError, setRemoteTokenError] = useState<string | null>(null);
+  const resolveAbortRef = useRef<AbortController | null>(null);
 
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -173,10 +189,13 @@ export const SwapView: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fromTokenSymbol: fTok.symbol,
+          fromTokenAddress: fTok.address,
           toTokenSymbol: tTok.symbol,
+          toTokenAddress: tTok.address,
           amount: amountStr,
           slippage: currentSlippage,
           chainId,
+          allowMultiHop: true,
         }),
         signal,
       });
@@ -331,18 +350,104 @@ export const SwapView: React.FC = () => {
     }
   };
 
+  // On-chain remote resolution for unlisted tokens or addresses
+  useEffect(() => {
+    const q = searchTokenQuery.trim();
+    if (!q) {
+      setRemoteTokenResult(null);
+      setRemoteTokenError(null);
+      setIsResolvingRemote(false);
+      return;
+    }
+
+    // Check if locally matched
+    const hasLocalMatch = (liveTokens || []).some(
+      (t) =>
+        t.symbol.toLowerCase() === q.toLowerCase() ||
+        t.address.toLowerCase() === q.toLowerCase()
+    );
+
+    if (hasLocalMatch && !q.startsWith('0x')) {
+      setRemoteTokenResult(null);
+      setRemoteTokenError(null);
+      setIsResolvingRemote(false);
+      return;
+    }
+
+    if (resolveAbortRef.current) {
+      resolveAbortRef.current.abort();
+    }
+
+    const timer = setTimeout(async () => {
+      const controller = new AbortController();
+      resolveAbortRef.current = controller;
+      setIsResolvingRemote(true);
+      setRemoteTokenError(null);
+
+      try {
+        const res = await fetch(`/api/tokens/resolve?chainId=${chainId || 'ethereum'}&query=${encodeURIComponent(q)}`, {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        const data = await res.json();
+        if (controller.signal.aborted) return;
+
+        if (res.ok && data.token) {
+          setRemoteTokenResult(data.token);
+          setRemoteTokenError(null);
+        } else {
+          setRemoteTokenResult(null);
+          if (q.startsWith('0x') && q.length === 42) {
+            setRemoteTokenError(data?.error || 'Không tìm thấy thông tin token trên hợp đồng on-chain.');
+          }
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+        setRemoteTokenResult(null);
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsResolvingRemote(false);
+        }
+      }
+    }, 400);
+
+    return () => {
+      clearTimeout(timer);
+      if (resolveAbortRef.current) {
+        resolveAbortRef.current.abort();
+      }
+    };
+  }, [searchTokenQuery, chainId, liveTokens]);
+
   const filteredSelectionTokens = (liveTokens || []).filter((t) => {
+    const q = searchTokenQuery.toLowerCase().trim();
     const matchesSearch =
-      t?.symbol?.toLowerCase().includes(searchTokenQuery.toLowerCase().trim()) ||
-      t?.name?.toLowerCase().includes(searchTokenQuery.toLowerCase().trim()) ||
-      t?.address?.toLowerCase().includes(searchTokenQuery.toLowerCase().trim());
+      !q ||
+      t?.symbol?.toLowerCase().includes(q) ||
+      t?.name?.toLowerCase().includes(q) ||
+      t?.address?.toLowerCase().includes(q);
     if (!matchesSearch) return false;
     if (selectedCategory === 'all') return true;
+    if (selectedCategory === 'popular') return POPULAR_SYMBOLS.has(t.symbol);
     if (selectedCategory === 'verified') return t.isVerified !== false;
-    if (selectedCategory === 'l1') return t.category === 'Layer 1' || t.symbol === 'ETH' || t.symbol === 'BTC' || t.symbol === 'SOL' || t.symbol === 'AVAX';
-    if (selectedCategory === 'defi') return t.category === 'Infrastructure' || t.category === 'Layer 2' || t.symbol === 'UNI' || t.symbol === 'LINK' || t.symbol === 'AAVE';
     if (selectedCategory === 'stable') return t.category === 'Stablecoin';
+    if (selectedCategory === 'l1') return t.category === 'Layer 1' || t.symbol === 'ETH' || t.symbol === 'BTC' || t.symbol === 'SOL' || t.symbol === 'AVAX';
+    if (selectedCategory === 'l2') return t.category === 'Layer 2';
+    if (selectedCategory === 'defi') return t.category === 'DeFi' || t.category === 'Infrastructure';
+    if (selectedCategory === 'meme') return t.category === 'Meme';
+    if (selectedCategory === 'ai') return t.category === 'AI';
+    if (selectedCategory === 'lst') return t.category === 'Liquid Staking';
     return true;
+  }).sort((a, b) => {
+    // Current chain tokens first
+    const aChain = a.chainId === chainId ? 0 : 1;
+    const bChain = b.chainId === chainId ? 0 : 1;
+    if (aChain !== bChain) return aChain - bChain;
+    // Popular tokens higher
+    const aPop = POPULAR_SYMBOLS.has(a.symbol) ? 0 : 1;
+    const bPop = POPULAR_SYMBOLS.has(b.symbol) ? 0 : 1;
+    if (aPop !== bPop) return aPop - bPop;
+    return (b.volume24h || 0) - (a.volume24h || 0);
   });
 
   const priceRatio = fromToken.priceUsd > 0 && toToken.priceUsd > 0
@@ -1075,21 +1180,56 @@ export const SwapView: React.FC = () => {
               <input
                 type="text"
                 autoFocus
-                placeholder="Tìm tên token hoặc dán địa chỉ contract..."
+                placeholder="Tìm tên, ký hiệu hoặc dán địa chỉ contract (0x...)..."
                 value={searchTokenQuery}
                 onChange={(e) => setSearchTokenQuery(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 bg-[#131926] border border-white/[0.08] rounded-xl text-xs font-sans text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
               />
+              {searchTokenQuery && (
+                <button
+                  onClick={() => setSearchTokenQuery('')}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white text-xs px-1.5 py-0.5 rounded bg-white/[0.06]"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Quick Popular Token Chips */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {QUICK_SELECT_SYMBOLS.map((sym) => {
+                const tok = liveTokens.find((t) => t.symbol === sym);
+                if (!tok) return null;
+                return (
+                  <button
+                    key={sym}
+                    onClick={() => {
+                      if (showFromSelect) setFromSymbol(sym);
+                      if (showToSelect) setToSymbol(sym);
+                      setShowFromSelect(false);
+                      setShowToSelect(false);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-[#131926] hover:bg-cyan-500/20 hover:border-cyan-500/40 border border-white/[0.06] text-[11px] font-mono font-bold text-slate-300 hover:text-cyan-300 transition-all cursor-pointer"
+                  >
+                    <TokenLogo symbol={tok.symbol} name={tok.name} src={tok.logoUrl} chainId={tok.chainId} className="w-3.5 h-3.5" />
+                    <span>{sym}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Category Filter Pills */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
               {[
                 { id: 'all', label: 'Tất Cả' },
-                { id: 'verified', label: 'Đã Xác Thực' },
-                { id: 'l1', label: 'Layer 1' },
-                { id: 'defi', label: 'DeFi' },
+                { id: 'popular', label: '★ Phổ Biến' },
                 { id: 'stable', label: 'Stablecoin' },
+                { id: 'l1', label: 'Layer 1' },
+                { id: 'l2', label: 'Layer 2' },
+                { id: 'defi', label: 'DeFi' },
+                { id: 'meme', label: 'Meme' },
+                { id: 'ai', label: 'AI & Data' },
+                { id: 'lst', label: 'LST' },
               ].map((cat) => (
                 <button
                   key={cat.id}
@@ -1105,20 +1245,66 @@ export const SwapView: React.FC = () => {
               ))}
             </div>
 
+            {/* Remote On-Chain Token Resolution Card */}
+            {isResolvingRemote && (
+              <div className="p-3 rounded-2xl bg-cyan-950/20 border border-cyan-500/30 flex items-center gap-2.5 text-xs text-cyan-300 animate-pulse">
+                <RefreshCw className="w-4 h-4 animate-spin text-cyan-400 shrink-0" />
+                <span>Đang phân giải hợp đồng token trên mạng lưới on-chain...</span>
+              </div>
+            )}
+
+            {remoteTokenResult && (
+              <div className="p-3 rounded-2xl bg-cyan-950/40 border border-cyan-500/40 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <TokenLogo symbol={remoteTokenResult.symbol} name={remoteTokenResult.name} src={remoteTokenResult.logoUrl} chainId={remoteTokenResult.chainId} className="w-8 h-8" />
+                    <div>
+                      <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                        <span>{remoteTokenResult.symbol}</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono">On-Chain</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono">{remoteTokenResult.name} • {shortenAddress(remoteTokenResult.address)}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      addCustomToken(remoteTokenResult);
+                      if (showFromSelect) setFromSymbol(remoteTokenResult.symbol);
+                      if (showToSelect) setToSymbol(remoteTokenResult.symbol);
+                      setShowFromSelect(false);
+                      setShowToSelect(false);
+                      setRemoteTokenResult(null);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs font-sans transition-all cursor-pointer flex items-center gap-1 shadow-lg shadow-cyan-500/20"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Nhập & Chọn</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {remoteTokenError && !remoteTokenResult && (
+              <div className="p-2.5 rounded-xl bg-rose-950/30 border border-rose-500/30 flex items-center gap-2 text-[11px] text-rose-300">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>{remoteTokenError}</span>
+              </div>
+            )}
+
             <div className="max-h-72 overflow-y-auto space-y-1 scrollbar-none">
               {!liveTokens || liveTokens.length === 0 ? (
                 <div className="py-8 text-center space-y-2">
                   <RefreshCw className="w-6 h-6 text-cyan-400 mx-auto animate-spin" />
                   <div className="text-xs font-semibold text-slate-400">Đang đồng bộ danh sách token on-chain...</div>
                 </div>
-              ) : filteredSelectionTokens.length === 0 ? (
+              ) : filteredSelectionTokens.length === 0 && !remoteTokenResult && !isResolvingRemote ? (
                 <div className="py-10 text-center space-y-2.5 px-4">
                   <div className="w-10 h-10 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-center mx-auto text-slate-500">
                     <Search className="w-5 h-5" />
                   </div>
                   <div className="text-sm font-bold text-slate-300">Không tìm thấy token nào</div>
                   <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
-                    Không có tài sản nào khớp với từ khóa "{searchTokenQuery}". Vui lòng kiểm tra lại ký hiệu hoặc địa chỉ hợp đồng.
+                    Không có tài sản nào khớp với từ khóa "{searchTokenQuery}". Bạn có thể dán địa chỉ contract (0x...) để tự động quét on-chain.
                   </p>
                 </div>
               ) : (
@@ -1140,7 +1326,10 @@ export const SwapView: React.FC = () => {
                           {token.symbol}
                           <span className="text-[10px] font-normal text-slate-400">{token.name}</span>
                         </div>
-                        <div className="text-[10px] font-mono text-slate-500">Đã xác thực On-chain</div>
+                        <div className="text-[10px] font-mono text-slate-500 flex items-center gap-1.5">
+                          <span>{shortenAddress(token.address)}</span>
+                          <span className="text-[9px] px-1 rounded bg-white/[0.06] text-slate-400">{token.chainId.toUpperCase()}</span>
+                        </div>
                       </div>
                     </div>
                     <div className="text-right font-mono">

@@ -6,6 +6,7 @@ import { VERIFIED_TOKENS, SUPPORTED_CHAINS, DEX_SOURCES, SAMPLE_POOLS, SAMPLE_ST
 import { priceCache, getPrice, getPriceState, getUsdPrice, syncRealTimePrices } from './server/services/priceFeed';
 import { fetchLiveKlines, fetchLiveOrderBook, fetchLiveTrades, calculateLiveTechnicalIndicators } from './server/services/marketData';
 import { calculateSmartRouteQuote, simulateSwapTransaction, relayTransaction, verifyZkProof } from './server/services/router';
+import { tokenResolver } from './server/services/tokenResolver';
 import { scanTokenSecurity } from './server/services/scanner';
 import { generateMarketIntelligence, generateQuantitativeSignals } from './server/services/aiIntelligence';
 import { getLiveBlockNumber, getLiveGasPrice, getNativeBalance } from './server/services/rpc';
@@ -172,6 +173,7 @@ const QuoteSchema = z
       ])
       .optional(),
     chainId: z.string().min(1, 'chainId is strictly required'),
+    allowMultiHop: z.boolean().optional(),
   })
   .refine(
     (data) =>
@@ -461,6 +463,37 @@ app.get('/api/tokens', (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/tokens/resolve', async (req: Request, res: Response) => {
+  try {
+    const chainId = (req.query.chainId as string) || 'ethereum';
+    const rawQuery = (req.query.query as string || req.query.address as string || req.query.symbol as string || '').trim();
+
+    if (!rawQuery) {
+      return res.status(400).json({ error: 'Query parameter (contract address or symbol) is strictly required' });
+    }
+
+    const isAddr = isAddress(rawQuery);
+    const resolved = await tokenResolver.resolveToken({
+      chainId,
+      address: isAddr ? rawQuery : undefined,
+      symbol: !isAddr ? rawQuery : undefined,
+    });
+
+    const token = tokenResolver.toToken(resolved);
+    const livePrice = priceCache[token.symbol];
+    if (livePrice && livePrice.priceUsd !== null) {
+      token.priceUsd = livePrice.priceUsd;
+      token.change24h = livePrice.change24h ?? token.change24h;
+      token.volume24h = livePrice.volume24h ?? token.volume24h;
+      token.marketCapUsd = livePrice.marketCapUsd ?? token.marketCapUsd;
+    }
+
+    res.json({ token, resolved });
+  } catch (err: any) {
+    res.status(404).json({ error: err?.message || 'Token not found or verification failed' });
+  }
+});
+
 app.get('/api/markets', (req: Request, res: Response) => {
   try {
     const markets = VERIFIED_TOKENS.map((token) => {
@@ -569,6 +602,7 @@ app.post(['/api/quotes', '/api/quote'], async (req: Request, res: Response) => {
       amount,
       slippage = 0.5,
       chainId,
+      allowMultiHop = true,
     } = parsed.data;
 
     const effectiveFromSymbol =
@@ -588,6 +622,7 @@ app.post(['/api/quotes', '/api/quote'], async (req: Request, res: Response) => {
       amount,
       slippage: typeof slippage === 'string' ? parseFloat(slippage) : slippage,
       chainId,
+      allowMultiHop,
     });
     // Return both { quote } wrapper and root quote fields for full client compatibility
     res.json({ quote, ...quote });

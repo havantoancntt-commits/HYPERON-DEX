@@ -56,6 +56,7 @@ export interface TradesResponse {
 
 const BINANCE_PAIR_MAP: Record<string, string> = {
   ETH: 'ETHUSDT',
+  WETH: 'ETHUSDT',
   WBTC: 'BTCUSDT',
   BTC: 'BTCUSDT',
   UNI: 'UNIUSDT',
@@ -68,10 +69,27 @@ const BINANCE_PAIR_MAP: Record<string, string> = {
   MATIC: 'POLUSDT',
   SOL: 'SOLUSDT',
   AVAX: 'AVAXUSDT',
+  DOGE: 'DOGEUSDT',
+  SHIB: 'SHIBUSDT',
+  PEPE: 'PEPEUSDT',
+  SUI: 'SUIUSDT',
+  NEAR: 'NEARUSDT',
+  MKR: 'MKRUSDT',
+  LDO: 'LDOUSDT',
+  PENDLE: 'PENDLEUSDT',
+  CRV: 'CRVUSDT',
+  FET: 'FETUSDT',
+  RENDER: 'RENDERUSDT',
+  GMX: 'GMXUSDT',
+  CAKE: 'CAKEUSDT',
+  DAI: 'DAIUSDT',
+  USDT: 'USDCUSDT',
+  USDC: 'USDCUSDT',
 };
 
 const CRYPTOCOMPARE_SYMBOL_MAP: Record<string, string> = {
   ETH: 'ETH',
+  WETH: 'ETH',
   WBTC: 'BTC',
   BTC: 'BTC',
   UNI: 'UNI',
@@ -84,6 +102,22 @@ const CRYPTOCOMPARE_SYMBOL_MAP: Record<string, string> = {
   MATIC: 'POL',
   SOL: 'SOL',
   AVAX: 'AVAX',
+  DOGE: 'DOGE',
+  SHIB: 'SHIB',
+  PEPE: 'PEPE',
+  SUI: 'SUI',
+  NEAR: 'NEAR',
+  MKR: 'MKR',
+  LDO: 'LDO',
+  PENDLE: 'PENDLE',
+  CRV: 'CRV',
+  FET: 'FET',
+  RENDER: 'RENDER',
+  GMX: 'GMX',
+  CAKE: 'CAKE',
+  DAI: 'DAI',
+  USDT: 'USDT',
+  USDC: 'USDC',
 };
 
 // In-memory cache for verified genuine historical klines with strict TTL (60s)
