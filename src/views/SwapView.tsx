@@ -697,11 +697,15 @@ export const SwapView: React.FC = () => {
         {/* SWAP DIRECTION SWITCHER */}
         <div className="flex justify-center -my-3.5 relative z-10">
           <button
+            type="button"
             onClick={handleSwapTokens}
-            className="w-9 h-9 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border-4 border-[#0D111A] rounded-full flex items-center justify-center text-white shadow-xl transition-transform hover:scale-110 active:scale-95 duration-200 cursor-pointer"
-            title="Đảo chiều token"
+            className="group relative p-[2px] rounded-full bg-gradient-to-b from-cyan-400/80 via-blue-500/80 to-indigo-600/80 hover:from-cyan-300 hover:via-blue-400 hover:to-indigo-500 border-4 border-[#0B0F19] shadow-xl shadow-cyan-500/20 hover:shadow-cyan-400/30 transition-all duration-300 hover:scale-110 active:scale-90 cursor-pointer"
+            title="Đảo chiều token (Reverse swap direction)"
+            aria-label="Reverse swap pair tokens"
           >
-            <ArrowDownUp className="w-3.5 h-3.5" />
+            <div className="w-8 h-8 rounded-full bg-[#0D121F] group-hover:bg-[#11182B] flex items-center justify-center transition-colors">
+              <ArrowDownUp className="w-3.5 h-3.5 text-cyan-300 group-hover:text-white group-hover:rotate-180 transition-transform duration-300 ease-out" />
+            </div>
           </button>
         </div>
 
@@ -941,7 +945,7 @@ export const SwapView: React.FC = () => {
             </div>
             <div className="flex items-center gap-2 font-mono text-slate-400 text-[11px]">
               <span className="text-emerald-400 font-bold">
-                {quote?.smartSplitMetrics?.efficiencyScore ? `${quote.smartSplitMetrics.efficiencyScore}% Tối Ưu` : '100% Tối Ưu'}
+                {quote?.smartSplitMetrics?.efficiencyScore ? `${quote.smartSplitMetrics.efficiencyScore}% Tối Ưu` : 'Tối Ưu Tuyến Đường'}
               </span>
               {activeTab === 'routing' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </div>

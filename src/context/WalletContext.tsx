@@ -840,42 +840,89 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       currentBlock = 0;
     }
 
-    // Deduct / credit state balances
-    if ((txData.type === 'SWAP' || txData.type === 'BRIDGE') && txData.fromToken && txData.toToken && txData.fromAmount && txData.toAmount) {
-      setBalances((prev) => ({
-        ...prev,
-        [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
-        [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
-      }));
-    } else if ((txData.type === 'SUPPLY' || txData.type === 'STAKE' || txData.type === 'REPAY') && txData.fromToken && txData.fromAmount) {
-      setBalances((prev) => ({
-        ...prev,
-        [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
-      }));
-    } else if ((txData.type === 'BORROW' || txData.type === 'WITHDRAW_LENDING' || txData.type === 'CLAIM_REWARDS') && txData.toToken && txData.toAmount) {
-      setBalances((prev) => ({
-        ...prev,
-        [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
-      }));
-    } else if (txData.type === 'RESTAKE' && txData.fromToken && txData.toToken && txData.fromAmount && txData.toAmount) {
-      setBalances((prev) => ({
-        ...prev,
-        [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
-        [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
-      }));
-    }
+    const isSandbox = walletType === 'sandbox';
+
+    const applyBalanceAdjustments = () => {
+      if ((txData.type === 'SWAP' || txData.type === 'BRIDGE') && txData.fromToken && txData.toToken && txData.fromAmount && txData.toAmount) {
+        setBalances((prev) => ({
+          ...prev,
+          [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
+          [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
+        }));
+      } else if ((txData.type === 'SUPPLY' || txData.type === 'STAKE' || txData.type === 'REPAY') && txData.fromToken && txData.fromAmount) {
+        setBalances((prev) => ({
+          ...prev,
+          [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
+        }));
+      } else if ((txData.type === 'BORROW' || txData.type === 'WITHDRAW_LENDING' || txData.type === 'CLAIM_REWARDS') && txData.toToken && txData.toAmount) {
+        setBalances((prev) => ({
+          ...prev,
+          [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
+        }));
+      } else if (txData.type === 'RESTAKE' && txData.fromToken && txData.toToken && txData.fromAmount && txData.toAmount) {
+        setBalances((prev) => ({
+          ...prev,
+          [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
+          [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
+        }));
+      }
+    };
 
     const newTx: TransactionHistoryItem = {
       ...txData,
       id: `tx-${Date.now()}`,
       txHash,
       timestamp: Date.now(),
-      status: 'confirmed',
-      blockNumber: currentBlock > 0 ? currentBlock : undefined,
+      status: isSandbox ? 'confirmed' : 'pending',
+      blockNumber: isSandbox && currentBlock > 0 ? currentBlock : undefined,
       correlationId,
     };
 
     setTransactions((prev) => [newTx, ...prev]);
+
+    if (isSandbox) {
+      applyBalanceAdjustments();
+    } else {
+      // Background receipt tracker: polling on-chain receipt without freezing the UI
+      (async () => {
+        try {
+          if (typeof window !== 'undefined' && (window as any).ethereum) {
+            let attempts = 0;
+            const maxAttempts = 30;
+            while (attempts < maxAttempts) {
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+              attempts++;
+              const receipt = await (window as any).ethereum.request({
+                method: 'eth_getTransactionReceipt',
+                params: [txHash],
+              });
+              if (receipt) {
+                const isSuccess = receipt.status === '0x1' || receipt.status === 1;
+                const minedBlock = receipt.blockNumber ? parseInt(receipt.blockNumber, 16) : currentBlock;
+                setTransactions((prev) =>
+                  prev.map((item) =>
+                    item.txHash === txHash
+                      ? {
+                          ...item,
+                          status: isSuccess ? 'confirmed' : 'failed',
+                          blockNumber: minedBlock > 0 ? minedBlock : item.blockNumber,
+                        }
+                      : item
+                  )
+                );
+                if (isSuccess) {
+                  await refreshBalances();
+                }
+                break;
+              }
+            }
+          }
+        } catch (receiptErr) {
+          console.warn('On-chain receipt tracking standing by:', receiptErr);
+        }
+      })();
+    }
+
     return newTx;
   };
 

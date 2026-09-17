@@ -499,7 +499,7 @@ export const StakingView: React.FC = () => {
                   <Layers className="w-5 h-5 text-cyan-400" /> Liquid Restaking Derivatives (LRT)
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Restake ETH or HYPR into Actively Validated Services (AVSs) to earn dual rewards while keeping 100% liquidity.
+                  Restake ETH or HYPR into Actively Validated Services (AVSs) to earn dual rewards while keeping liquid derivative flexibility.
                 </p>
               </div>
               <span className="text-xs font-mono font-bold px-3 py-1 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
@@ -693,7 +693,7 @@ export const StakingView: React.FC = () => {
             <div className="p-4 rounded-2xl bg-[#0F1420] border border-white/5 space-y-1">
               <div className="text-slate-400 text-[10px]">Active Node Operators</div>
               <div className="text-xl font-bold text-white">14,280 Nodes</div>
-              <div className="text-emerald-400 text-[10px]">100% Slashing-Free</div>
+              <div className="text-emerald-400 text-[10px]">Slashing-Protected Pool</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-[#0F1420] border border-white/5 space-y-1">

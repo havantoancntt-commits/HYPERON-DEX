@@ -17,16 +17,23 @@ interface SecurityBadgeProps {
 export const SecurityBadge: React.FC<SecurityBadgeProps> = ({
   status,
   tokenSymbol = 'Asset',
-  isVerified = true,
-  hasHoneypot = false,
-  transferTaxPercent = 0,
-  liquidityLocked = true,
+  isVerified,
+  hasHoneypot,
+  transferTaxPercent,
+  liquidityLocked,
   className = '',
   showDetailsButton = true,
   onOpenAuditModal,
 }) => {
   const [showPopover, setShowPopover] = useState(false);
   const cfg = SECURITY_STATUS_CONFIG[status] || SECURITY_STATUS_CONFIG.UNKNOWN;
+  const isStatusUnknown = status === 'UNKNOWN';
+
+  // Strict: if status is UNKNOWN, default attributes MUST reflect unverified state
+  const effectiveVerified = isVerified !== undefined ? isVerified : !isStatusUnknown;
+  const effectiveHoneypot = hasHoneypot !== undefined ? hasHoneypot : false;
+  const effectiveTax = transferTaxPercent !== undefined ? transferTaxPercent : 0;
+  const effectiveLocked = liquidityLocked !== undefined ? liquidityLocked : !isStatusUnknown;
 
   const renderIcon = () => {
     switch (status) {
@@ -77,29 +84,29 @@ export const SecurityBadge: React.FC<SecurityBadgeProps> = ({
           <div className="space-y-1.5 font-sans text-slate-300 text-[11px]">
             <div className="flex items-center justify-between">
               <span className="text-slate-400">Source Verification:</span>
-              <span className={isVerified ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
-                {isVerified ? 'Canonical & Verified' : 'Unverified Bytecode'}
+              <span className={isStatusUnknown ? 'text-slate-400 font-semibold' : effectiveVerified ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
+                {isStatusUnknown ? 'Pending Static Analysis' : effectiveVerified ? 'Canonical & Verified' : 'Unverified Bytecode'}
               </span>
             </div>
 
             <div className="flex items-center justify-between">
               <span className="text-slate-400">Honeypot Test:</span>
-              <span className={!hasHoneypot ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
-                {!hasHoneypot ? '0 Flags Passed' : 'Detected Honeypot!'}
+              <span className={isStatusUnknown ? 'text-slate-400 font-semibold' : !effectiveHoneypot ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                {isStatusUnknown ? 'Pending On-Chain Simulation' : !effectiveHoneypot ? 'Verified Simulation Safe' : 'Detected Honeypot!'}
               </span>
             </div>
 
             <div className="flex items-center justify-between">
               <span className="text-slate-400">Transfer Fee / Tax:</span>
-              <span className={transferTaxPercent === 0 ? 'text-slate-200' : transferTaxPercent > 3 ? 'text-amber-400' : 'text-slate-300'}>
-                {transferTaxPercent}%
+              <span className={isStatusUnknown ? 'text-slate-400 font-semibold' : effectiveTax === 0 ? 'text-slate-200' : effectiveTax > 3 ? 'text-amber-400 font-semibold' : 'text-slate-300'}>
+                {isStatusUnknown ? 'Unverified' : `${effectiveTax}%`}
               </span>
             </div>
 
             <div className="flex items-center justify-between">
               <span className="text-slate-400">Liquidity Custody:</span>
-              <span className={liquidityLocked ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
-                {liquidityLocked ? 'Time-Locked Pool' : 'Standard AMM'}
+              <span className={isStatusUnknown ? 'text-slate-400 font-semibold' : effectiveLocked ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
+                {isStatusUnknown ? 'Unverified Pool' : effectiveLocked ? 'Time-Locked Pool' : 'Standard AMM'}
               </span>
             </div>
           </div>

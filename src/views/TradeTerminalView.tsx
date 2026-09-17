@@ -70,6 +70,30 @@ export const TradeTerminalView: React.FC = () => {
   const [twapMinutes, setTwapMinutes] = useState<string>('30');
   const [depthViewMode, setDepthViewMode] = useState<'list' | 'depth'>('list');
   const [selectedTab, setSelectedTab] = useState<'orders' | 'positions' | 'history' | 'trades'>('orders');
+  const [mempoolLatency, setMempoolLatency] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const measureLatency = async () => {
+      try {
+        const start = performance.now();
+        const res = await fetch('/api/health');
+        const end = performance.now();
+        if (res.ok && active) {
+          const data = await res.json();
+          setMempoolLatency(data.latencyMs ?? Math.round(end - start));
+        }
+      } catch {
+        if (active) setMempoolLatency(null);
+      }
+    };
+    measureLatency();
+    const interval = setInterval(measureLatency, 10000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const handleApplyAICopilotStrategy = () => {
     const currentP = activePair.priceUsd;
@@ -959,7 +983,7 @@ export const TradeTerminalView: React.FC = () => {
 
           <div className="text-xs font-mono text-emerald-400 flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Mempool Latency: 4ms</span>
+            <span>Mempool Latency: {mempoolLatency !== null ? `${mempoolLatency}ms` : 'Connecting...'}</span>
           </div>
         </div>
 

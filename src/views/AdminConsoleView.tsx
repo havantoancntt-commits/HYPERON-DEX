@@ -21,24 +21,24 @@ export const AdminConsoleView: React.FC = () => {
     } catch (err) {
       console.warn('Failed to load admin metrics:', err);
     }
-    // Fallback metrics if API is temporarily unavailable or degraded
+    // If API unavailable, mark nodes as degraded/offline rather than fabricating fake latencies
     setMetrics({
       uptimePercent: 99.998,
       totalVolume24hUsd: 184500000,
-      activeQuotesPerSec: 142,
-      averageQuoteLatencyMs: 24,
+      activeQuotesPerSec: 0,
+      averageQuoteLatencyMs: 0,
       aiModelQuotaUsage: {
-        requests24h: 3840,
-        tokenConsumption: '14.2M tokens',
-        averageLatencyMs: 142,
+        requests24h: 0,
+        tokenConsumption: '0 tokens',
+        averageLatencyMs: 0,
       },
       rpcNodeLatencies: {
-        ethereum: '18ms',
-        base: '14ms',
-        arbitrum: '11ms',
-        optimism: '12ms',
-        bsc: '24ms',
-        polygon: '16ms',
+        ethereum: 'offline',
+        base: 'offline',
+        arbitrum: 'offline',
+        optimism: 'offline',
+        bsc: 'offline',
+        polygon: 'offline',
       },
     });
   };

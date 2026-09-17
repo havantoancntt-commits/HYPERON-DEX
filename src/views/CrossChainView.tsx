@@ -243,7 +243,7 @@ export const CrossChainView: React.FC = () => {
           </div>
           <div className="px-3.5 py-2 rounded-xl bg-black/40 border border-white/5 text-center">
             <div className="text-slate-400 text-[10px]">MEV SHIELD</div>
-            <div className="font-bold text-cyan-400 mt-0.5">100% Cryptographic</div>
+            <div className="font-bold text-cyan-400 mt-0.5">Zero-Knowledge Guard</div>
           </div>
         </div>
       </div>

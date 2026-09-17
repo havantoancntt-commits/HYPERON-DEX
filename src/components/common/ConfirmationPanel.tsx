@@ -40,6 +40,8 @@ export const ConfirmationPanel: React.FC<ConfirmationPanelProps> = ({
 
   const simConfig = SIMULATION_STATUS_CONFIG[simulationStatus] || SIMULATION_STATUS_CONFIG.PASSED;
   const isSimFailed = simulationStatus === 'FAILED';
+  const isExpired = Boolean(quote.expiresAt && Date.now() > quote.expiresAt);
+  const isBlocked = securityStatus === 'BLOCKED';
 
   return (
     <div
@@ -188,6 +190,26 @@ export const ConfirmationPanel: React.FC<ConfirmationPanelProps> = ({
           </div>
         )}
 
+        {/* Warning if Quote Expired */}
+        {isExpired && !isSimFailed && (
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2 text-amber-300 text-xs">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <strong className="font-bold text-amber-200">Quote Expired:</strong> This quote is no longer valid. Please cancel and fetch a fresh quote to avoid slippage or stale execution parameters.
+            </div>
+          </div>
+        )}
+
+        {/* Warning if Asset Blocked */}
+        {isBlocked && (
+          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 flex items-start gap-2 text-rose-300 text-xs">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <strong className="font-bold text-rose-200">Trade Blocked:</strong> One or both tokens have been flagged as malicious or unverified by institutional risk filters.
+            </div>
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div className="flex items-center gap-3 pt-2">
           <button
@@ -202,9 +224,9 @@ export const ConfirmationPanel: React.FC<ConfirmationPanelProps> = ({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={isBroadcasting || isSimFailed}
+            disabled={isBroadcasting || isSimFailed || isExpired || isBlocked}
             className={`flex-2 py-3 rounded-2xl font-bold text-xs tracking-wide transition-all cursor-pointer flex items-center justify-center gap-2 ${
-              isSimFailed
+              isSimFailed || isExpired || isBlocked
                 ? 'bg-slate-800 text-slate-500 border border-white/5 cursor-not-allowed'
                 : 'bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 text-white shadow-xl shadow-cyan-500/20 hover:opacity-95 hover:shadow-cyan-500/30 active:scale-[0.99]'
             }`}
@@ -214,6 +236,12 @@ export const ConfirmationPanel: React.FC<ConfirmationPanelProps> = ({
                 <span className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                 <span>Broadcasting to Network...</span>
               </>
+            ) : isExpired ? (
+              <span>Quote Expired</span>
+            ) : isBlocked ? (
+              <span>Execution Blocked</span>
+            ) : isSimFailed ? (
+              <span>Simulation Failed</span>
             ) : (
               <>
                 <Lock className="w-3.5 h-3.5" />

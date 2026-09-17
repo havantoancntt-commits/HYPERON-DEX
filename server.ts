@@ -360,7 +360,12 @@ app.get('/api/readiness', async (_req: Request, res: Response) => {
 });
 
 app.get('/api/health', async (_req: Request, res: Response) => {
-  const blockRes = await getLiveBlockNumber('ethereum');
+  const startTime = Date.now();
+  const [blockRes, gasRes] = await Promise.all([
+    getLiveBlockNumber('ethereum'),
+    getLiveGasPrice('ethereum').catch(() => ({ data: null, latencyMs: null })),
+  ]);
+  const measuredLatency = gasRes.latencyMs ?? (Date.now() - startTime);
   const rpcOperational = blockRes.status === 'SUCCESS' && blockRes.data !== null;
   const oracleOperational = Object.keys(priceCache).length > 0;
   const cbTripped = isCircuitBreakerTripped('ETH');
@@ -373,6 +378,8 @@ app.get('/api/health', async (_req: Request, res: Response) => {
     app: 'HYPERON-DEX',
     version: '4.1.0-production-hardened',
     latestBlock: blockRes.data ? Number(blockRes.data) : null,
+    latencyMs: measuredLatency,
+    gasPriceGwei: gasRes.data?.gasPriceGwei ?? null,
     services: {
       tradingEngine: rpcOperational ? 'operational' : 'degraded',
       smartRouter: 'operational (BigInt Constant-Product + Curve Invariant)',
@@ -1048,8 +1055,6 @@ app.post('/api/ai/portfolio-copilot', async (req: Request, res: Response) => {
     const sanitizedMsg = sanitizePromptText(message).toLowerCase();
 
     const balances = portfolioSummary?.balances || {};
-    const totalVal = portfolioSummary?.totalValue || 48500;
-
     const ethBalance = Number(balances.ETH || balances.eth || 0);
     const wbtcBalance = Number(balances.WBTC || balances.wbtc || 0);
     const usdcBalance = Number(balances.USDC || balances.usdc || 0);
@@ -1061,11 +1066,14 @@ app.post('/api/ai/portfolio-copilot', async (req: Request, res: Response) => {
     const ethUsd = ethBalance * ethPrice;
     const wbtcUsd = wbtcBalance * wbtcPrice;
     const stableUsd = usdcBalance + usdtBalance;
-    const computedTotal = Math.max(totalVal, ethUsd + wbtcUsd + stableUsd);
+    const calculatedSum = ethUsd + wbtcUsd + stableUsd;
+    const computedTotal = (portfolioSummary?.totalValue && portfolioSummary.totalValue > 0)
+      ? portfolioSummary.totalValue
+      : calculatedSum;
 
-    const stableRatio = computedTotal > 0 ? Math.round((stableUsd / computedTotal) * 100) : 25;
-    const ethRatio = computedTotal > 0 ? Math.round((ethUsd / computedTotal) * 100) : 45;
-    const wbtcRatio = computedTotal > 0 ? Math.round((wbtcUsd / computedTotal) * 100) : 30;
+    const stableRatio = computedTotal > 0 ? Math.round((stableUsd / computedTotal) * 100) : 0;
+    const ethRatio = computedTotal > 0 ? Math.round((ethUsd / computedTotal) * 100) : 0;
+    const wbtcRatio = computedTotal > 0 ? Math.round((wbtcUsd / computedTotal) * 100) : 0;
 
     // Structured quantitative analysis
     let analysis = '';
@@ -1448,16 +1456,34 @@ app.get('/api/payments/invoices', (req: Request, res: Response) => {
 // -------------------------------------------------------------
 app.get('/api/admin/metrics', async (req: Request, res: Response) => {
   try {
-    const ethBlock = await getLiveBlockNumber('ethereum');
-    const baseBlock = await getLiveBlockNumber('base');
-    const arbBlock = await getLiveBlockNumber('arbitrum');
+    const [ethBlock, baseBlock, arbBlock, optBlock, bscBlock, polyBlock] = await Promise.all([
+      getLiveBlockNumber('ethereum'),
+      getLiveBlockNumber('base'),
+      getLiveBlockNumber('arbitrum'),
+      getLiveBlockNumber('optimism'),
+      getLiveBlockNumber('bsc'),
+      getLiveBlockNumber('polygon'),
+    ]);
+
+    const activeLatencies = [
+      ethBlock.latencyMs,
+      baseBlock.latencyMs,
+      arbBlock.latencyMs,
+      optBlock.latencyMs,
+      bscBlock.latencyMs,
+      polyBlock.latencyMs,
+    ].filter((ms): ms is number => typeof ms === 'number' && ms > 0);
+
+    const avgLatency = activeLatencies.length > 0
+      ? Math.round(activeLatencies.reduce((a, b) => a + b, 0) / activeLatencies.length)
+      : 24;
 
     res.json({
       metrics: {
         uptimePercent: 99.998,
         totalVolume24hUsd: 184500000,
         activeQuotesPerSec: 142,
-        averageQuoteLatencyMs: 24,
+        averageQuoteLatencyMs: avgLatency,
         aiModelQuotaUsage: {
           requests24h: 3840,
           tokenConsumption: '14.2M tokens',
@@ -1467,14 +1493,17 @@ app.get('/api/admin/metrics', async (req: Request, res: Response) => {
           ethereum: ethBlock.data ? Number(ethBlock.data) : null,
           base: baseBlock.data ? Number(baseBlock.data) : null,
           arbitrum: arbBlock.data ? Number(arbBlock.data) : null,
+          optimism: optBlock.data ? Number(optBlock.data) : null,
+          bsc: bscBlock.data ? Number(bscBlock.data) : null,
+          polygon: polyBlock.data ? Number(polyBlock.data) : null,
         },
         rpcNodeLatencies: {
-          ethereum: ethBlock.status === 'SUCCESS' ? `${ethBlock.latencyMs}ms` : 'degraded',
-          base: baseBlock.status === 'SUCCESS' ? `${baseBlock.latencyMs}ms` : 'degraded',
-          arbitrum: arbBlock.status === 'SUCCESS' ? `${arbBlock.latencyMs}ms` : 'degraded',
-          optimism: '12ms',
-          bsc: '24ms',
-          polygon: '16ms',
+          ethereum: ethBlock.status === 'SUCCESS' && ethBlock.latencyMs ? `${ethBlock.latencyMs}ms` : 'degraded',
+          base: baseBlock.status === 'SUCCESS' && baseBlock.latencyMs ? `${baseBlock.latencyMs}ms` : 'degraded',
+          arbitrum: arbBlock.status === 'SUCCESS' && arbBlock.latencyMs ? `${arbBlock.latencyMs}ms` : 'degraded',
+          optimism: optBlock.status === 'SUCCESS' && optBlock.latencyMs ? `${optBlock.latencyMs}ms` : 'degraded',
+          bsc: bscBlock.status === 'SUCCESS' && bscBlock.latencyMs ? `${bscBlock.latencyMs}ms` : 'degraded',
+          polygon: polyBlock.status === 'SUCCESS' && polyBlock.latencyMs ? `${polyBlock.latencyMs}ms` : 'degraded',
         },
         circuitBreakers: {
           globalPause: false,

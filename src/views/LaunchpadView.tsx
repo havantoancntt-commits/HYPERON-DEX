@@ -125,7 +125,7 @@ export const LaunchpadView: React.FC = () => {
         name: `${deployName} (${deploySymbol})`,
         symbol: deploySymbol.toUpperCase(),
         tagline: 'Community Fair Launch Token with AI Automated Rug-Pull Guard',
-        description: 'Decentralized token deployed directly via Hyperon AI Launchpad with 100% LP liquidity locked on Uniswap v3.',
+        description: 'Decentralized token deployed directly via Hyperon AI Launchpad with LP liquidity locked on Uniswap v3.',
         logoUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80',
         category: 'DeFi 3.0',
         securityScore: 99,
@@ -139,14 +139,14 @@ export const LaunchpadView: React.FC = () => {
         startDate: '2026-08-29',
         endDate: '2026-09-08',
         status: 'LIVE',
-        vestingSchedule: '100% Instant Unlocked at TGE',
+        vestingSchedule: 'Instant Unlocked at TGE',
         contractAddress: getContractAddress({
           from: (address && isAddress(address) ? address : '0x71C28B932F99B52EDb3C0257B4393608F79E9E42') as Address,
           nonce: BigInt(Date.now() % 1000000),
         }),
         acceptedToken: 'USDC',
         features: [
-          `100% LP Liquidity Locked for ${deployLockMonths} Months`,
+          `LP Liquidity Locked for ${deployLockMonths} Months`,
           'Zero Mint / Zero Blacklist Authority',
           'AI Formal Verification Passed',
         ],
@@ -185,11 +185,11 @@ export const LaunchpadView: React.FC = () => {
                   AI Launchpad & Token Incubation Portal
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-pink-500/10 text-pink-400 border border-pink-500/20">
-                  100% Anti-Rug Verified
+                  Anti-Rug Guard Verified
                 </span>
               </div>
               <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl">
-                Nền tảng gọi vốn phi tập trung công bằng (Fair Launch) thế hệ mới. Mọi dự án đều được AI quét toàn diện mã nguồn hợp đồng, khóa thanh khoản 100% và cơ chế hoàn tiền tự động nếu không đạt soft cap.
+                Nền tảng gọi vốn phi tập trung công bằng (Fair Launch) thế hệ mới. Mọi dự án đều được AI quét toàn diện mã nguồn hợp đồng, khóa thanh khoản tự động và cơ chế hoàn tiền tự động nếu không đạt soft cap.
               </p>
             </div>
           </div>

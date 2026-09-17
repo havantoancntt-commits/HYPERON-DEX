@@ -43,10 +43,44 @@ import { SettingsView } from './views/SettingsView';
 const MainLayout: React.FC = () => {
   const { activeView, selectedPair } = useExchange();
   const { t, theme } = useI18n();
+  const [telemetry, setTelemetry] = React.useState<{ latencyMs: number | null; gasPriceGwei: number | null; status: string }>({
+    latencyMs: null,
+    gasPriceGwei: null,
+    status: 'ok',
+  });
 
   useEffect(() => {
     soundManager.playTick();
   }, [activeView]);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchHealth = async () => {
+      try {
+        const start = performance.now();
+        const res = await fetch('/api/health');
+        const end = performance.now();
+        if (res.ok && mounted) {
+          const data = await res.json();
+          setTelemetry({
+            latencyMs: data.latencyMs ?? Math.round(end - start),
+            gasPriceGwei: data.gasPriceGwei ?? null,
+            status: data.status || 'ok',
+          });
+        }
+      } catch {
+        if (mounted) {
+          setTelemetry((prev) => ({ ...prev, status: 'degraded' }));
+        }
+      }
+    };
+    fetchHealth();
+    const timer = setInterval(fetchHealth, 15000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   const renderView = () => {
     switch (activeView) {
@@ -145,11 +179,11 @@ const MainLayout: React.FC = () => {
       <footer className="h-8 shrink-0 bg-[#04060C]/90 backdrop-blur-md border-t border-white/[0.06] hidden sm:flex items-center justify-between px-6 text-[10px] text-slate-400 font-mono select-none z-30">
         <div className="flex items-center gap-6">
           <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            {t('app.status.healthy')}
+            <span className={`w-1.5 h-1.5 rounded-full ${telemetry.status === 'ok' ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse`}></span>
+            {telemetry.status === 'ok' ? t('app.status.healthy') : 'DEGRADED'}
           </span>
-          <span className="text-slate-400">LATENCY: <strong className="text-white">12ms</strong></span>
-          <span className="text-slate-400">GAS: <strong className="text-amber-400">14 GWEI</strong></span>
+          <span className="text-slate-400">LATENCY: <strong className="text-white">{telemetry.latencyMs !== null ? `${telemetry.latencyMs}ms` : '--'}</strong></span>
+          <span className="text-slate-400">GAS: <strong className="text-amber-400">{telemetry.gasPriceGwei !== null ? `${telemetry.gasPriceGwei} GWEI` : 'DYNAMIC'}</strong></span>
           <span className="text-slate-400">RPC: <strong className="text-cyan-400">{t('app.rpc.flashbots')}</strong></span>
         </div>
         <div className="flex items-center gap-4 text-slate-400 font-medium">
