@@ -5,6 +5,7 @@ import { useI18n } from '../context/I18nContext';
 import { Token, SwapQuote } from '../types';
 import { formatCurrency, formatCrypto, shortenAddress } from '../lib/utils';
 import { TokenLogo, DexProtocolIcon } from '../components/CryptoIcon';
+import { RouteVisualization } from '../components/common/RouteVisualization';
 import {
   ArrowDownUp,
   ShieldCheck,
@@ -948,6 +949,9 @@ export const SwapView: React.FC = () => {
 
           {activeTab === 'routing' && quote && (
             <div className="p-4 bg-[#080C14] space-y-3 border-t border-white/[0.04]">
+              {/* Institutional Interactive Route Graph */}
+              <RouteVisualization quote={quote} />
+
               {/* Visual Flow Distribution Bar */}
               {quote.routeSplits && quote.routeSplits.length > 1 && (
                 <div className="space-y-1.5">

@@ -7,6 +7,7 @@ import { ChainId } from '../types';
 import { shortenAddress, formatCurrency } from '../lib/utils';
 import { ChainLogo, TokenLogo, Hyperon3DLogo } from './CryptoIcon';
 import { soundManager } from '../lib/sound';
+import { CommandPalette } from './CommandPalette';
 import { 
   ShieldCheck, 
   Fuel, 
@@ -39,7 +40,8 @@ import {
   ShieldAlert,
   ShieldX,
   Eye,
-  Check
+  Check,
+  Layers
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -69,6 +71,7 @@ export const Header: React.FC = () => {
   } = useWallet();
 
   const { 
+    activeView,
     setActiveView, 
     setSelectedToken, 
     liveTokens, 
@@ -83,6 +86,7 @@ export const Header: React.FC = () => {
   const [showChainMenu, setShowChainMenu] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [showThemeMenu, setShowThemeMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [soundActive, setSoundActive] = useState(soundManager.getSoundEnabled());
@@ -240,33 +244,135 @@ export const Header: React.FC = () => {
 
         {/* Right Tools & Navigation Quick Badges */}
         <div className="flex items-center gap-3">
-          {/* Quick Mode Shortcuts */}
-          <div className="hidden xl:flex items-center gap-1 bg-[#0D111A] p-1 rounded-xl border border-white/[0.06] text-xs font-medium">
+          {/* Institutional Primary Desktop Navigation Links */}
+          <div className="hidden xl:flex items-center gap-1 bg-[#090C14] p-1 rounded-2xl border border-white/[0.08] text-xs font-medium shadow-inner">
+            <button
+              onClick={() => setActiveView('trade')}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                activeView === 'trade'
+                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              Trade
+            </button>
             <button
               onClick={() => setActiveView('swap')}
-              className="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                activeView === 'swap'
+                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
+              }`}
             >
               Swap
             </button>
             <button
-              onClick={() => setActiveView('trade')}
-              className="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-            >
-              Trade Pro
-            </button>
-            <button
               onClick={() => setActiveView('markets')}
-              className="px-3 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                activeView === 'markets'
+                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
+              }`}
             >
               Markets
             </button>
             <button
+              onClick={() => setActiveView('portfolio')}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                activeView === 'portfolio'
+                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              Portfolio
+            </button>
+            <button
+              onClick={() => setActiveView('onchain-radar')}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                activeView === 'onchain-radar'
+                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              Analytics
+            </button>
+            <button
+              onClick={() => setActiveView('security-center')}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                activeView === 'security-center'
+                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              Security
+            </button>
+            <button
+              onClick={() => setActiveView('transactions')}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                activeView === 'transactions'
+                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
+                  : 'text-slate-300 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              Activity
+            </button>
+            <button
               onClick={() => setActiveView('ai-intelligence')}
-              className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-500/10 to-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-semibold hover:border-cyan-500/40 transition-colors cursor-pointer flex items-center gap-1.5"
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeView === 'ai-intelligence'
+                  ? 'bg-gradient-to-r from-blue-600/30 via-cyan-500/30 to-indigo-600/30 text-cyan-300 font-bold border border-cyan-400/40'
+                  : 'text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10'
+              }`}
             >
               <Cpu className="w-3.5 h-3.5" />
-              <span>AI Intelligence</span>
+              <span>AI Terminal</span>
             </button>
+
+            {/* Dropdown More */}
+            <div className="relative">
+              <button
+                onClick={() => setShowMoreMenu(!showMoreMenu)}
+                className="px-2.5 py-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all cursor-pointer flex items-center gap-1"
+              >
+                <span>More</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${showMoreMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showMoreMenu && (
+                <div
+                  className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#0B0F19] border border-white/10 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95"
+                  onClick={() => setShowMoreMenu(false)}
+                >
+                  <div className="text-[10px] font-mono uppercase text-slate-400 px-2.5 py-1 font-bold">
+                    HYPERON ECOSYSTEM
+                  </div>
+                  <div className="space-y-0.5 mt-1">
+                    {[
+                      { id: 'perpetuals', label: 'Perpetuals (50x)', icon: TrendingUp },
+                      { id: 'onchain-radar', label: 'Smart Money Radar', icon: Radio },
+                      { id: 'launchpad', label: 'Anti-Rug Launchpad', icon: Zap },
+                      { id: 'lending', label: 'Institutional Lending', icon: Sliders },
+                      { id: 'staking', label: 'DeFi Staking', icon: ShieldCheck },
+                      { id: 'liquidity', label: 'Concentrated Liquidity', icon: Layers },
+                      { id: 'cross-chain', label: 'Cross-Chain Bridge', icon: ArrowRightLeft },
+                      { id: 'developer-api', label: 'Developer API (SDK)', icon: Terminal },
+                      { id: 'admin-console', label: 'Admin Terminal', icon: Sliders },
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => setActiveView(item.id as any)}
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-colors cursor-pointer text-left ${
+                          activeView === item.id ? 'bg-cyan-500/15 text-cyan-300 font-bold' : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                        }`}
+                      >
+                        <item.icon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        <span>{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Sound FX Toggle Button */}
@@ -452,75 +558,11 @@ export const Header: React.FC = () => {
         </div>
       </div>
 
-      {/* Global Quick Search Modal (Cmd+K) */}
-      {showSearchModal && (
-        <div 
-          className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-start justify-center pt-16 sm:pt-20 p-3 sm:p-4 animate-in fade-in duration-150"
-          onClick={() => setShowSearchModal(false)}
-        >
-          <div 
-            className="w-full max-w-xl rounded-3xl bg-[#090C12] border border-cyan-500/30 shadow-2xl p-4 sm:p-6 overflow-hidden max-h-[85vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-3 pb-3 border-b border-white/[0.08]">
-              <Search className="w-4 h-4 text-cyan-400 shrink-0" />
-              <input
-                type="text"
-                autoFocus
-                placeholder="Search token by name, ticker, address or pair..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none font-sans"
-              />
-              <button
-                onClick={() => setShowSearchModal(false)}
-                className="text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded-xl bg-white/[0.06] font-mono cursor-pointer shrink-0"
-              >
-                ESC
-              </button>
-            </div>
-
-            <div className="mt-3 overflow-y-auto space-y-1 pr-1 scrollbar-thin flex-1">
-              <div className="text-[10px] font-mono uppercase text-slate-400 px-2 py-1 font-bold flex items-center justify-between">
-                <span>Verified Cross-Chain Assets</span>
-                <span className="text-cyan-400">INSTANT SWAP / TRADE</span>
-              </div>
-              {filteredTokens.map((token, idx) => (
-                <button
-                  key={`${token.chainId}-${token.address}-${token.symbol}-${idx}`}
-                  onClick={() => {
-                    setSelectedToken(token);
-                    setActiveView('token-details');
-                    setShowSearchModal(false);
-                  }}
-                  className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-white/[0.05] text-left transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center gap-3">
-                    <TokenLogo symbol={token.symbol} name={token.name} src={token.logoUrl} chainId={token.chainId} className="w-7 h-7" />
-                    <div>
-                      <div className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors flex items-center gap-2">
-                        {token.symbol}
-                        <span className="text-[10px] font-normal text-slate-400">{token.name}</span>
-                      </div>
-                      <div className="text-[10px] font-mono text-slate-500">
-                        {shortenAddress(token.address, 6)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right font-mono">
-                    <div className="text-xs font-bold text-white">
-                      {token.priceUsd != null ? `$${token.priceUsd.toLocaleString(undefined, { minimumFractionDigits: token.priceUsd < 10 ? 4 : 2 })}` : '—'}
-                    </div>
-                    <div className={`text-[11px] font-semibold ${(token.change24h ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {token.change24h != null ? `${token.change24h >= 0 ? '+' : ''}${token.change24h.toFixed(2)}%` : ''}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Global Institutional Command Palette (Cmd+K) */}
+      <CommandPalette 
+        isOpen={showSearchModal} 
+        onClose={() => setShowSearchModal(false)} 
+      />
     </header>
   );
 };

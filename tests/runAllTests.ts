@@ -281,6 +281,7 @@ async function runTests() {
 
   // Test 4: No pool liquidity -> NO_LIQUIDITY error
   let noLiqCaught = false;
+  let noLiqError: any = null;
   try {
     await calculateSmartRouteQuote({
       fromTokenSymbol: 'UNI',
@@ -288,11 +289,13 @@ async function runTests() {
       amount: 10,
       slippage: 0.5,
       chainId: 'ethereum',
+      allowMultiHop: false,
     });
   } catch (err: any) {
-    noLiqCaught = err.message.includes('NO_LIQUIDITY');
+    noLiqError = err;
+    noLiqCaught = err?.message?.includes('NO_LIQUIDITY') || err?.code === 'NO_LIQUIDITY';
   }
-  assert(noLiqCaught, 'Test 4: Pair with no discovered pool throws NO_LIQUIDITY error');
+  assert(noLiqCaught, 'Test 4: Pair with no discovered pool throws NO_LIQUIDITY error', noLiqError);
 
   // -------------------------------------------------------------
   // Test 6: Simulation Engine Security & User Address Requirement (P0 Regression Test 8)

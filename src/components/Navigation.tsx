@@ -36,7 +36,9 @@ import {
   Wallet,
   LogOut,
   ArrowRightLeft,
-  ChevronUp
+  ChevronUp,
+  Menu,
+  X
 } from 'lucide-react';
 import { MobileWalletDrawer } from './MobileWalletDrawer';
 
@@ -58,6 +60,7 @@ export const Navigation: React.FC = () => {
   const { t } = useI18n();
   const { isConnected, address, balances, isWatchOnly, disconnectWallet, openConnectModal, openAccountModal } = useWallet();
   const [isMobileWalletDrawerOpen, setIsMobileWalletDrawerOpen] = useState(false);
+  const [isMobileMoreDrawerOpen, setIsMobileMoreDrawerOpen] = useState(false);
   const totalWalletApprox = (balances.ETH || 0) * 3200 + (balances.USDC || 0);
 
   const sections: NavSection[] = [
@@ -271,76 +274,154 @@ export const Navigation: React.FC = () => {
         </div>
       </aside>
 
-      {/* Mobile Bottom Navigation Dock */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#07090E]/95 backdrop-blur-2xl border-t border-white/10 px-3 py-1.5 flex items-center justify-between pb-safe shadow-2xl">
-        {/* Main 4 Navigation Tabs */}
-        {[
-          { id: 'dashboard', label: t('nav.dashboard') || 'Tổng quan', icon: LayoutDashboard },
-          { id: 'swap', label: t('nav.swap') || 'Swap', icon: ArrowLeftRight },
-          { id: 'trade', label: t('nav.trade') || 'Trade', icon: LineChart },
-          { id: 'cross-chain', label: 'Bridge', icon: ArrowDownUp },
-        ].map((item) => {
-          const Icon = item.icon;
-          const isActive = activeView === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveView(item.id as ProductView)}
-              className={`flex flex-col items-center justify-center min-w-[54px] py-1 px-1.5 rounded-xl transition-all cursor-pointer ${
-                isActive
-                  ? 'text-cyan-400 font-bold'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <div className={`relative p-1 rounded-lg transition-colors ${isActive ? 'bg-cyan-500/15' : ''}`}>
-                <Icon className="w-4 h-4" />
-                {isActive && (
-                  <span className="w-1 h-1 rounded-full bg-cyan-400 absolute -bottom-0.5 left-1/2 -translate-x-1/2 shadow-sm shadow-cyan-400" />
-                )}
-              </div>
-              <span className="text-[10px] font-medium tracking-tight mt-0.5">{item.label}</span>
-            </button>
-          );
-        })}
+      {/* Mobile Bottom Navigation Dock (Thumb-Friendly, Fixed Bottom, Non-Obtrusive) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#07090E]/95 backdrop-blur-2xl border-t border-white/10 px-2 py-1 flex items-center justify-around pb-safe shadow-2xl">
+        {/* 1. Markets */}
+        <button
+          onClick={() => setActiveView('markets')}
+          className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all cursor-pointer ${
+            activeView === 'markets' ? 'text-cyan-400 font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <TrendingUp className="w-5 h-5" />
+          <span className="text-[10px] tracking-tight mt-0.5 font-medium">Markets</span>
+        </button>
 
-        {/* Dedicated Web3 Wallet Hub Button (Sole Wallet Control in Red Circle) */}
-        {!isConnected ? (
-          <button
-            onClick={openConnectModal}
-            id="mobile-wallet-hub-btn"
-            className="flex flex-col items-center justify-center min-w-[68px] py-1 px-2.5 rounded-xl bg-gradient-to-b from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-cyan-900/50 border border-cyan-300/40 active:scale-95 transition-all cursor-pointer group shrink-0"
-            title="Kết nối ví Web3 phi tập trung"
-          >
-            <div className="relative flex items-center justify-center">
-              <span className="w-2 h-2 rounded-full bg-cyan-200 absolute -top-0.5 -right-1 animate-ping opacity-80" />
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-300 absolute -top-0.5 -right-1" />
-              <Wallet className="w-4 h-4 text-white group-hover:scale-110 transition-transform" />
-            </div>
-            <span className="text-[10px] font-extrabold tracking-tight mt-0.5 text-cyan-100 whitespace-nowrap">
-              {t('trade.connect_wallet') || 'Kết nối ví'}
-            </span>
-          </button>
-        ) : (
-          <button
-            onClick={() => setIsMobileWalletDrawerOpen(true)}
-            id="mobile-wallet-hub-btn"
-            className="flex flex-col items-center justify-center min-w-[68px] py-1 px-2.5 rounded-xl bg-gradient-to-b from-emerald-950/50 via-[#0C121F] to-[#070A12] hover:bg-emerald-950/70 text-emerald-300 shadow-md shadow-emerald-950/60 border border-emerald-500/50 active:scale-95 transition-all cursor-pointer group shrink-0 font-mono"
-            title="Mở Trung tâm Quản trị & Điều khiển Ví Web3"
-          >
-            <div className="flex items-center gap-1">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
-              </span>
-              <Wallet className="w-3.5 h-3.5 text-emerald-300 group-hover:text-white transition-colors" />
-              <ChevronUp className="w-3 h-3 text-emerald-400/80 group-hover:text-emerald-300 transition-transform group-hover:-translate-y-0.5" />
-            </div>
-            <span className="text-[10px] font-bold text-white tracking-tighter mt-0.5 whitespace-nowrap">
-              {shortenAddress(address, 3)}
-            </span>
-          </button>
-        )}
+        {/* 2. Smart Swap */}
+        <button
+          onClick={() => setActiveView('swap')}
+          className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all cursor-pointer ${
+            activeView === 'swap' ? 'text-cyan-400 font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <ArrowLeftRight className="w-5 h-5" />
+          <span className="text-[10px] tracking-tight mt-0.5 font-medium">Swap</span>
+        </button>
+
+        {/* 3. Trade (Primary Elevated Center Action) */}
+        <button
+          onClick={() => setActiveView('trade')}
+          className={`relative -top-3 flex flex-col items-center justify-center w-13 h-13 rounded-2xl shadow-xl transition-all cursor-pointer ${
+            activeView === 'trade'
+              ? 'bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 text-white shadow-cyan-500/30 scale-105 border border-cyan-300'
+              : 'bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-blue-500/25 hover:scale-105 border border-white/20'
+          }`}
+        >
+          <LineChart className="w-6 h-6" />
+          <span className="text-[9px] font-extrabold tracking-wider uppercase mt-0.5">Trade</span>
+        </button>
+
+        {/* 4. Portfolio */}
+        <button
+          onClick={() => setActiveView('portfolio')}
+          className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all cursor-pointer ${
+            activeView === 'portfolio' ? 'text-cyan-400 font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <PieChart className="w-5 h-5" />
+          <span className="text-[10px] tracking-tight mt-0.5 font-medium">Portfolio</span>
+        </button>
+
+        {/* 5. More (Opens Full Ecosystem Drawer) */}
+        <button
+          onClick={() => setIsMobileMoreDrawerOpen(true)}
+          className={`flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-all cursor-pointer ${
+            isMobileMoreDrawerOpen ? 'text-cyan-400 font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Menu className="w-5 h-5" />
+          <span className="text-[10px] tracking-tight mt-0.5 font-medium">More</span>
+        </button>
       </nav>
+
+      {/* Mobile More Ecosystem Drawer */}
+      {isMobileMoreDrawerOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col justify-end animate-in fade-in"
+          onClick={() => setIsMobileMoreDrawerOpen(false)}
+        >
+          <div
+            className="w-full max-h-[80vh] bg-[#0A0E17] border-t border-white/10 rounded-t-3xl p-5 overflow-y-auto space-y-5 animate-in slide-in-from-bottom duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                  Hyperon Ecosystem
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsMobileMoreDrawerOpen(false)}
+                className="p-1.5 rounded-lg bg-white/5 text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Sections grid */}
+            <div className="space-y-4">
+              {sections.map((sec, sIdx) => (
+                <div key={sIdx} className="space-y-1.5">
+                  <div className="text-[10px] font-mono uppercase text-slate-400 font-bold tracking-wider px-1">
+                    {sec.title}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {sec.items.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = activeView === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            setActiveView(item.id);
+                            setIsMobileMoreDrawerOpen(false);
+                          }}
+                          className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-sans transition-all text-left ${
+                            isActive
+                              ? 'bg-cyan-500/15 border-cyan-500/30 text-white font-bold'
+                              : 'bg-white/[0.03] border-white/[0.06] text-slate-300 hover:text-white hover:bg-white/[0.06]'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4 text-cyan-400 shrink-0" />
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Quick Wallet Action inside Drawer */}
+            <div className="pt-3 border-t border-white/10">
+              {!isConnected ? (
+                <button
+                  onClick={() => {
+                    setIsMobileMoreDrawerOpen(false);
+                    openConnectModal();
+                  }}
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2"
+                >
+                  <Wallet className="w-4 h-4" />
+                  <span>Connect Web3 Wallet</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setIsMobileMoreDrawerOpen(false);
+                    setIsMobileWalletDrawerOpen(true);
+                  }}
+                  className="w-full py-2.5 rounded-2xl bg-[#0D121F] border border-emerald-500/30 text-emerald-300 font-mono text-xs flex items-center justify-center gap-2"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span>Wallet: {shortenAddress(address, 4)}</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Global Mobile Web3 Wallet Hub Drawer (Portal-Mounted) */}
       <MobileWalletDrawer
