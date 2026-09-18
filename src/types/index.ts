@@ -140,6 +140,7 @@ export interface SwapQuote {
   slippageBps: string;
   // Backward-compatible decimal/number representations for existing UI components
   fromAmount: number;
+  toAmount?: number;
   expectedOutput: number;
   minimumReceived: number;
   priceImpactPercent: number;

@@ -62,6 +62,7 @@ import {
 import { runUltraRouterTests } from './UltraRouter.test';
 import { runUniswapV3Suite } from './uniswapV3Verification';
 import { runProductionHardenTests } from './productionHarden.test';
+import { runExecutionHardeningTests } from './executionHardeningSuite';
 
 let totalTests = 0;
 let passedTests = 0;
@@ -1267,6 +1268,14 @@ async function runTests() {
   totalTests += prodRes.total;
   passedTests += prodRes.passed;
   failedTests += prodRes.failed;
+
+  // -------------------------------------------------------------
+  // Test 19: Transaction Execution Pipeline & Hardening Suite
+  // -------------------------------------------------------------
+  const execRes = await runExecutionHardeningTests();
+  totalTests += execRes.total;
+  passedTests += execRes.passed;
+  failedTests += execRes.failed;
 
   // Summary
   console.log('\n======================================================');

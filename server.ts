@@ -29,6 +29,7 @@ import {
 } from './server/services/multiOracleAggregator';
 import { corsSecurityMiddleware } from './server/middleware/corsSecurity';
 import { hyperonCrossChainEngine } from './server/services/crossChainEngine';
+import { TransactionBuilder } from './src/lib/execution/TransactionBuilder';
 
 const app = express();
 const PORT = 3000;
@@ -776,6 +777,62 @@ app.post(['/api/swaps/simulate', '/api/simulate-swap'], async (req: Request, res
         DEX_ERROR_CODES.SIMULATION_FAILED,
         err?.message || 'Transaction simulation failed',
         ERROR_MESSAGES.SIMULATION_FAILED
+      )
+    );
+  }
+});
+
+// -------------------------------------------------------------
+// 5a. Single Source of Truth Transaction Builder API (Phase 2)
+// -------------------------------------------------------------
+app.post(['/api/transactions/build', '/api/build-transaction'], async (req: Request, res: Response) => {
+  try {
+    const { quote, userAddress, recipient, slippagePercent, deadlineSeconds } = req.body;
+    if (!quote || !userAddress) {
+      return res.status(400).json(
+        createDexError(
+          DEX_ERROR_CODES.INVALID_PARAMS,
+          'quote and userAddress are required to build transaction',
+          ERROR_MESSAGES.INVALID_PARAMS
+        )
+      );
+    }
+    const tx = TransactionBuilder.buildSwapTransaction({
+      quote,
+      userAddress,
+      recipient,
+      slippagePercent,
+      deadlineSeconds,
+    });
+    res.json({
+      success: true,
+      transaction: {
+        chainId: tx.chainId,
+        chainSlug: tx.chainSlug,
+        to: tx.to,
+        data: tx.data,
+        value: tx.valueHex,
+        account: tx.account,
+        deadline: tx.deadline.toString(),
+        routeHash: tx.routeHash,
+        amountIn: tx.amountIn.toString(),
+        amountOutMinimum: tx.amountOutMinimum.toString(),
+        recipient: tx.recipient,
+        targetProtocol: tx.targetProtocol,
+        commitmentHash: tx.commitmentHash,
+      },
+    });
+  } catch (err: any) {
+    if (err instanceof DexError) {
+      return res.status(400).json(
+        createDexError(err.code, err.message, ERROR_MESSAGES[err.code] || err.message, err.details)
+      );
+    }
+    res.status(500).json(
+      createDexError(
+        DEX_ERROR_CODES.INTERNAL_ERROR,
+        err?.message || 'Failed to build transaction payload',
+        ERROR_MESSAGES.INTERNAL_ERROR
       )
     );
   }

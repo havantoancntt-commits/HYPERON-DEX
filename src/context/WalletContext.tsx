@@ -791,15 +791,21 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     let txHash = '';
     if (typeof window !== 'undefined' && (window as any).ethereum && walletType !== 'sandbox') {
+      if (!txData.targetAddress || !txData.targetAddress.startsWith('0x') || txData.targetAddress.length !== 42) {
+        throw new Error('INVALID_EXECUTION_TARGET: A verified on-chain router contract address is strictly required.');
+      }
+      if (!txData.calldata || txData.calldata === '0x' || !txData.calldata.startsWith('0x')) {
+        throw new Error('INVALID_EXECUTION_CALLDATA: Strict execution pipeline requires verified non-empty ABI calldata.');
+      }
       try {
         const hash = await (window as any).ethereum.request({
           method: 'eth_sendTransaction',
           params: [
             {
               from: address,
-              to: txData.targetAddress || '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45',
+              to: txData.targetAddress,
               value: txData.valueHex || '0x0',
-              data: txData.calldata || '0x',
+              data: txData.calldata,
             },
           ],
         });
