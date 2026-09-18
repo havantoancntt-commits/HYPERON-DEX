@@ -94,7 +94,7 @@ export const SimulationModal: React.FC = () => {
   };
 
   const simStatus: SimulationStatus = !activeSimulation
-    ? 'PENDING'
+    ? 'SIMULATING'
     : activeSimulation.success && activeSimulation.status !== 'FAILED'
     ? 'PASSED'
     : 'FAILED';
