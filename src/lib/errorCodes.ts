@@ -51,6 +51,9 @@ export const DEX_ERROR_CODES = {
   SSRF_DETECTED: 'SSRF_DETECTED',
   INVALID_PARAMS: 'INVALID_PARAMS',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  UNKNOWN_TRANSACTION_STATE: 'UNKNOWN_TRANSACTION_STATE',
+  SECURITY_VIOLATION: 'SECURITY_VIOLATION',
+  UNSUPPORTED_SPLIT_EXECUTION: 'UNSUPPORTED_SPLIT_EXECUTION',
 } as const;
 
 export type DexErrorCode = (typeof DEX_ERROR_CODES)[keyof typeof DEX_ERROR_CODES];
@@ -139,4 +142,7 @@ export const ERROR_MESSAGES: Record<DexErrorCode, string> = {
   SSRF_DETECTED: 'Security violation: The target destination is restricted or resolved to internal/private infrastructure.',
   INVALID_PARAMS: 'Invalid or missing request parameters.',
   INTERNAL_ERROR: 'An internal error occurred while processing the request.',
+  UNKNOWN_TRANSACTION_STATE: 'Transaction state cannot be confirmed within timeout bounds.',
+  SECURITY_VIOLATION: 'Execution blocked due to payload tampering or security violation.',
+  UNSUPPORTED_SPLIT_EXECUTION: 'Multi-split routes cannot be executed atomically in a single router transaction.',
 };

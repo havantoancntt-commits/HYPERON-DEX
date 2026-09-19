@@ -312,9 +312,174 @@ export async function runExecutionHardeningTests(): Promise<{ passed: number; fa
   });
   assert(/^0x[a-fA-F0-9]{64}$/.test(cCurveHash), 'Curve route hash produces valid 32-byte keccak256');
 
+  // -------------------------------------------------------------
+  // 6. Native Token Output & Gas Delta Verification
+  // -------------------------------------------------------------
+  console.log('\n--- 6. Native Token Output Verification ---');
+  const nativeBefore = 5000000000000000000n; // 5 ETH
+  const nativeMinOut = 1000000000000000000n; // 1 ETH min out
+  const gasUsed = 120000n;
+  const effectiveGasPrice = 20000000000n; // 20 Gwei
+  const gasCost = gasUsed * effectiveGasPrice; // 0.0024 ETH
+  const nativeAfterSufficient = nativeBefore + nativeMinOut - gasCost + 50000000000000000n; // received min + 0.05 ETH, minus gas
+
+  const resNativeSuccess = ReceiptVerifier.verifyReceipt({
+    receipt: {
+      status: 'success',
+      transactionHash: '0x3333333333333333333333333333333333333333333333333333333333333333',
+      to: routerSpender,
+      gasUsed,
+      effectiveGasPrice,
+      logs: [],
+    },
+    expectedRecipient: userAddr,
+    expectedTokenOut: '0x0000000000000000000000000000000000000000' as Address,
+    amountOutMinimum: nativeMinOut,
+    expectedRouter: routerSpender,
+    expectedSender: userAddr,
+    chainId: 1,
+    isNativeOut: true,
+    balanceBefore: nativeBefore,
+    balanceAfter: nativeAfterSufficient,
+  });
+  assert(resNativeSuccess.verified && resNativeSuccess.status === 'SUCCESS', 'Native ETH output verified via balance delta + gas adjustment');
+
+  const nativeAfterBreach = nativeBefore + nativeMinOut - 100000000000000000n; // 0.1 ETH below min out
+  const resNativeBreach = ReceiptVerifier.verifyReceipt({
+    receipt: {
+      status: 'success',
+      transactionHash: '0x3333333333333333333333333333333333333333333333333333333333333333',
+      to: routerSpender,
+      gasUsed,
+      effectiveGasPrice,
+      logs: [],
+    },
+    expectedRecipient: userAddr,
+    expectedTokenOut: '0x0000000000000000000000000000000000000000' as Address,
+    amountOutMinimum: nativeMinOut,
+    expectedRouter: routerSpender,
+    expectedSender: userAddr,
+    chainId: 1,
+    isNativeOut: true,
+    balanceBefore: nativeBefore,
+    balanceAfter: nativeAfterBreach,
+  });
+  assert(!resNativeBreach.verified && resNativeBreach.status === 'VERIFICATION_FAILED', 'Native output below minimum strictly fails closed');
+
+  // -------------------------------------------------------------
+  // 7. Router Target Security & Canonical Allowlist Verification
+  // -------------------------------------------------------------
+  console.log('\n--- 7. Router Target Security & Canonical Allowlist ---');
+  const fakeRouter = '0x1111111111111111111111111111111111111111' as Address;
+  const resRouterMismatch = ReceiptVerifier.verifyReceipt({
+    receipt: {
+      status: 'success',
+      transactionHash: '0x4444444444444444444444444444444444444444444444444444444444444444',
+      to: fakeRouter, // attacker contract
+      gasUsed: 100000n,
+      logs: [],
+    },
+    expectedRecipient: userAddr,
+    expectedTokenOut: sampleQuote.toToken.address as Address,
+    amountOutMinimum: 1000000n,
+    expectedRouter: routerSpender,
+    chainId: 1,
+  });
+  assert(!resRouterMismatch.verified && resRouterMismatch.status === 'ROUTER_MISMATCH', 'Target router mismatch fails closed with ROUTER_MISMATCH');
+
+  // -------------------------------------------------------------
+  // 8. Exact Transaction Payload Equivalence Assertion
+  // -------------------------------------------------------------
+  console.log('\n--- 8. Strict Payload Equivalence Assertion ---');
+  let equivalencePassed = false;
+  try {
+    TransactionBuilder.assertPayloadEquivalence(exactTx, {
+      chainId: exactTx.chainId,
+      to: exactTx.to,
+      data: exactTx.data,
+      value: exactTx.value,
+      amountIn: exactTx.amountIn,
+      amountOutMinimum: exactTx.amountOutMinimum,
+      recipient: exactTx.recipient,
+      routeHash: exactTx.routeHash,
+    });
+    equivalencePassed = true;
+  } catch (err: any) {
+    console.error('Equivalence assertion error:', err?.message);
+    equivalencePassed = false;
+  }
+  assert(equivalencePassed, 'Unmodified payload passes strict equivalence assertion');
+
+  let tamperedCalldataCaught = false;
+  try {
+    TransactionBuilder.assertPayloadEquivalence(exactTx, {
+      chainId: exactTx.chainId,
+      to: exactTx.to,
+      data: '0xdeadbeef' as Hex, // tampered calldata
+      value: exactTx.value,
+    });
+  } catch {
+    tamperedCalldataCaught = true;
+  }
+  assert(tamperedCalldataCaught, 'Tampered calldata is caught and aborted');
+
+  let tamperedToCaught = false;
+  try {
+    TransactionBuilder.assertPayloadEquivalence(exactTx, {
+      chainId: exactTx.chainId,
+      to: fakeRouter, // tampered router address
+      data: exactTx.data,
+      value: exactTx.value,
+    });
+  } catch {
+    tamperedToCaught = true;
+  }
+  assert(tamperedToCaught, 'Tampered target router is caught and aborted');
+
+  // -------------------------------------------------------------
+  // 9. Split Route Rejection & Atomic Execution Invariant
+  // -------------------------------------------------------------
+  console.log('\n--- 9. Split Route Rejection Invariant ---');
+  let splitRouteRejected = false;
+  try {
+    const splitQuote: SwapQuote = {
+      ...sampleQuote,
+      routeSplits: [
+        { dexName: 'Uniswap V3', poolAddress: '0x1', percentage: 60, fromToken: 'WETH', toToken: 'USDC', path: ['0x1', '0x2'], expectedOutput: 1500 },
+        { dexName: 'SushiSwap', poolAddress: '0x2', percentage: 40, fromToken: 'WETH', toToken: 'USDC', path: ['0x1', '0x2'], expectedOutput: 1000 },
+      ],
+    };
+    TransactionBuilder.buildSwapTransaction({
+      quote: splitQuote,
+      userAddress: userAddr,
+    });
+  } catch (err: any) {
+    if (err.code === DEX_ERROR_CODES.UNSUPPORTED_SPLIT_EXECUTION) {
+      splitRouteRejected = true;
+    }
+  }
+  assert(splitRouteRejected, 'Multi-split quote is strictly rejected with UNSUPPORTED_SPLIT_EXECUTION');
+
+  // -------------------------------------------------------------
+  // 10. V3 Multi-Hop Path Encoding
+  // -------------------------------------------------------------
+  console.log('\n--- 10. Uniswap V3 Multi-Hop Path Encoding ---');
+  const tokenA = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' as Address; // WETH
+  const tokenB = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' as Address; // USDC
+  const tokenC = '0xdAC17F958D2ee523a2206206994597C13D831ec7' as Address; // USDT
+  const encodedPath = TransactionBuilder.encodeV3Path([tokenA, tokenB, tokenC], [3000, 500]);
+  assert(encodedPath.startsWith('0x') && encodedPath.length === 2 + (20 + 3 + 20 + 3 + 20) * 2, 'V3 multi-hop path encoded with exact packed byte length');
+
   console.log('======================================================');
   console.log(` EXECUTION PIPELINE TESTS: ${passed}/${passed + failed} PASSED (${failed} FAILED)`);
   console.log('======================================================\n');
 
   return { passed, failed, total: passed + failed };
+}
+
+const isDirectRun = process.argv[1] && (process.argv[1].endsWith('executionHardeningSuite.ts') || process.argv[1].endsWith('executionHardeningSuite.js'));
+if (isDirectRun) {
+  runExecutionHardeningTests().then((res) => {
+    if (res.failed > 0) process.exit(1);
+  });
 }

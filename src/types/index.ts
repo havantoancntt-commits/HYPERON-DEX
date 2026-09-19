@@ -102,6 +102,7 @@ export interface RouteSplit {
   path: string[];
   poolAddress?: string;
   feeTierBps?: number;
+  expectedOutput?: number;
 }
 
 export type QuoteComparisonStatus = 'LIVE_QUOTE' | 'ESTIMATE' | 'STALE' | 'UNAVAILABLE' | 'ERROR';
@@ -233,6 +234,8 @@ export interface TransactionSimulation {
   quoteId?: string;
   amountInRaw?: string;
   minAmountOutRaw?: string;
+  revertReason?: string;
+  exactTx?: any;
 }
 
 export interface OrderBookEntry {
@@ -568,6 +571,8 @@ export interface TransactionHistoryItem {
   targetAddress?: string;
   calldata?: string;
   valueHex?: string;
+  toTokenAddress?: string;
+  minimumReceivedRaw?: string;
 }
 
 export interface AIAgentIntent {

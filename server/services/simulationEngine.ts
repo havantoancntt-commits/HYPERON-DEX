@@ -25,6 +25,7 @@ import { getRouterConfig } from './routerRegistry';
 import { getUsdPrice } from './priceFeed';
 import { safeTruncateAndParseUnits } from './router';
 import { SwapQuote, TransactionSimulation, ChainId, SimulationStatus } from '../../src/types';
+import { TransactionBuilder, ExactTransactionPayload } from '../../src/lib/execution/TransactionBuilder';
 
 export const UNISWAP_V3_ROUTER_ABI = [
   {
@@ -173,6 +174,8 @@ export interface SimulationOptions {
   deadline?: bigint | number;
   fee?: number;
   routerAddress?: Address;
+  slippageTolerance?: number;
+  exactTx?: ExactTransactionPayload;
 }
 
 export function extractFeeTier(quote: SwapQuote, options?: SimulationOptions): number {
@@ -309,51 +312,25 @@ export class SimulationEngine {
       }
     }
 
-    // 3. Construct real calldata for eth_call dynamically
-    let calldata: Hex = '0x';
-    const deadline = options?.deadline
-      ? BigInt(options.deadline)
-      : BigInt(Math.floor(Date.now() / 1000) + 1200);
-
-    try {
-      const tokenInAddr = (isNativeIn ? routerConfig.wrappedNativeAddress : quote.fromToken.address) as Address;
-      const tokenOutAddr = (quote.toToken.symbol === nativeSymbol ? routerConfig.wrappedNativeAddress : quote.toToken.address) as Address;
-
-      if (protocol === 'v2') {
-        if (isNativeIn) {
-          calldata = encodeFunctionData({
-            abi: UNISWAP_V2_ROUTER_ABI,
-            functionName: 'swapExactETHForTokens',
-            args: [amountOutMinRaw, [tokenInAddr, tokenOutAddr], userAddress as Address, deadline],
-          });
-        } else {
-          calldata = encodeFunctionData({
-            abi: UNISWAP_V2_ROUTER_ABI,
-            functionName: 'swapExactTokensForTokens',
-            args: [amountInRaw, amountOutMinRaw, [tokenInAddr, tokenOutAddr], userAddress as Address, deadline],
-          });
-        }
-      } else {
-        calldata = encodeFunctionData({
-          abi: UNISWAP_V3_ROUTER_ABI,
-          functionName: 'exactInputSingle',
-          args: [
-            {
-              tokenIn: tokenInAddr,
-              tokenOut: tokenOutAddr,
-              fee,
-              recipient: userAddress as Address,
-              deadline,
-              amountIn: amountInRaw,
-              amountOutMinimum: amountOutMinRaw,
-              sqrtPriceLimitX96: 0n,
-            },
-          ],
-        });
-      }
-    } catch {
-      calldata = '0x';
+    // 3. Build or use ExactTransactionPayload (Single Source of Truth)
+    let exactTx: ExactTransactionPayload;
+    if (options?.exactTx) {
+      exactTx = options.exactTx;
+    } else {
+      const deadlineSec = options?.deadline
+        ? Math.max(60, Number(options.deadline) - Math.floor(Date.now() / 1000))
+        : 1200;
+      exactTx = TransactionBuilder.buildSwapTransaction({
+        quote,
+        userAddress: userAddress as Address,
+        deadlineSeconds: deadlineSec,
+        slippagePercent: options?.slippageTolerance || quote.slippagePercent,
+        targetRouterOverride: routerSpender,
+      });
     }
+
+    const calldata = exactTx.data;
+    const deadline = exactTx.deadline;
 
     // 4. Perform actual eth_call on RPC node
     let ethCallSuccess = false;
@@ -370,7 +347,7 @@ export class SimulationEngine {
 
     if (!isAllowanceApproved && !isNativeIn) {
       warnings.push(
-        `Token Approval Required: Router (${routerSpender.substring(0, 8)}...) has ${allowanceFormatted} allowance for ${quote.fromToken.symbol}.`
+        `Token Approval Required: Router (${exactTx.to.substring(0, 8)}...) has ${allowanceFormatted} allowance for ${quote.fromToken.symbol}.`
       );
     }
 
@@ -396,12 +373,12 @@ export class SimulationEngine {
         }
       };
 
-      // Execute eth_call with sender and calldata
+      // Execute exact eth_call with sender, calldata, and value
       const callResult = await withTimeout(client.call({
-        account: userAddress as Address,
-        to: routerSpender,
-        data: calldata,
-        value: isNativeIn ? amountInRaw : 0n,
+        account: exactTx.from || (userAddress as Address),
+        to: exactTx.to,
+        data: exactTx.data,
+        value: exactTx.value,
       }));
 
       // If call didn't throw and returned data
@@ -434,10 +411,10 @@ export class SimulationEngine {
     if (hasSufficientBalance && isAllowanceApproved) {
       try {
         const estGas = await client.estimateGas({
-          account: userAddress as Address,
-          to: routerSpender,
-          data: calldata,
-          value: isNativeIn ? amountInRaw : 0n,
+          account: exactTx.from || (userAddress as Address),
+          to: exactTx.to,
+          data: exactTx.data,
+          value: exactTx.value,
         });
         // Apply 20% safety buffer for AMM tick traversal / dynamic state drift
         const bufferedGas = (estGas * 120n) / 100n;
@@ -471,7 +448,7 @@ export class SimulationEngine {
 
     const simulationLogs = [
       `[SIMULATION] Network: ${verifiedChain.toUpperCase()} (Block #${currentBlock})`,
-      `[ROUTER] Target Contract: ${routerSpender} (${protocol.toUpperCase()})`,
+      `[ROUTER] Target Contract: ${exactTx.to} (${protocol.toUpperCase()})`,
       `[ACCOUNT] Sender: ${userAddress}`,
       `[FEE TIER] ${fee} (${(fee / 10000).toFixed(2)}%)`,
       `[DEADLINE] Epoch: ${deadline.toString()}`,
@@ -489,7 +466,7 @@ export class SimulationEngine {
       intentId: `INTENT-${Date.now()}`,
       correlationId: `CORR-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
       fromAddress: userAddress,
-      toAddress: routerSpender,
+      toAddress: exactTx.to,
       gasEstimated,
       gasEstimatedUnits: gasEstimated,
       gasEstimationSource,
@@ -505,12 +482,14 @@ export class SimulationEngine {
       warnings,
       simulationLogs,
       blockNumberSimulated: currentBlock,
-      calldata,
-      valueHex: isNativeIn ? `0x${amountInRaw.toString(16)}` : '0x0',
-      routerAddress: routerSpender,
+      calldata: exactTx.data,
+      valueHex: exactTx.valueHex,
+      routerAddress: exactTx.to,
       quoteId: quote.quoteId,
-      amountInRaw: amountInRaw.toString(),
-      minAmountOutRaw: amountOutMinRaw.toString(),
+      amountInRaw: exactTx.amountInRaw.toString(),
+      minAmountOutRaw: exactTx.amountOutMinimumRaw.toString(),
+      revertReason,
+      exactTx,
     };
   }
 }

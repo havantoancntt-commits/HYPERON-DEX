@@ -21,7 +21,7 @@ import {
   formatUnits,
 } from 'viem';
 import { SwapQuote, ChainId } from '../../types';
-import { getRouterConfig } from '../../../server/services/routerRegistry';
+import { getRouterConfig, isVerifiedRouter } from '../../../server/services/routerRegistry';
 import { computeSingleRouteHash, computeMultiHopRouteHash, computeRelayRouteHash, computeCurveRouteHash } from '../router';
 import { DEX_ERROR_CODES, DexError } from '../errorCodes';
 
@@ -170,22 +170,31 @@ export const HYPERON_ROUTER_ABI = [
 export interface ExactTransactionPayload {
   chainId: number;
   chainSlug: string;
+  from: Address;
   to: Address;
   data: Hex;
   value: bigint;
   valueHex: Hex;
-  account: Address;
+  account: Address; // Canonical sender alias
+  tokenIn: Address;
+  tokenOut: Address;
+  amountIn: bigint;
+  amountInRaw: bigint;
+  amountOutMinimum: bigint;
+  amountOutMinimumRaw: bigint;
+  recipient: Address;
+  deadline: bigint;
+  routeHash: Hex;
+  quoteHash: Hex;
+  targetProtocol: 'v3' | 'v2' | 'hyperon' | 'approval';
+  router: Address;
+  commitmentHash: Hex;
+  isNativeIn: boolean;
+  isNativeOut: boolean;
   gas?: bigint;
   maxFeePerGas?: bigint;
   maxPriorityFeePerGas?: bigint;
   nonce?: bigint;
-  deadline: bigint;
-  routeHash: Hex;
-  amountIn: bigint;
-  amountOutMinimum: bigint;
-  recipient: Address;
-  targetProtocol: 'v3' | 'v2' | 'hyperon' | 'approval';
-  commitmentHash: Hex;
 }
 
 export interface BuildSwapTxOptions {
@@ -203,6 +212,8 @@ export interface BuildApprovalTxOptions {
   owner: Address;
   spender: Address;
   amountIn: bigint;
+  chainId?: number | string;
+  chainSlug?: string;
   currentAllowance?: bigint;
   resetFirst?: boolean;
 }
@@ -276,6 +287,68 @@ export class TransactionBuilder {
   }
 
   /**
+   * Helper to encode a Uniswap V3 multi-hop path: [tokenA, fee1, tokenB, fee2, tokenC...]
+   */
+  static encodeV3Path(tokens: Address[], fees: number[]): Hex {
+    if (tokens.length < 2 || fees.length !== tokens.length - 1) {
+      throw new DexError(DEX_ERROR_CODES.INVALID_PARAMS, 'Invalid tokens and fees count for V3 path encoding.');
+    }
+    const types: string[] = ['address'];
+    const values: (string | number)[] = [tokens[0]];
+    for (let i = 0; i < fees.length; i++) {
+      types.push('uint24');
+      values.push(fees[i]);
+      types.push('address');
+      values.push(tokens[i + 1]);
+    }
+    return encodePacked(types, values);
+  }
+
+  /**
+   * Asserts strict byte-for-byte and parameter equivalence between simulated and signed transaction payloads.
+   * Fails closed if any unauthorized mutation is detected.
+   */
+  static assertPayloadEquivalence(
+    simulated: ExactTransactionPayload,
+    signed: {
+      chainId: number;
+      to: Address;
+      data: Hex;
+      value: bigint | Hex;
+      amountIn?: bigint;
+      amountOutMinimum?: bigint;
+      recipient?: Address;
+      routeHash?: Hex;
+    }
+  ): void {
+    const signedValue = typeof signed.value === 'string' ? BigInt(signed.value) : signed.value;
+    if (simulated.chainId !== signed.chainId) {
+      throw new DexError(DEX_ERROR_CODES.CHAIN_MISMATCH, `Chain mismatch: simulated ${simulated.chainId}, signed ${signed.chainId}`);
+    }
+    if (simulated.to.toLowerCase() !== signed.to.toLowerCase()) {
+      throw new DexError(DEX_ERROR_CODES.ROUTER_UNAVAILABLE, `Target contract mismatch: simulated ${simulated.to}, signed ${signed.to}`);
+    }
+    if (simulated.data.toLowerCase() !== signed.data.toLowerCase()) {
+      throw new DexError(DEX_ERROR_CODES.SECURITY_VIOLATION, 'Calldata mismatch between simulation and transaction payload');
+    }
+    if (simulated.value !== signedValue) {
+      throw new DexError(DEX_ERROR_CODES.SECURITY_VIOLATION, `Value mismatch: simulated ${simulated.value}, signed ${signedValue}`);
+    }
+    if (signed.amountIn !== undefined && simulated.amountIn !== signed.amountIn) {
+      throw new DexError(DEX_ERROR_CODES.SECURITY_VIOLATION, `AmountIn mismatch: simulated ${simulated.amountIn}, signed ${signed.amountIn}`);
+    }
+    if (signed.amountOutMinimum !== undefined && simulated.amountOutMinimum !== signed.amountOutMinimum) {
+      throw new DexError(DEX_ERROR_CODES.SECURITY_VIOLATION, `AmountOutMinimum mismatch: simulated ${simulated.amountOutMinimum}, signed ${signed.amountOutMinimum}`);
+    }
+    if (signed.recipient !== undefined && simulated.recipient.toLowerCase() !== signed.recipient.toLowerCase()) {
+      throw new DexError(DEX_ERROR_CODES.SECURITY_VIOLATION, `Recipient mismatch: simulated ${simulated.recipient}, signed ${signed.recipient}`);
+    }
+    if (signed.routeHash !== undefined && simulated.routeHash.toLowerCase() !== signed.routeHash.toLowerCase()) {
+      throw new DexError(DEX_ERROR_CODES.SECURITY_VIOLATION, `RouteHash mismatch: simulated ${simulated.routeHash}, signed ${signed.routeHash}`);
+    }
+  }
+
+  /**
    * Builds an exact ERC-20 approval transaction.
    * If resetFirst is true (required by USDT when currentAllowance > 0 and allowance < amountIn),
    * provides the reset transaction (value = 0).
@@ -284,7 +357,7 @@ export class TransactionBuilder {
     resetTx?: ExactTransactionPayload;
     approveTx: ExactTransactionPayload;
   } {
-    const { tokenAddress, owner, spender, amountIn, currentAllowance = 0n, resetFirst = false } = options;
+    const { tokenAddress, owner, spender, amountIn, currentAllowance = 0n, resetFirst = false, chainId = 1, chainSlug = 'ethereum' } = options;
 
     if (!isAddress(tokenAddress) || !isAddress(owner) || !isAddress(spender)) {
       throw new DexError(
@@ -292,6 +365,9 @@ export class TransactionBuilder {
         'Invalid address parameters for token approval transaction.'
       );
     }
+
+    const numChainId = typeof chainId === 'number' ? chainId : 1;
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
 
     let resetTx: ExactTransactionPayload | undefined;
     if (resetFirst && currentAllowance > 0n && currentAllowance < amountIn) {
@@ -301,20 +377,29 @@ export class TransactionBuilder {
         args: [spender, 0n],
       });
       resetTx = {
-        chainId: 1, // Will be overridden with target chain
-        chainSlug: 'ethereum',
+        chainId: numChainId,
+        chainSlug,
+        from: owner,
         to: tokenAddress,
         data: resetCalldata,
         value: 0n,
         valueHex: '0x0',
         account: owner,
-        deadline: BigInt(Math.floor(Date.now() / 1000) + 1200),
+        tokenIn: tokenAddress,
+        tokenOut: tokenAddress,
+        deadline,
         routeHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+        quoteHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
         amountIn: 0n,
+        amountInRaw: 0n,
         amountOutMinimum: 0n,
+        amountOutMinimumRaw: 0n,
         recipient: spender,
         targetProtocol: 'approval',
+        router: spender,
         commitmentHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+        isNativeIn: false,
+        isNativeOut: false,
       };
     }
 
@@ -325,20 +410,29 @@ export class TransactionBuilder {
     });
 
     const approveTx: ExactTransactionPayload = {
-      chainId: 1,
-      chainSlug: 'ethereum',
+      chainId: numChainId,
+      chainSlug,
+      from: owner,
       to: tokenAddress,
       data: approveCalldata,
       value: 0n,
       valueHex: '0x0',
       account: owner,
-      deadline: BigInt(Math.floor(Date.now() / 1000) + 1200),
+      tokenIn: tokenAddress,
+      tokenOut: tokenAddress,
+      deadline,
       routeHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+      quoteHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
       amountIn,
+      amountInRaw: amountIn,
       amountOutMinimum: 0n,
+      amountOutMinimumRaw: 0n,
       recipient: spender,
       targetProtocol: 'approval',
+      router: spender,
       commitmentHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+      isNativeIn: false,
+      isNativeOut: false,
     };
 
     return { resetTx, approveTx };
@@ -357,6 +451,14 @@ export class TransactionBuilder {
       throw new DexError(
         DEX_ERROR_CODES.INVALID_PARAMS,
         'userAddress and recipient must be valid EVM addresses.'
+      );
+    }
+
+    // Split routing invariant check: If multi-split quote cannot be executed atomically, reject
+    if (quote.routeSplits && quote.routeSplits.length > 1) {
+      throw new DexError(
+        DEX_ERROR_CODES.UNSUPPORTED_SPLIT_EXECUTION,
+        'Multi-split route is informational only. Atomic on-chain execution requires a single verified route.'
       );
     }
 
@@ -422,29 +524,59 @@ export class TransactionBuilder {
       }
     }
 
-    if (!routerTarget || !isAddress(routerTarget)) {
+    // Strict validation of router target against canonical registry
+    if (options.targetRouterOverride && !isVerifiedRouter(chainNumericId, options.targetRouterOverride)) {
+      throw new DexError(
+        DEX_ERROR_CODES.ROUTER_UNAVAILABLE,
+        `Target router override ${options.targetRouterOverride} is not in the verified canonical router registry for chain ${chainSlug}.`
+      );
+    }
+
+    if (!routerTarget || !isAddress(routerTarget) || !isVerifiedRouter(chainNumericId, routerTarget)) {
       throw new DexError(
         DEX_ERROR_CODES.ROUTER_UNAVAILABLE,
         `No verified router found for chain ${chainSlug} and protocol ${targetProtocol}.`
       );
     }
 
+    // Multi-hop intermediate tokens if available
+    const intermediateTokens: Address[] = ((quote as any).intermediateTokens || (quote as any).path || [])
+      .filter((a: string) => isAddress(a) && a.toLowerCase() !== tokenInAddr.toLowerCase() && a.toLowerCase() !== tokenOutAddr.toLowerCase());
+
     // Compute routeHash
-    const routeHash = computeSingleRouteHash({
-      chainId: BigInt(chainNumericId),
-      routerAddress: routerTarget,
-      tokenIn: tokenInAddr,
-      tokenOut: tokenOutAddr,
-      feeTier,
-      amountIn: amountInRaw,
-      amountOutMinimum: amountOutMinRaw,
-      recipient,
-      deadline,
-    });
+    let routeHash: Hex;
+    if (intermediateTokens.length > 0) {
+      const fullPath = [tokenInAddr, ...intermediateTokens, tokenOutAddr];
+      const feeTiers = fullPath.slice(0, -1).map(() => feeTier);
+      const encodedV3Path = TransactionBuilder.encodeV3Path(fullPath, feeTiers);
+      routeHash = computeMultiHopRouteHash({
+        chainId: BigInt(chainNumericId),
+        routerAddress: routerTarget,
+        tokenIn: tokenInAddr,
+        tokenOut: tokenOutAddr,
+        path: encodedV3Path,
+        amountIn: amountInRaw,
+        amountOutMinimum: amountOutMinRaw,
+        recipient,
+        deadline,
+      });
+    } else {
+      routeHash = computeSingleRouteHash({
+        chainId: BigInt(chainNumericId),
+        routerAddress: routerTarget,
+        tokenIn: tokenInAddr,
+        tokenOut: tokenOutAddr,
+        feeTier,
+        amountIn: amountInRaw,
+        amountOutMinimum: amountOutMinRaw,
+        recipient,
+        deadline,
+      });
+    }
 
     // Encode exact calldata
     if (targetProtocol === 'v2') {
-      const path = [tokenInAddr, tokenOutAddr];
+      const path = [tokenInAddr, ...intermediateTokens, tokenOutAddr];
       if (isNativeIn) {
         calldata = encodeFunctionData({
           abi: UNISWAP_V2_ROUTER_ABI,
@@ -465,22 +597,41 @@ export class TransactionBuilder {
         });
       }
     } else {
-      calldata = encodeFunctionData({
-        abi: UNISWAP_V3_ROUTER_ABI,
-        functionName: 'exactInputSingle',
-        args: [
-          {
-            tokenIn: tokenInAddr,
-            tokenOut: tokenOutAddr,
-            fee: feeTier,
-            recipient,
-            deadline,
-            amountIn: amountInRaw,
-            amountOutMinimum: amountOutMinRaw,
-            sqrtPriceLimitX96: 0n,
-          },
-        ],
-      });
+      if (intermediateTokens.length > 0) {
+        const fullTokens = [tokenInAddr, ...intermediateTokens, tokenOutAddr];
+        const fees = fullTokens.slice(0, -1).map(() => feeTier);
+        const encodedPath = this.encodeV3Path(fullTokens, fees);
+        calldata = encodeFunctionData({
+          abi: UNISWAP_V3_ROUTER_ABI,
+          functionName: 'exactInput',
+          args: [
+            {
+              path: encodedPath,
+              recipient,
+              deadline,
+              amountIn: amountInRaw,
+              amountOutMinimum: amountOutMinRaw,
+            },
+          ],
+        });
+      } else {
+        calldata = encodeFunctionData({
+          abi: UNISWAP_V3_ROUTER_ABI,
+          functionName: 'exactInputSingle',
+          args: [
+            {
+              tokenIn: tokenInAddr,
+              tokenOut: tokenOutAddr,
+              fee: feeTier,
+              recipient,
+              deadline,
+              amountIn: amountInRaw,
+              amountOutMinimum: amountOutMinRaw,
+              sqrtPriceLimitX96: 0n,
+            },
+          ],
+        });
+      }
     }
 
     const value = isNativeIn ? amountInRaw : 0n;
@@ -499,18 +650,27 @@ export class TransactionBuilder {
     return {
       chainId: chainNumericId,
       chainSlug,
+      from: userAddress,
       to: routerTarget,
       data: calldata,
       value,
       valueHex,
       account: userAddress,
+      tokenIn: tokenInAddr,
+      tokenOut: tokenOutAddr,
+      amountIn: amountInRaw,
+      amountInRaw,
+      amountOutMinimum: amountOutMinRaw,
+      amountOutMinimumRaw: amountOutMinRaw,
+      recipient,
       deadline,
       routeHash,
-      amountIn: amountInRaw,
-      amountOutMinimum: amountOutMinRaw,
-      recipient,
+      quoteHash: (quote.quoteHash || ('0x' + '0'.repeat(64))) as Hex,
       targetProtocol,
+      router: routerTarget,
       commitmentHash,
+      isNativeIn,
+      isNativeOut,
     };
   }
 }

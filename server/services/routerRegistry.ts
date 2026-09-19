@@ -99,14 +99,57 @@ export const ROUTER_REGISTRY: Record<ChainId, ChainRouterConfig> = {
   },
 };
 
-export function getRouterConfig(chainId: string): ChainRouterConfig {
-  if (!chainId || typeof chainId !== 'string' || chainId.trim().length === 0) {
+export function getRouterConfig(chainId: string | number): ChainRouterConfig {
+  if (chainId === undefined || chainId === null) {
     throw new Error('INVALID_CHAIN: Chain ID is required and cannot be empty.');
   }
-  const normalized = chainId.trim().toLowerCase() as ChainId;
-  const config = ROUTER_REGISTRY[normalized];
-  if (!config) {
+  let normalized: ChainId | undefined;
+  if (typeof chainId === 'number') {
+    if (chainId === 1) normalized = 'ethereum';
+    else if (chainId === 8453) normalized = 'base';
+    else if (chainId === 42161) normalized = 'arbitrum';
+    else if (chainId === 10) normalized = 'optimism';
+    else if (chainId === 56) normalized = 'bsc';
+    else if (chainId === 137) normalized = 'polygon';
+  } else if (typeof chainId === 'string') {
+    const s = chainId.trim().toLowerCase();
+    if (s === '1' || s === 'ethereum') normalized = 'ethereum';
+    else if (s === '8453' || s === 'base') normalized = 'base';
+    else if (s === '42161' || s === 'arbitrum') normalized = 'arbitrum';
+    else if (s === '10' || s === 'optimism') normalized = 'optimism';
+    else if (s === '56' || s === 'bsc') normalized = 'bsc';
+    else if (s === '137' || s === 'polygon') normalized = 'polygon';
+  }
+
+  if (!normalized || !ROUTER_REGISTRY[normalized]) {
     throw new Error(`INVALID_CHAIN: Unsupported chain: ${chainId}. Valid chains are: ${Object.keys(ROUTER_REGISTRY).join(', ')}`);
   }
-  return config;
+  return ROUTER_REGISTRY[normalized];
+}
+
+/**
+ * Returns all verified router addresses for the given chain.
+ */
+export function getAllowedRouters(chainId: string | number): Address[] {
+  const config = getRouterConfig(chainId);
+  const routers: Address[] = [];
+  if (config.uniswapV2Router) routers.push(config.uniswapV2Router.toLowerCase() as Address);
+  if (config.uniswapV3Router) routers.push(config.uniswapV3Router.toLowerCase() as Address);
+  if (config.universalRouter) routers.push(config.universalRouter.toLowerCase() as Address);
+  if (config.balancerVault) routers.push(config.balancerVault.toLowerCase() as Address);
+  return routers;
+}
+
+/**
+ * Verifies whether a router address is registered and authentic for the chain.
+ * Rejects arbitrary or spoofed router addresses.
+ */
+export function isVerifiedRouter(chainId: string | number, router: Address | string): boolean {
+  if (!router || typeof router !== 'string') return false;
+  try {
+    const allowed = getAllowedRouters(chainId);
+    return allowed.includes(router.toLowerCase() as Address);
+  } catch {
+    return false;
+  }
 }

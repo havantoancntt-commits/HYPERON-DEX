@@ -255,6 +255,7 @@ const SimulateSchema = z.object({
   quote: SwapQuoteSchema,
   userAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
   chainId: z.string().optional(),
+  exactTx: z.any().optional(),
 });
 
 const SimulationOutputSchema = z.object({
@@ -278,6 +279,17 @@ const SimulationOutputSchema = z.object({
   warnings: z.array(z.string()),
   simulationLogs: z.array(z.string()),
   blockNumberSimulated: z.number(),
+  calldata: z.string().optional(),
+  valueHex: z.string().optional(),
+  routerAddress: z.string().optional(),
+  quoteId: z.string().optional(),
+  amountInRaw: z.string().optional(),
+  minAmountOutRaw: z.string().optional(),
+  gasPriceWei: z.string().optional(),
+  gasCostWei: z.string().optional(),
+  gasUnits: z.string().optional(),
+  revertReason: z.string().optional(),
+  exactTx: z.any().optional(),
 });
 
 function sanitizePromptText(text: string, maxLen = 1000): string {
@@ -756,7 +768,9 @@ app.post(['/api/swaps/simulate', '/api/simulate-swap'], async (req: Request, res
       );
     }
 
-    const simulation = await simulateSwapTransaction(quote as any, userAddress, targetChain);
+    const simulation = await simulateSwapTransaction(quote as any, userAddress, targetChain, {
+      exactTx: parsed.data.exactTx,
+    });
     // Apply strict schema validation to prevent internal simulation data leakage
     const validatedSimulation = SimulationOutputSchema.parse(simulation);
     res.json({ simulation: validatedSimulation });

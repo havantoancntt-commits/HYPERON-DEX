@@ -3,6 +3,7 @@ import { createPublicClient, http, formatEther, Address } from 'viem';
 import { mainnet, base, arbitrum, optimism, bsc, polygon } from 'viem/chains';
 import { ChainId, TransactionHistoryItem } from '../types';
 import { SUPPORTED_CHAINS } from '../lib/constants';
+import { ReceiptVerifier } from '../lib/execution/ReceiptVerifier';
 
 export type SupportedWalletType =
   | 'metamask'
@@ -903,20 +904,43 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 params: [txHash],
               });
               if (receipt) {
-                const isSuccess = receipt.status === '0x1' || receipt.status === 1;
+                const isStatusSuccess = receipt.status === '0x1' || receipt.status === 1;
+                let isFullyVerified = isStatusSuccess;
+
+                if (isStatusSuccess && txData.targetAddress) {
+                  try {
+                    const verification = ReceiptVerifier.verifyReceipt({
+                      receipt,
+                      expectedRecipient: (address || '') as Address,
+                      expectedTokenOut: (txData.toTokenAddress || '0x0000000000000000000000000000000000000000') as Address,
+                      amountOutMinimum: txData.minimumReceivedRaw ? BigInt(txData.minimumReceivedRaw) : 0n,
+                      expectedRouter: txData.targetAddress as Address,
+                      expectedSender: (address || '') as Address,
+                      chainId: txData.chainId,
+                    });
+                    if (!verification.verified) {
+                      isFullyVerified = false;
+                      console.warn('ReceiptVerifier warning: swap receipt failed verification criteria:', verification.reason);
+                    }
+                  } catch (vErr) {
+                    console.warn('Receipt verification exception:', vErr);
+                    isFullyVerified = false;
+                  }
+                }
+
                 const minedBlock = receipt.blockNumber ? parseInt(receipt.blockNumber, 16) : currentBlock;
                 setTransactions((prev) =>
                   prev.map((item) =>
                     item.txHash === txHash
                       ? {
                           ...item,
-                          status: isSuccess ? 'confirmed' : 'failed',
+                          status: isFullyVerified ? 'confirmed' : 'failed',
                           blockNumber: minedBlock > 0 ? minedBlock : item.blockNumber,
                         }
                       : item
                   )
                 );
-                if (isSuccess) {
+                if (isFullyVerified) {
                   await refreshBalances();
                 }
                 break;

@@ -1,14 +1,14 @@
 /**
  * HYPERON-DEX HARDENED TRADE EXECUTION PIPELINE
  *
- * Implements the Full 17-State Execution Machine (Phase 25):
- * IDLE -> FETCHING_QUOTE -> QUOTE_READY -> BUILDING_TRANSACTION -> SIMULATING -> SIMULATION_PASSED
+ * Implements the Full 17-State Execution Machine:
+ * IDLE -> FETCHING_QUOTE -> QUOTE_READY
  * -> CHECKING_ALLOWANCE -> APPROVAL_REQUIRED -> APPROVING -> APPROVAL_CONFIRMED
+ * -> BUILDING_TRANSACTION -> SIMULATING -> SIMULATION_PASSED
  * -> REVALIDATING_QUOTE -> SIGNING -> BROADCASTING -> PENDING -> CONFIRMING -> VERIFYING -> SUCCESS
  *
- * With Full Failure Handling:
- * QUOTE_FAILED, SIMULATION_FAILED, APPROVAL_FAILED, SIGNATURE_REJECTED,
- * BROADCAST_FAILED, TRANSACTION_REVERTED, VERIFICATION_FAILED, EXPIRED, UNKNOWN_TRANSACTION_STATE.
+ * Pipeline sequence:
+ * QUOTE → VALIDATE → APPROVAL → BUILD EXACT TX → SIMULATE EXACT TX → SIGN → BROADCAST → RECEIPT → VERIFY → SUCCESS
  *
  * Zero False Success:
  * Only REAL QUOTE + EXACT TRANSACTION + SUCCESSFUL SIMULATION + VALID APPROVAL
@@ -19,7 +19,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { Address, Hex, encodeFunctionData, parseUnits, formatUnits } from 'viem';
 import { SwapQuote, TransactionSimulation } from '../types';
-import { TransactionBuilder, ERC20_ABI } from '../lib/execution/TransactionBuilder';
+import { TransactionBuilder, ExactTransactionPayload, ERC20_ABI } from '../lib/execution/TransactionBuilder';
 import { ReceiptVerifier } from '../lib/execution/ReceiptVerifier';
 import { DEX_ERROR_CODES, DexError } from '../lib/errorCodes';
 
@@ -27,13 +27,13 @@ export type ExecutionState =
   | 'IDLE'
   | 'FETCHING_QUOTE'
   | 'QUOTE_READY'
-  | 'BUILDING_TRANSACTION'
-  | 'SIMULATING'
-  | 'SIMULATION_PASSED'
   | 'CHECKING_ALLOWANCE'
   | 'APPROVAL_REQUIRED'
   | 'APPROVING'
   | 'APPROVAL_CONFIRMED'
+  | 'BUILDING_TRANSACTION'
+  | 'SIMULATING'
+  | 'SIMULATION_PASSED'
   | 'REVALIDATING_QUOTE'
   | 'SIGNING'
   | 'BROADCASTING'
@@ -74,14 +74,14 @@ export interface UseHyperonTradeReturn {
   progress: TradeProgress;
   isBusy: boolean;
   fetchQuote: (fromSymbol: string, toSymbol: string, amount: string, chainId: number) => Promise<SwapQuote | null>;
-  simulateTrade: (quote: SwapQuote, userAddress: string) => Promise<TransactionSimulation | null>;
+  simulateTrade: (quote: SwapQuote, userAddress: string, exactTx?: ExactTransactionPayload) => Promise<TransactionSimulation | null>;
   executeTradeLifecycle: (quote: SwapQuote, userAddress: string) => Promise<boolean>;
   retry: () => void;
   reset: () => void;
 }
 
 export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHyperonTradeReturn {
-  const { maxRetries = 2, initialBackoffMs = 500, onSuccess, onError } = options;
+  const { onSuccess, onError } = options;
 
   const [progress, setProgress] = useState<TradeProgress>({
     step: 'IDLE',
@@ -100,7 +100,7 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
   const pollForReceipt = async (
     provider: any,
     txHash: string,
-    timeoutMs = 60000,
+    timeoutMs = 90000,
     intervalMs = 2000
   ): Promise<any> => {
     const startTime = Date.now();
@@ -114,11 +114,14 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
           return receipt;
         }
       } catch {
-        // Network lag, continue polling
+        // Network latency, continue polling
       }
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
-    throw new Error(`Receipt polling timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+    throw new DexError(
+      DEX_ERROR_CODES.UNKNOWN_TRANSACTION_STATE,
+      `Receipt polling timed out after ${Math.round(timeoutMs / 1000)} seconds for tx ${txHash}.`
+    );
   };
 
   /**
@@ -144,6 +147,39 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
         return BigInt(resultHex);
       }
       return 0n;
+    } catch {
+      return 0n;
+    }
+  };
+
+  /**
+   * Helper: Checks on-chain balance (Native or ERC20)
+   */
+  const checkOnChainBalance = async (
+    provider: any,
+    tokenAddress: Address,
+    owner: Address,
+    isNative: boolean
+  ): Promise<bigint> => {
+    try {
+      if (isNative) {
+        const balHex = await provider.request({
+          method: 'eth_getBalance',
+          params: [owner, 'latest'],
+        });
+        return BigInt(balHex && balHex !== '0x' ? balHex : '0x0');
+      } else {
+        const calldata = encodeFunctionData({
+          abi: ERC20_ABI,
+          functionName: 'balanceOf',
+          args: [owner],
+        });
+        const resultHex = await provider.request({
+          method: 'eth_call',
+          params: [{ to: tokenAddress, data: calldata }, 'latest'],
+        });
+        return BigInt(resultHex && resultHex !== '0x' ? resultHex : '0x0');
+      }
     } catch {
       return 0n;
     }
@@ -189,7 +225,7 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
 
         setProgress({
           step: 'QUOTE_READY',
-          progressPercent: 25,
+          progressPercent: 20,
           statusMessage: 'Optimal multi-source quote verified.',
           txHash: null,
           quoteHash: quote.quoteHash || null,
@@ -218,8 +254,12 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
    * 2. Pre-Flight EVM Simulation with Bytecode and Slippage Validation
    */
   const simulateTrade = useCallback(
-    async (quote: SwapQuote, userAddress: string): Promise<TransactionSimulation | null> => {
-      // Step 2a: Validate quote freshness
+    async (
+      quote: SwapQuote,
+      userAddress: string,
+      exactTx?: ExactTransactionPayload
+    ): Promise<TransactionSimulation | null> => {
+      // Validate quote freshness
       try {
         TransactionBuilder.validateQuoteFreshness(quote);
       } catch (expErr: any) {
@@ -238,7 +278,7 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
       setProgress((prev) => ({
         ...prev,
         step: 'SIMULATING',
-        progressPercent: 35,
+        progressPercent: 65,
         statusMessage: 'Running pre-flight EVM state simulation...',
         error: null,
       }));
@@ -251,6 +291,7 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
             quote,
             userAddress,
             chainId: quote.chainId || quote.fromToken.chainId,
+            exactTx,
           }),
         });
 
@@ -266,14 +307,16 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
         const sim = (data.simulation || data) as TransactionSimulation;
 
         if (!sim.success || sim.status === 'REVERTED') {
-          const reason = sim.warnings && sim.warnings.length > 0 ? sim.warnings.join('; ') : 'Execution would revert on-chain';
+          const reason =
+            sim.revertReason ||
+            (sim.warnings && sim.warnings.length > 0 ? sim.warnings.join('; ') : 'Execution would revert on-chain');
           throw new DexError(DEX_ERROR_CODES.SIMULATION_FAILED, reason);
         }
 
         setProgress((prev) => ({
           ...prev,
           step: 'SIMULATION_PASSED',
-          progressPercent: 50,
+          progressPercent: 70,
           statusMessage: 'Simulation passed: Bytecode and slippage verified.',
           error: null,
         }));
@@ -285,7 +328,7 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
           ...prev,
           step: 'SIMULATION_FAILED',
           progressPercent: 0,
-          statusMessage: 'Simulation failed: Trade blocked',
+          statusMessage: `Simulation failed: ${errorMsg}`,
           error: errorMsg,
         }));
         if (onError) onError(err, 'SIMULATION_FAILED');
@@ -296,7 +339,10 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
   );
 
   /**
-   * 3. Complete End-to-End Execution Pipeline (Phases 1-8, 25)
+   * 3. Complete End-to-End Execution Pipeline
+   *
+   * Rigorous Sequence:
+   * QUOTE -> VALIDATE -> APPROVAL -> BUILD EXACT TX -> SIMULATE EXACT TX -> SIGN -> BROADCAST -> RECEIPT -> VERIFY -> SUCCESS
    */
   const executeTradeLifecycle = useCallback(
     async (quote: SwapQuote, userAddress: string): Promise<boolean> => {
@@ -306,85 +352,102 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
           throw new DexError(DEX_ERROR_CODES.USER_ADDRESS_REQUIRED, 'No Web3 wallet detected.');
         }
 
-        // STEP 1: Pre-flight Simulation
-        const sim = await simulateTrade(quote, userAddress);
-        if (!sim || !sim.success) {
-          return false;
-        }
+        // 1. Validate Quote Freshness
+        TransactionBuilder.validateQuoteFreshness(quote);
 
-        // STEP 2: Build Exact Transaction Payload
-        setProgress((prev) => ({
-          ...prev,
-          step: 'BUILDING_TRANSACTION',
-          progressPercent: 55,
-          statusMessage: 'Constructing exact verified transaction calldata...',
-        }));
-
-        const exactTx = TransactionBuilder.buildSwapTransaction({
-          quote,
-          userAddress: userAddress as Address,
-        });
-
-        // STEP 3: Allowance Verification & Real Approval Flow
+        // 2. Identify native tokens & targets
         const isNativeIn =
           quote.fromToken.symbol === 'ETH' ||
           quote.fromToken.symbol === 'BNB' ||
           quote.fromToken.symbol === 'POL' ||
+          quote.fromToken.symbol === 'MATIC' ||
           quote.fromToken.address === '0x0000000000000000000000000000000000000000';
 
+        const isNativeOut =
+          quote.toToken.symbol === 'ETH' ||
+          quote.toToken.symbol === 'BNB' ||
+          quote.toToken.symbol === 'POL' ||
+          quote.toToken.symbol === 'MATIC' ||
+          quote.toToken.address === '0x0000000000000000000000000000000000000000';
+
+        // 3. Build preliminary swap transaction to derive exact router target and amountInRaw
+        const preliminaryTx = TransactionBuilder.buildSwapTransaction({
+          quote,
+          userAddress: userAddress as Address,
+        });
+        const routerSpender = preliminaryTx.to;
+        const requiredAmountIn = preliminaryTx.amountInRaw;
+
+        // 4. APPROVAL LIFECYCLE (Decoupled and executed BEFORE swap transaction is signed)
         if (!isNativeIn) {
           setProgress((prev) => ({
             ...prev,
             step: 'CHECKING_ALLOWANCE',
-            progressPercent: 60,
-            statusMessage: 'Reading live on-chain token allowance...',
+            progressPercent: 30,
+            statusMessage: 'Checking live on-chain token allowance for verified router...',
           }));
 
           const tokenInAddress = quote.fromToken.address as Address;
-          const spender = exactTx.to;
-          const currentAllowance = await checkOnChainAllowance(provider, tokenInAddress, userAddress as Address, spender);
+          const currentAllowance = await checkOnChainAllowance(
+            provider,
+            tokenInAddress,
+            userAddress as Address,
+            routerSpender
+          );
 
-          if (currentAllowance < exactTx.amountIn) {
+          if (currentAllowance < requiredAmountIn) {
             setProgress((prev) => ({
               ...prev,
               step: 'APPROVAL_REQUIRED',
-              progressPercent: 65,
-              statusMessage: 'Token approval required. Requesting wallet authorization...',
+              progressPercent: 35,
+              statusMessage: 'Token approval required. Preparing authorization transaction...',
             }));
 
-            // Handle USDT-style reset if needed
+            // Handle USDT reset if needed
             const isUsdt = quote.fromToken.symbol.toUpperCase() === 'USDT';
             const { resetTx, approveTx } = TransactionBuilder.buildApprovalTransaction({
               tokenAddress: tokenInAddress,
               owner: userAddress as Address,
-              spender,
-              amountIn: exactTx.amountIn,
+              spender: routerSpender,
+              amountIn: requiredAmountIn,
               currentAllowance,
               resetFirst: isUsdt && currentAllowance > 0n,
+              chainId: preliminaryTx.chainId,
+              chainSlug: preliminaryTx.chainSlug,
             });
 
             if (resetTx) {
               setProgress((prev) => ({
                 ...prev,
                 step: 'APPROVING',
-                progressPercent: 68,
-                statusMessage: 'Resetting existing token allowance to 0 (USDT requirement)...',
+                progressPercent: 40,
+                statusMessage: 'Resetting existing allowance to 0 (USDT requirement)...',
               }));
-              const resetHash = await provider.request({
-                method: 'eth_sendTransaction',
-                params: [{ from: userAddress, to: resetTx.to, data: resetTx.data, value: '0x0' }],
-              });
+
+              let resetHash: string;
+              try {
+                resetHash = await provider.request({
+                  method: 'eth_sendTransaction',
+                  params: [{ from: userAddress, to: resetTx.to, data: resetTx.data, value: '0x0' }],
+                });
+              } catch (resErr: any) {
+                if (resErr?.code === 4001) {
+                  throw new DexError(DEX_ERROR_CODES.SIGNATURE_REJECTED, 'Allowance reset rejected by user.');
+                }
+                throw new DexError(DEX_ERROR_CODES.EXECUTION_FAILED, resErr?.message || 'Allowance reset failed.');
+              }
+
               const resetReceipt = await pollForReceipt(provider, resetHash, 45000);
               if (resetReceipt.status !== '0x1' && resetReceipt.status !== 1) {
-                throw new DexError(DEX_ERROR_CODES.REVERTED, 'Allowance reset transaction reverted.');
+                throw new DexError(DEX_ERROR_CODES.REVERTED, 'Allowance reset transaction reverted on-chain.');
               }
             }
 
             setProgress((prev) => ({
               ...prev,
               step: 'APPROVING',
-              progressPercent: 72,
-              statusMessage: 'Submitting exact token approval transaction...',
+              progressPercent: 45,
+              statusMessage: 'Requesting token approval signature from wallet...',
             }));
 
             let approvalTxHash: string;
@@ -400,11 +463,10 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
               throw new DexError(DEX_ERROR_CODES.EXECUTION_FAILED, appErr?.message || 'Token approval failed.');
             }
 
-            // Wait for approval confirmation
             setProgress((prev) => ({
               ...prev,
               step: 'CONFIRMING',
-              progressPercent: 78,
+              progressPercent: 50,
               statusMessage: 'Awaiting on-chain approval confirmation...',
               approvalTxHash,
             }));
@@ -414,9 +476,14 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
               throw new DexError(DEX_ERROR_CODES.REVERTED, 'Token approval transaction reverted on-chain.');
             }
 
-            // Re-verify on-chain allowance post-mining
-            const postAllowance = await checkOnChainAllowance(provider, tokenInAddress, userAddress as Address, spender);
-            if (postAllowance < exactTx.amountIn) {
+            // Post-approval verification
+            const postAllowance = await checkOnChainAllowance(
+              provider,
+              tokenInAddress,
+              userAddress as Address,
+              routerSpender
+            );
+            if (postAllowance < requiredAmountIn) {
               throw new DexError(
                 DEX_ERROR_CODES.EXECUTION_FAILED,
                 'Post-approval check failed: Allowance remains insufficient.'
@@ -426,18 +493,37 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
             setProgress((prev) => ({
               ...prev,
               step: 'APPROVAL_CONFIRMED',
-              progressPercent: 82,
+              progressPercent: 55,
               statusMessage: 'Token approval confirmed on-chain.',
             }));
           }
         }
 
-        // STEP 4: Revalidate Quote & Deadline Immediately Before Signing
+        // 5. BUILD EXACT TRANSACTION PAYLOAD (Single Source of Truth)
+        setProgress((prev) => ({
+          ...prev,
+          step: 'BUILDING_TRANSACTION',
+          progressPercent: 60,
+          statusMessage: 'Constructing exact verified swap transaction payload...',
+        }));
+
+        const exactTx = TransactionBuilder.buildSwapTransaction({
+          quote,
+          userAddress: userAddress as Address,
+        });
+
+        // 6. SIMULATE EXACT TRANSACTION PAYLOAD
+        const sim = await simulateTrade(quote, userAddress, exactTx);
+        if (!sim || !sim.success) {
+          return false;
+        }
+
+        // 7. REVALIDATE QUOTE & DEADLINE IMMEDIATELY BEFORE SIGNING
         setProgress((prev) => ({
           ...prev,
           step: 'REVALIDATING_QUOTE',
-          progressPercent: 85,
-          statusMessage: 'Re-checking quote validity and deadline...',
+          progressPercent: 75,
+          statusMessage: 'Revalidating quote fresh state and deadline...',
         }));
 
         TransactionBuilder.validateQuoteFreshness(quote);
@@ -446,11 +532,31 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
           throw new DexError(DEX_ERROR_CODES.QUOTE_EXPIRED, 'Transaction deadline exceeded. Fresh quote required.');
         }
 
-        // STEP 5: Request Wallet Signature on Exact Payload
+        // 8. STRICT PAYLOAD EQUIVALENCE CHECK
+        TransactionBuilder.assertPayloadEquivalence(exactTx, {
+          chainId: exactTx.chainId,
+          to: exactTx.to,
+          data: exactTx.data,
+          value: exactTx.value,
+          amountIn: exactTx.amountIn,
+          amountOutMinimum: exactTx.amountOutMinimum,
+          recipient: exactTx.recipient,
+          routeHash: exactTx.routeHash,
+        });
+
+        // 9. RECORD ON-CHAIN BALANCE BEFORE SWAP (For airtight post-tx delta verification)
+        const balanceBefore = await checkOnChainBalance(
+          provider,
+          exactTx.tokenOut,
+          userAddress as Address,
+          isNativeOut
+        );
+
+        // 10. REQUEST WALLET SIGNATURE ON EXACT PAYLOAD
         setProgress((prev) => ({
           ...prev,
           step: 'SIGNING',
-          progressPercent: 88,
+          progressPercent: 80,
           statusMessage: 'Requesting cryptographic transaction signature...',
         }));
 
@@ -478,44 +584,62 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
           throw new DexError(DEX_ERROR_CODES.EXECUTION_FAILED, 'Invalid transaction hash returned by wallet.');
         }
 
-        // STEP 6: Broadcasting & Mined Confirmation
+        // 11. BROADCASTING & MINED CONFIRMATION
         setProgress((prev) => ({
           ...prev,
           step: 'BROADCASTING',
-          progressPercent: 92,
-          statusMessage: 'Transaction broadcast to network. Waiting for block inclusion...',
+          progressPercent: 85,
+          statusMessage: 'Transaction broadcast to network.',
+          txHash: broadcastHash,
+        }));
+
+        setProgress((prev) => ({
+          ...prev,
+          step: 'PENDING',
+          progressPercent: 88,
+          statusMessage: 'Transaction pending in mempool...',
           txHash: broadcastHash,
         }));
 
         setProgress((prev) => ({
           ...prev,
           step: 'CONFIRMING',
-          progressPercent: 95,
+          progressPercent: 92,
           statusMessage: 'Mining in progress. Awaiting block receipt...',
+          txHash: broadcastHash,
         }));
 
         const receipt = await pollForReceipt(provider, broadcastHash, 90000);
 
-        // STEP 7: Receipt & Output Verification
+        // 12. RECORD ON-CHAIN BALANCE AFTER SWAP
+        const balanceAfter = await checkOnChainBalance(
+          provider,
+          exactTx.tokenOut,
+          userAddress as Address,
+          isNativeOut
+        );
+
+        // 13. RECEIPT & BALANCE DELTA VERIFICATION
         setProgress((prev) => ({
           ...prev,
           step: 'VERIFYING',
-          progressPercent: 98,
-          statusMessage: 'Verifying on-chain swap event logs and output balance...',
+          progressPercent: 96,
+          statusMessage: 'Verifying on-chain swap event logs and balance delta...',
+          txHash: broadcastHash,
         }));
-
-        const expectedTokenOut = (
-          quote.toToken.symbol === 'ETH' || quote.toToken.address === '0x0000000000000000000000000000000000000000'
-            ? quote.fromToken.address // Native transfer or wrap
-            : quote.toToken.address
-        ) as Address;
 
         const verification = ReceiptVerifier.verifyReceipt({
           receipt,
           expectedRecipient: userAddress as Address,
-          expectedTokenOut,
+          expectedTokenOut: exactTx.tokenOut,
           amountOutMinimum: exactTx.amountOutMinimum,
           expectedRouter: exactTx.to,
+          expectedSender: userAddress as Address,
+          chainId: exactTx.chainId,
+          isNativeOut,
+          balanceBefore,
+          balanceAfter,
+          routeHash: exactTx.routeHash,
         });
 
         if (!verification.verified) {
@@ -528,7 +652,7 @@ export function useHyperonTrade(options: UseHyperonTradeOptions = {}): UseHypero
           );
         }
 
-        // STEP 8: True SUCCESS State
+        // 14. TRUE SUCCESS STATE
         const expectedOutNum = quote.toAmount !== undefined ? quote.toAmount : quote.expectedOutput;
         const formattedActualOut = verification.actualAmountOut
           ? formatUnits(verification.actualAmountOut, quote.toToken.decimals || 18)

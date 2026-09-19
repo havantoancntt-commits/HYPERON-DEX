@@ -66,6 +66,8 @@ export const SimulationModal: React.FC = () => {
         targetAddress: activeSimulation.routerAddress || activeSimulation.toAddress,
         calldata: activeSimulation.calldata,
         valueHex: activeSimulation.valueHex,
+        toTokenAddress: activeQuote.toToken?.address,
+        minimumReceivedRaw: activeQuote.minimumReceivedRaw,
       });
 
       addToast({
