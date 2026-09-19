@@ -732,26 +732,51 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const authenticateSiwe = async (): Promise<boolean> => {
     try {
-      // Step 1: Request fresh cryptographic nonce from backend
+      if (!address) {
+        throw new Error('WALLET_NOT_CONNECTED: An active wallet connection is required to authenticate.');
+      }
+      // Step 1: Request fresh single-use cryptographic nonce and message from backend
       const nonceRes = await fetch(`/api/auth/nonce?address=${address}&chainId=1`);
-      let nonce = '';
-      if (nonceRes.ok) {
-        const data = await nonceRes.json();
-        nonce = data.nonce;
+      if (!nonceRes.ok) {
+        throw new Error('NONCE_UNAVAILABLE: Failed to obtain authenticated cryptographic nonce from server.');
       }
-      if (!nonce) {
-        nonce = `0x${Date.now().toString(16)}${Math.random().toString(16).substring(2, 10)}`;
+      const data = await nonceRes.json();
+      const nonce = data.nonce;
+      const authMessage = data.authMessage;
+
+      if (!nonce || !authMessage) {
+        throw new Error('INVALID_NONCE_RESPONSE: Backend did not return a valid auth message or nonce.');
       }
 
-      const domain = typeof window !== 'undefined' ? window.location.host : 'hyperon.dex';
-      const issuedAt = new Date().toISOString();
-      const siweMessage = `${domain} wants you to sign in with your Ethereum account:\n${address}\n\nSign in with Ethereum to authenticate with HYPERON-DEX Non-Custodial Engine.\n\nURI: https://${domain}\nVersion: 1\nChain ID: 1\nNonce: ${nonce}\nIssued At: ${issuedAt}`;
-
+      let signature = '';
       if (typeof window !== 'undefined' && (window as any).ethereum && walletType !== 'sandbox') {
-        await (window as any).ethereum.request({
+        signature = await (window as any).ethereum.request({
           method: 'personal_sign',
-          params: [siweMessage, address],
+          params: [authMessage, address],
         });
+      } else {
+        throw new Error('SIGNATURE_UNAVAILABLE: Ethereum provider not available for personal_sign.');
+      }
+
+      // Step 2: Cryptographically verify signature on backend and consume single-use nonce
+      const verifyRes = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          address,
+          signature,
+          authMessage,
+        }),
+      });
+
+      if (!verifyRes.ok) {
+        const errJson = await verifyRes.json();
+        throw new Error(errJson.reason || errJson.error || 'Cryptographic verification failed.');
+      }
+
+      const verifyData = await verifyRes.json();
+      if (!verifyData.success) {
+        throw new Error('Authentication verification failed.');
       }
 
       setIsSiweAuthenticated(true);
@@ -763,6 +788,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return true;
     } catch (err) {
       console.warn('SIWE Authentication failed:', err);
+      setIsSiweAuthenticated(false);
+      setSiweSession(null);
       return false;
     }
   };

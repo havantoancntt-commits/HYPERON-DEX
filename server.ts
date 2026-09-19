@@ -11,7 +11,7 @@ import { scanTokenSecurity } from './server/services/scanner';
 import { generateMarketIntelligence, generateQuantitativeSignals } from './server/services/aiIntelligence';
 import { getLiveBlockNumber, getLiveGasPrice, getNativeBalance } from './server/services/rpc';
 import { DEX_ERROR_CODES, createDexError, ERROR_MESSAGES, DexErrorCode, DexError } from './src/lib/errorCodes';
-import { requireWalletAuth, issueWalletNonce } from './server/middleware/walletAuth';
+import { requireWalletAuth, issueWalletNonce, verifyWalletAuth } from './server/middleware/walletAuth';
 import { isAddress } from 'viem';
 import helmet from 'helmet';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -1109,6 +1109,26 @@ app.get('/api/auth/nonce', (req: Request, res: Response) => {
     res.json(nonceData);
   } catch (err: any) {
     res.status(500).json({ error: 'NONCE_GENERATION_FAILED', message: err?.message });
+  }
+});
+
+app.post('/api/auth/verify', async (req: Request, res: Response) => {
+  try {
+    const { address, signature, authMessage } = req.body;
+    if (!address || !signature || !authMessage) {
+      return res.status(400).json({ error: 'INVALID_INPUT', message: 'address, signature, and authMessage are required.' });
+    }
+    const result = await verifyWalletAuth({
+      address,
+      signature,
+      authMessage,
+    });
+    if (!result.verified) {
+      return res.status(401).json({ error: result.code || 'AUTHENTICATION_FAILED', reason: result.reason });
+    }
+    return res.json({ success: true, verifiedAddress: address, sessionExpiresAt: Date.now() + 5 * 60 * 1000 });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'AUTH_VERIFY_FAILED', message: err?.message });
   }
 });
 
