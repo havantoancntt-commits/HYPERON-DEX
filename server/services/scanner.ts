@@ -42,6 +42,10 @@ export interface ComprehensiveSecurityAudit extends TokenSecurityReport {
   hasDelegateCall: boolean;
   hasCreate2: boolean;
   verificationTier: 'VERIFIED' | 'MEDIUM_RISK' | 'HIGH_RISK';
+  isImpersonator?: boolean;
+  impersonatedSymbol?: string;
+  isScamToken?: boolean;
+  scamWarnings?: string[];
   externalReputation?: {
     source: string;
     isHoneypot: boolean;
@@ -150,14 +154,14 @@ export async function scanTokenSecurity(
       )
     : undefined;
 
-  // 2. Intelligent fallback: match by symbol + chainId if address not provided or missing
-  if (!verifiedMatch && cleanSymbol && cleanSymbol !== 'TOKEN') {
+  // 2. Intelligent fallback: ONLY match by symbol if address was NOT provided
+  if (!verifiedMatch && (!normalizedAddr || normalizedAddr === '0x0000000000000000000000000000000000000000') && cleanSymbol && cleanSymbol !== 'TOKEN') {
     verifiedMatch = VERIFIED_TOKENS.find(
       (t) =>
         t.symbol.toUpperCase() === cleanSymbol &&
         (t.chainId === chainId || (chainId === 'ethereum' && !t.chainId))
     );
-    if (verifiedMatch && verifiedMatch.address && !tokenAddress) {
+    if (verifiedMatch && verifiedMatch.address && (!normalizedAddr || normalizedAddr === '0x0000000000000000000000000000000000000000')) {
       tokenAddress = verifiedMatch.address;
       normalizedAddr = verifiedMatch.address.toLowerCase().trim();
     }
@@ -179,16 +183,13 @@ export async function scanTokenSecurity(
   };
 
   const isNative =
-    (!tokenAddress && (!cleanSymbol || cleanSymbol === 'ETH' || cleanSymbol === 'BNB' || cleanSymbol === 'POL')) ||
-    tokenAddress === '0x0000000000000000000000000000000000000000' ||
-    (cleanSymbol === 'ETH' && chainId === 'ethereum') ||
-    (cleanSymbol === 'BNB' && chainId === 'bsc') ||
-    (cleanSymbol === 'POL' && chainId === 'polygon');
+    (!normalizedAddr || normalizedAddr === '0x0000000000000000000000000000000000000000' || normalizedAddr === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') &&
+    (cleanSymbol === 'ETH' || cleanSymbol === 'BNB' || cleanSymbol === 'POL' || !cleanSymbol || cleanSymbol === 'NATIVE');
 
   if (isNative) {
     return {
       tokenAddress: '0x0000000000000000000000000000000000000000',
-      tokenSymbol: symbol.toUpperCase(),
+      tokenSymbol: (cleanSymbol || 'ETH').toUpperCase(),
       chainId,
       securityScore: 100,
       riskLevel: 'LOW',
@@ -222,6 +223,10 @@ export async function scanTokenSecurity(
       hasDelegateCall: false,
       hasCreate2: false,
       verificationTier: 'VERIFIED',
+      isImpersonator: false,
+      impersonatedSymbol: undefined,
+      isScamToken: false,
+      scamWarnings: [],
     };
   }
 
@@ -298,7 +303,34 @@ export async function scanTokenSecurity(
     suspiciousPermissions.push('Complex transfer hook anomaly: high-density storage manipulation with origin validation');
   }
 
-  // 4. Evidence-based scoring calculation
+  // 4. Evidence-based scoring calculation & Scam / Impersonation Intelligence
+  let isImpersonator = false;
+  let impersonatedSymbol: string | undefined = undefined;
+  const scamWarnings: string[] = [];
+
+  // Check for Canonical Impersonation:
+  // If an untrusted contract claims the symbol or name of a canonical verified asset on this chain or Ethereum
+  const checkSymbol = (metadata.symbol || cleanSymbol || '').toUpperCase().trim();
+  const isAddressNonCanonical = !!normalizedAddr && !verifiedMatch;
+
+  if (isAddressNonCanonical && checkSymbol && checkSymbol !== 'TOKEN') {
+    const canonicalCollision = VERIFIED_TOKENS.find(
+      (t) =>
+        t.symbol.toUpperCase() === checkSymbol &&
+        t.address &&
+        t.address.toLowerCase() !== normalizedAddr &&
+        (t.chainId === chainId || t.chainId === 'ethereum')
+    );
+
+    if (canonicalCollision) {
+      isImpersonator = true;
+      impersonatedSymbol = canonicalCollision.symbol;
+      const warningMsg = `CẢNH BÁO GIẢ MẠO CỰC KỲ NGUY HIỂM: Token sử dụng ký hiệu "${checkSymbol}" trùng với đồng coin chính thống (${canonicalCollision.name}), nhưng địa chỉ hợp đồng (${tokenAddress}) là hợp đồng giả mạo! Kẻ xấu thường tạo token giả này để lừa đảo hút thanh khoản.`;
+      scamWarnings.push(warningMsg);
+      suspiciousPermissions.push(`[PHAKE_CLONE] Giả mạo tài sản định danh: ${canonicalCollision.symbol} (${canonicalCollision.address})`);
+    }
+  }
+
   let score = 65;
   let confidence = 85;
   let honeypotStatus: HoneypotStatus = 'UNKNOWN';
@@ -308,10 +340,16 @@ export async function scanTokenSecurity(
     confidence = 98;
     honeypotStatus = 'VERIFIED_SAFE';
     evidence.push(`Token matches HYPERON-DEX Verified Institutional Registry (${verifiedMatch.name})`);
+  } else if (isImpersonator) {
+    score = 5;
+    confidence = 99;
+    honeypotStatus = 'SUSPECTED_HONEYPOT';
+    evidence.push(`CRITICAL ALERT: Impersonation detected for canonical token ${impersonatedSymbol}`);
   } else if (!isContractExists) {
     score = 10;
     confidence = 90;
     honeypotStatus = 'SUSPECTED_HONEYPOT';
+    scamWarnings.push('Không tìm thấy mã bytecode hợp đồng trên mạng lưới. Địa chỉ có thể là ví cá nhân (EOA) hoặc hợp đồng chưa triển khai.');
   } else {
     if (metadata.isValid) {
       score += 15;
@@ -319,35 +357,53 @@ export async function scanTokenSecurity(
     } else {
       score -= 20;
       unknownFactors.push('Non-standard or reverted ERC20 metadata response');
+      scamWarnings.push('Metadata ERC-20 không hợp lệ hoặc bị revert: Dấu hiệu hợp đồng rác hoặc mã độc cố tình ẩn thông tin.');
     }
 
-    if (hasMint) score -= 15;
-    if (hasPause) score -= 10;
-    if (hasBlacklist) score -= 15;
-    if (opcodes.hasSelfDestruct) score -= 30;
+    if (hasMint) {
+      score -= 15;
+      scamWarnings.push('Quyền Mint vô hạn (Unlimited Mint): Chủ hợp đồng có thể tự do đúc thêm token để bán tháo (Rug pull).');
+    }
+    if (hasPause) {
+      score -= 10;
+      scamWarnings.push('Quyền Pause: Chủ hợp đồng có thể đóng băng toàn bộ giao dịch chuyển tiền bất cứ lúc nào.');
+    }
+    if (hasBlacklist) {
+      score -= 15;
+      scamWarnings.push('Quyền Blacklist: Chủ hợp đồng có quyền khóa địa chỉ ví của bạn để ngăn chặn rút tiền hoặc bán ra.');
+    }
+    if (opcodes.hasSelfDestruct) {
+      score -= 30;
+      scamWarnings.push('Opcode SELFDESTRUCT: Hợp đồng có chức năng tự hủy, có thể xóa sạch mã và thanh khoản bất cứ lúc nào.');
+    }
+    if (opcodes.hasTransferHookAnomaly) {
+      score -= 20;
+      scamWarnings.push('Bất thường Transfer Hook: Khối lượng ghi dữ liệu bất thường và kiểm tra nguồn gốc giao dịch nghi vấn cài bẫy Honeypot hoặc phí ẩn.');
+    }
     if (isProxy) score -= 5;
 
     // Unverified contracts without live buy/sell simulations CANNOT be marked VERIFIED_SAFE
-    // Incomplete data remains UNKNOWN to prevent false sense of security
     honeypotStatus =
-      score < 40 || opcodes.hasSelfDestruct || (hasBlacklist && hasPause)
+      score < 40 || opcodes.hasSelfDestruct || (hasBlacklist && hasPause) || opcodes.hasTransferHookAnomaly
         ? 'SUSPECTED_HONEYPOT'
         : 'UNKNOWN';
   }
 
-  score = Math.max(10, Math.min(100, score));
+  score = Math.max(5, Math.min(100, score));
 
-  // Fail-closed on missing bytecode or high-risk bytecode opcodes
+  // Fail-closed on missing bytecode, high-risk bytecode opcodes, or impersonator
   let riskLevel: 'SAFE' | 'LOW' | 'LOW_RISK' | 'MEDIUM' | 'MEDIUM_RISK' | 'HIGH' | 'HIGH_RISK' | 'CRITICAL' | 'UNKNOWN' =
     verifiedMatch
       ? 'LOW'
-      : !isContractExists || opcodes.hasSelfDestruct || (hasBlacklist && hasPause)
+      : isImpersonator || !isContractExists || opcodes.hasSelfDestruct || (hasBlacklist && hasPause)
       ? 'CRITICAL'
       : score >= 70
       ? 'MEDIUM'
       : score >= 50
       ? 'HIGH'
       : 'CRITICAL';
+
+  const isScamToken = isImpersonator || riskLevel === 'CRITICAL' || honeypotStatus === 'SUSPECTED_HONEYPOT';
 
   // Unknown factors strictly enumerated
   if (!verifiedMatch) {
@@ -362,9 +418,17 @@ export async function scanTokenSecurity(
   // Strict verification tier: ONLY verified registry matches are VERIFIED
   const verificationTier: 'VERIFIED' | 'MEDIUM_RISK' | 'HIGH_RISK' = verifiedMatch
     ? 'VERIFIED'
-    : score >= 55 && honeypotStatus !== 'SUSPECTED_HONEYPOT' && !opcodes.hasSelfDestruct
+    : score >= 55 && honeypotStatus !== 'SUSPECTED_HONEYPOT' && !opcodes.hasSelfDestruct && !isImpersonator
     ? 'MEDIUM_RISK'
     : 'HIGH_RISK';
+
+  let riskSummary = verifiedMatch
+    ? 'Verified institutional asset with clean, audited ERC-20 implementation.'
+    : isImpersonator
+    ? `CẢNH BÁO NGUY HIỂM: Phát hiện hợp đồng giả mạo token chính thống ${impersonatedSymbol}. Nguy cơ mất 100% tài sản nếu giao dịch!`
+    : isContractExists
+    ? `Bytecode analyzed on ${chainId}. Điểm an toàn: ${score}/100. Cần kiểm tra kỹ trước khi giao dịch.`
+    : 'Unverified contract address or missing on-chain deployment.';
 
   return {
     tokenAddress: tokenAddress || '0x0000000000000000000000000000000000000000',
@@ -394,11 +458,7 @@ export async function scanTokenSecurity(
     top10HoldersPercent: 0.0,
     creatorOwnershipRenounced: verifiedMatch ? true : false,
     suspiciousPermissions,
-    riskSummary: verifiedMatch
-      ? 'Verified institutional asset with clean, audited ERC-20 implementation.'
-      : isContractExists
-      ? `Bytecode analyzed on ${chainId}. Review administrative privileges before allocating capital.`
-      : 'Unverified contract address or missing on-chain deployment.',
+    riskSummary,
     lastScannedTimestamp: Date.now(),
     evidence,
     unknownFactors,
@@ -409,5 +469,9 @@ export async function scanTokenSecurity(
     liquidityLockStatus,
     hasDelegateCall: opcodes.hasDelegateCall,
     hasCreate2: opcodes.hasCreate2,
+    isImpersonator,
+    impersonatedSymbol,
+    isScamToken,
+    scamWarnings,
   };
 }

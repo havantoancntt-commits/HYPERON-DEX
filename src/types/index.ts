@@ -83,6 +83,10 @@ export interface Token {
   isVerified: boolean;
   isNative?: boolean;
   category: 'Layer 1' | 'Layer 2' | 'DeFi' | 'AI' | 'Meme' | 'Stablecoin' | 'Infrastructure' | 'Liquid Staking';
+  security?: TokenSecurityReport;
+  isScamToken?: boolean;
+  isImpersonator?: boolean;
+  scamWarnings?: string[];
 }
 
 export interface DexSource {
@@ -383,6 +387,10 @@ export interface TokenSecurityReport {
   suspiciousPermissions: string[];
   riskSummary: string;
   lastScannedTimestamp: number;
+  isImpersonator?: boolean;
+  impersonatedSymbol?: string;
+  isScamToken?: boolean;
+  scamWarnings?: string[];
 }
 
 export interface AIMarketIntelligence {

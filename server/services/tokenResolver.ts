@@ -15,6 +15,7 @@ import { ChainId, Token, TokenSecurityReport } from '../../src/types';
 import { VERIFIED_TOKENS, SUPPORTED_CHAINS } from '../../src/lib/constants';
 import { getContractBytecode, getERC20Metadata } from './rpc';
 import { getUsdPrice } from './priceFeed';
+import { scanTokenSecurity } from './scanner';
 
 export interface TokenResolutionQuery {
   chainId?: string;
@@ -36,6 +37,9 @@ export interface ResolvedToken {
   isNative?: boolean;
   logoUrl?: string;
   security?: TokenSecurityReport;
+  isScamToken?: boolean;
+  isImpersonator?: boolean;
+  scamWarnings?: string[];
 }
 
 export class CanonicalTokenResolver {
@@ -161,6 +165,21 @@ export class CanonicalTokenResolver {
       const inferredSymbol = metadata.symbol || rawSymbol || 'TOKEN';
       const livePrice = getUsdPrice(inferredSymbol);
 
+      let securityReport: TokenSecurityReport | undefined = undefined;
+      let isScamToken = false;
+      let isImpersonator = false;
+      let scamWarnings: string[] | undefined = undefined;
+
+      try {
+        const audit = await scanTokenSecurity(checksummed, inferredSymbol, chainId);
+        securityReport = audit;
+        isScamToken = audit.isScamToken || audit.riskLevel === 'CRITICAL' || audit.isHoneypot;
+        isImpersonator = !!audit.isImpersonator;
+        scamWarnings = audit.scamWarnings;
+      } catch {
+        // Scanner fail-safe: keep resolution alive but flag as unverified
+      }
+
       return {
         chainId,
         address: checksummed,
@@ -173,6 +192,10 @@ export class CanonicalTokenResolver {
         priceUsd: livePrice,
         category: 'DeFi',
         isNative: false,
+        security: securityReport,
+        isScamToken,
+        isImpersonator,
+        scamWarnings,
       };
     }
 
@@ -256,6 +279,10 @@ export class CanonicalTokenResolver {
       isVerified: resolved.verified,
       isNative: resolved.isNative,
       category: resolved.category,
+      security: resolved.security,
+      isScamToken: resolved.isScamToken,
+      isImpersonator: resolved.isImpersonator,
+      scamWarnings: resolved.scamWarnings,
     };
   }
 }

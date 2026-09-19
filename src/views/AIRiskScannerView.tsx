@@ -111,160 +111,213 @@ export const AIRiskScannerView: React.FC = () => {
 
       {/* Audit Report Result */}
       {report && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Security Score Overview (4 Cols) */}
-          <div className="lg:col-span-4 rounded-2xl bg-[#0A0A0A] border border-white/5 p-5 flex flex-col justify-between space-y-4">
-            <div>
-              <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                <span className="text-xs font-mono uppercase text-slate-400">Security Score</span>
-                <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                  report.riskLevel === 'LOW' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                }`}>
-                  {report.riskLevel} RISK
-                </span>
+        <div className="space-y-4">
+          {/* Impersonator / Fake Token Alert Banner */}
+          {report.isImpersonator && (
+            <div className="p-4 rounded-2xl bg-rose-950/60 border-2 border-rose-500 shadow-xl shadow-rose-900/30 flex items-start gap-3.5 text-rose-200 animate-pulse">
+              <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400 shrink-0 mt-0.5">
+                <AlertTriangle className="w-6 h-6" />
               </div>
-
-              <div className="mt-4 flex items-baseline gap-2">
-                <span className={`text-5xl font-extrabold font-mono ${
-                  report.securityScore > 80 ? 'text-emerald-400' : report.securityScore > 50 ? 'text-amber-400' : 'text-rose-400'
-                }`}>
-                  {report.securityScore}
-                </span>
-                <span className="text-sm font-mono text-slate-500">/ 100</span>
-              </div>
-
-              <div className="mt-4 p-3.5 rounded-xl bg-[#121212] border border-white/5 space-y-2 text-xs">
-                <div className="text-slate-400 font-mono text-[11px]">Audit Summary</div>
-                <p className="text-slate-300 leading-relaxed">{report.riskSummary}</p>
+              <div className="space-y-1">
+                <div className="font-black text-sm text-white flex items-center gap-2">
+                  <span>🚨 CẢNH BÁO TOKEN GIẢ MẠO NGUY HIỂM (IMPERSONATION CLONE)</span>
+                  <span className="px-2 py-0.5 rounded bg-rose-500 text-black text-[10px] font-extrabold uppercase">
+                    Scam Alert
+                  </span>
+                </div>
+                <p className="text-xs text-rose-200 leading-relaxed">
+                  Hợp đồng này sử dụng ký hiệu <strong className="text-rose-100 underline decoration-rose-400">{report.impersonatedSymbol || report.tokenSymbol}</strong> để mạo danh đồng coin chính thức, nhưng địa chỉ hợp đồng (<code className="font-mono text-rose-300">{shortenAddress(report.tokenAddress, 8)}</code>) <strong>KHÔNG KHỚP</strong> với hợp đồng gốc đã kiểm định.
+                </p>
+                <div className="text-[11px] text-rose-300 font-semibold pt-0.5">
+                  ⛔ Khuyến nghị nghiêm ngặt: Tuyệt đối không swap, không approve hoặc cung cấp thanh khoản cho hợp đồng này!
+                </div>
               </div>
             </div>
+          )}
 
-            <button
-              onClick={() => openSwapWithTokens('USDC', report.tokenSymbol)}
-              className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-900/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Zap className="w-3.5 h-3.5" /> Proceed to Trade {report.tokenSymbol}
-            </button>
-          </div>
-
-          {/* Detailed Security Checkpoints Matrix (8 Cols) */}
-          <div className="lg:col-span-8 rounded-2xl bg-[#0A0A0A] border border-white/5 p-5 space-y-4">
-            <div className="text-sm font-bold text-white flex items-center justify-between pb-3 border-b border-white/5">
-              <span>Forensic Security Checkpoints</span>
-              <span className="text-xs font-mono text-slate-400">{shortenAddress(report.tokenAddress, 8)}</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              {/* Honeypot Check */}
-              <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className={`p-1.5 rounded-lg ${!report.isHoneypot ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                    {!report.isHoneypot ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-white">Honeypot Check</div>
-                    <div className="text-[11px] text-slate-400">Can all token holders sell freely?</div>
-                  </div>
-                </div>
-                <span className={`font-mono font-bold ${!report.isHoneypot ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {!report.isHoneypot ? 'PASSED (0%)' : 'HONEYPOT DETECTED'}
-                </span>
+          {/* Scam & Junk Warnings Banner */}
+          {report.scamWarnings && report.scamWarnings.length > 0 && (
+            <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/40 shadow-lg shadow-amber-900/20 space-y-2">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+                <ShieldAlert className="w-4 h-4 text-amber-400" />
+                <span>HỆ THỐNG NHẬN DIỆN COIN RÁC & DẤU HIỆU LỪA ĐẢO (SCAM HEURISTICS)</span>
               </div>
-
-              {/* Buy / Sell Tax */}
-              <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
-                    <Percent className="w-4 h-4" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                {report.scamWarnings.map((warn, wIdx) => (
+                  <div key={wIdx} className="flex items-start gap-2 p-2 rounded-xl bg-[#121212] border border-amber-500/20 text-[11px] text-amber-200">
+                    <span className="text-amber-400 font-bold shrink-0">⚠️</span>
+                    <span>{warn}</span>
                   </div>
-                  <div>
-                    <div className="font-semibold text-white">Buy / Sell Tax</div>
-                    <div className="text-[11px] text-slate-400">Hidden fee-on-transfer rate</div>
-                  </div>
-                </div>
-                <span className="font-mono font-bold text-white">
-                  {report.buyTaxPercent}% / {report.sellTaxPercent}%
-                </span>
-              </div>
-
-              {/* Mint Function Privilege */}
-              <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400">
-                    <Code className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-white">Mintability</div>
-                    <div className="text-[11px] text-slate-400">Can owner mint unlimited supply?</div>
-                  </div>
-                </div>
-                <span className={`font-mono font-bold ${!report.isMintable ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {!report.isMintable ? 'NO (Fixed Supply)' : 'CONTROLLED'}
-                </span>
-              </div>
-
-              {/* Liquidity Lock */}
-              <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
-                    <Lock className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-white">Liquidity Lock</div>
-                    <div className="text-[11px] text-slate-400">DEX pool rug-pull insulation</div>
-                  </div>
-                </div>
-                <span className="font-mono font-bold text-emerald-400">
-                  {report.liquidityLockedPercent}% ({report.liquidityLockDurationDays}d)
-                </span>
-              </div>
-
-              {/* Top 10 Holders Concentration */}
-              <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400">
-                    <Users className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-white">Top 10 Concentration</div>
-                    <div className="text-[11px] text-slate-400">Whale dump vulnerability</div>
-                  </div>
-                </div>
-                <span className={`font-mono font-bold ${report.top10HoldersPercent < 35 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {report.top10HoldersPercent}% (Decentralized)
-                </span>
-              </div>
-
-              {/* Proxy Contract Check */}
-              <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
-                    <Code className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-white">Proxy Pattern</div>
-                    <div className="text-[11px] text-slate-400">Upgradeable implementation logic</div>
-                  </div>
-                </div>
-                <span className="font-mono font-bold text-white">
-                  {report.isProxyContract ? 'ERC-1967 Proxy' : 'Immutable'}
-                </span>
+                ))}
               </div>
             </div>
+          )}
 
-            {/* Suspicious Permissions Alert */}
-            {report.suspiciousPermissions.length > 0 && (
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 space-y-1">
-                <div className="font-semibold flex items-center gap-1.5">
-                  <AlertTriangle className="w-4 h-4" /> Flagged Governance Privileges
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            {/* Security Score Overview (4 Cols) */}
+            <div className="lg:col-span-4 rounded-2xl bg-[#0A0A0A] border border-white/5 p-5 flex flex-col justify-between space-y-4">
+              <div>
+                <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                  <span className="text-xs font-mono uppercase text-slate-400">Security Score</span>
+                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                    report.riskLevel === 'LOW'
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : report.riskLevel === 'MEDIUM'
+                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                  }`}>
+                    {report.riskLevel} RISK
+                  </span>
                 </div>
-                <ul className="list-disc list-inside text-[11px] text-amber-200">
-                  {report.suspiciousPermissions.map((perm, i) => (
-                    <li key={i}>{perm}</li>
-                  ))}
-                </ul>
+
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className={`text-5xl font-extrabold font-mono ${
+                    report.securityScore > 80 ? 'text-emerald-400' : report.securityScore > 50 ? 'text-amber-400' : 'text-rose-400'
+                  }`}>
+                    {report.securityScore}
+                  </span>
+                  <span className="text-sm font-mono text-slate-500">/ 100</span>
+                </div>
+
+                <div className="mt-4 p-3.5 rounded-xl bg-[#121212] border border-white/5 space-y-2 text-xs">
+                  <div className="text-slate-400 font-mono text-[11px]">Audit Summary</div>
+                  <p className="text-slate-300 leading-relaxed">{report.riskSummary}</p>
+                </div>
               </div>
-            )}
+
+              {report.isImpersonator || report.isScamToken || report.isHoneypot ? (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs text-center font-bold">
+                  ⛔ GIAO DỊCH BỊ KHÓA ĐỂ BẢO VỆ TÀI SẢN
+                </div>
+              ) : (
+                <button
+                  onClick={() => openSwapWithTokens('USDC', report.tokenSymbol)}
+                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-900/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Zap className="w-3.5 h-3.5" /> Proceed to Trade {report.tokenSymbol}
+                </button>
+              )}
+            </div>
+
+            {/* Detailed Security Checkpoints Matrix (8 Cols) */}
+            <div className="lg:col-span-8 rounded-2xl bg-[#0A0A0A] border border-white/5 p-5 space-y-4">
+              <div className="text-sm font-bold text-white flex items-center justify-between pb-3 border-b border-white/5">
+                <span>Forensic Security Checkpoints</span>
+                <span className="text-xs font-mono text-slate-400">{shortenAddress(report.tokenAddress, 8)}</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                {/* Honeypot Check */}
+                <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`p-1.5 rounded-lg ${!report.isHoneypot ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                      {!report.isHoneypot ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                    </div>
+                    <div>
+                      <div className="font-semibold text-white">Honeypot Check</div>
+                      <div className="text-[11px] text-slate-400">Can all token holders sell freely?</div>
+                    </div>
+                  </div>
+                  <span className={`font-mono font-bold ${!report.isHoneypot ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {!report.isHoneypot ? 'PASSED (0%)' : 'HONEYPOT DETECTED'}
+                  </span>
+                </div>
+
+                {/* Buy / Sell Tax */}
+                <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
+                      <Percent className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-white">Buy / Sell Tax</div>
+                      <div className="text-[11px] text-slate-400">Hidden fee-on-transfer rate</div>
+                    </div>
+                  </div>
+                  <span className="font-mono font-bold text-white">
+                    {report.buyTaxPercent}% / {report.sellTaxPercent}%
+                  </span>
+                </div>
+
+                {/* Mint Function Privilege */}
+                <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400">
+                      <Code className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-white">Mintability</div>
+                      <div className="text-[11px] text-slate-400">Can owner mint unlimited supply?</div>
+                    </div>
+                  </div>
+                  <span className={`font-mono font-bold ${!report.isMintable ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {!report.isMintable ? 'NO (Fixed Supply)' : 'CONTROLLED'}
+                  </span>
+                </div>
+
+                {/* Liquidity Lock */}
+                <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-white">Liquidity Lock</div>
+                      <div className="text-[11px] text-slate-400">DEX pool rug-pull insulation</div>
+                    </div>
+                  </div>
+                  <span className="font-mono font-bold text-emerald-400">
+                    {report.liquidityLockedPercent}% ({report.liquidityLockDurationDays}d)
+                  </span>
+                </div>
+
+                {/* Top 10 Holders Concentration */}
+                <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400">
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-white">Top 10 Concentration</div>
+                      <div className="text-[11px] text-slate-400">Whale dump vulnerability</div>
+                    </div>
+                  </div>
+                  <span className={`font-mono font-bold ${report.top10HoldersPercent < 35 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {report.top10HoldersPercent}% (Decentralized)
+                  </span>
+                </div>
+
+                {/* Proxy Contract Check */}
+                <div className="p-3.5 rounded-xl bg-[#121212] border border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
+                      <Code className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-white">Proxy Pattern</div>
+                      <div className="text-[11px] text-slate-400">Upgradeable implementation logic</div>
+                    </div>
+                  </div>
+                  <span className="font-mono font-bold text-white">
+                    {report.isProxyContract ? 'ERC-1967 Proxy' : 'Immutable'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Suspicious Permissions Alert */}
+              {report.suspiciousPermissions.length > 0 && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 space-y-1">
+                  <div className="font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4" /> Flagged Governance Privileges
+                  </div>
+                  <ul className="list-disc list-inside text-[11px] text-amber-200">
+                    {report.suspiciousPermissions.map((perm, i) => (
+                      <li key={i}>{perm}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

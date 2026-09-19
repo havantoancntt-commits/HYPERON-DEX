@@ -35,6 +35,8 @@ import {
   ArrowRightLeft,
   Plus,
   ExternalLink,
+  ShieldAlert,
+  ShieldX,
 } from 'lucide-react';
 
 const POPULAR_SYMBOLS = new Set([
@@ -162,6 +164,19 @@ export const SwapView: React.FC = () => {
 
   // Fetch real quote from server Smart Router (debounced with AbortController)
   const fetchQuote = useCallback(async (amountStr: string, fTok: Token, tTok: Token, currentSlippage: number) => {
+    if (fTok.isImpersonator || tTok.isImpersonator) {
+      setQuote(null);
+      setQuoteError(`🚨 CẢNH BÁO: Phát hiện Token giả mạo (${fTok.isImpersonator ? fTok.symbol : tTok.symbol}). Hệ thống đã chặn giao dịch để bảo vệ tài sản!`);
+      return;
+    }
+
+    if (fTok.isScamToken || tTok.isScamToken) {
+      setQuote(null);
+      const scamReasons = (fTok.scamWarnings || tTok.scamWarnings || []).join(', ');
+      setQuoteError(`⚠️ RỦI RO CAO: Token (${fTok.isScamToken ? fTok.symbol : tTok.symbol}) bị phát hiện là coin rác / nguy cơ Honeypot${scamReasons ? ` (${scamReasons})` : ''}. Giao dịch đã bị tạm khóa.`);
+      return;
+    }
+
     if (fTok.isVerified === false || tTok.isVerified === false) {
       setQuote(null);
       setQuoteError('Unverified Token Detected - Trading Disabled');
@@ -1262,33 +1277,95 @@ export const SwapView: React.FC = () => {
             )}
 
             {remoteTokenResult && (
-              <div className="p-3 rounded-2xl bg-cyan-950/40 border border-cyan-500/40 space-y-2">
+              <div className={`p-3.5 rounded-2xl border space-y-2.5 ${
+                remoteTokenResult.isImpersonator
+                  ? 'bg-rose-950/60 border-rose-500 shadow-lg shadow-rose-950/50'
+                  : remoteTokenResult.isScamToken || remoteTokenResult.security?.isHoneypot
+                  ? 'bg-amber-950/40 border-amber-500/50 shadow-lg shadow-amber-950/30'
+                  : 'bg-cyan-950/40 border-cyan-500/40'
+              }`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <TokenLogo symbol={remoteTokenResult.symbol} name={remoteTokenResult.name} src={remoteTokenResult.logoUrl} chainId={remoteTokenResult.chainId} className="w-8 h-8" />
                     <div>
                       <div className="font-bold text-xs text-white flex items-center gap-1.5">
                         <span>{remoteTokenResult.symbol}</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono">On-Chain</span>
+                        {remoteTokenResult.isImpersonator ? (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500 text-black font-extrabold font-mono uppercase">
+                            Fake Clone
+                          </span>
+                        ) : remoteTokenResult.isScamToken ? (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500 text-black font-bold font-mono uppercase">
+                            Scam Risk
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono">
+                            On-Chain
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-slate-400 font-mono">{remoteTokenResult.name} • {shortenAddress(remoteTokenResult.address)}</div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => {
-                      addCustomToken(remoteTokenResult);
-                      if (showFromSelect) setFromSymbol(remoteTokenResult.symbol);
-                      if (showToSelect) setToSymbol(remoteTokenResult.symbol);
-                      setShowFromSelect(false);
-                      setShowToSelect(false);
-                      setRemoteTokenResult(null);
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs font-sans transition-all cursor-pointer flex items-center gap-1 shadow-lg shadow-cyan-500/20"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Nhập & Chọn</span>
-                  </button>
+
+                  {remoteTokenResult.isImpersonator ? (
+                    <div className="px-3 py-1.5 rounded-xl bg-rose-900/60 border border-rose-500/40 text-rose-300 font-bold text-[11px] flex items-center gap-1">
+                      <ShieldX className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Đã Khóa</span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        addCustomToken(remoteTokenResult);
+                        if (showFromSelect) setFromSymbol(remoteTokenResult.symbol);
+                        if (showToSelect) setToSymbol(remoteTokenResult.symbol);
+                        setShowFromSelect(false);
+                        setShowToSelect(false);
+                        setRemoteTokenResult(null);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs font-sans transition-all cursor-pointer flex items-center gap-1 shadow-lg shadow-cyan-500/20"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Nhập & Chọn</span>
+                    </button>
+                  )}
                 </div>
+
+                {/* Impersonator or Scam Alert Box */}
+                {remoteTokenResult.isImpersonator && (
+                  <div className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-500/50 text-[11px] text-rose-200 space-y-1">
+                    <div className="font-bold flex items-center gap-1.5 text-rose-300">
+                      <ShieldAlert className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                      <span>CẢNH BÁO GIẢ MẠO: Ký hiệu {remoteTokenResult.symbol} mạo danh coin chính thức!</span>
+                    </div>
+                    <p className="text-[10px] text-rose-300/80 leading-relaxed">
+                      Địa chỉ contract không thuộc registry đã kiểm định. Để bảo vệ an toàn ví của bạn, hệ thống từ chối cho phép giao dịch hợp đồng này.
+                    </p>
+                  </div>
+                )}
+
+                {!remoteTokenResult.isImpersonator && remoteTokenResult.scamWarnings && remoteTokenResult.scamWarnings.length > 0 && (
+                  <div className="p-2.5 rounded-xl bg-amber-950/60 border border-amber-500/40 text-[11px] text-amber-200 space-y-1">
+                    <div className="font-bold flex items-center gap-1.5 text-amber-300">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                      <span>Phát hiện rủi ro coin rác / nguy cơ lừa đảo:</span>
+                    </div>
+                    <ul className="list-disc list-inside text-[10px] space-y-0.5 text-amber-300/90">
+                      {remoteTokenResult.scamWarnings.map((warn, i) => (
+                        <li key={i}>{warn}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {remoteTokenResult.security && !remoteTokenResult.isImpersonator && !remoteTokenResult.isScamToken && (
+                  <div className="flex items-center justify-between text-[11px] px-1 text-slate-400 font-mono">
+                    <span className="flex items-center gap-1 text-emerald-400">
+                      <ShieldCheck className="w-3.5 h-3.5" /> Điểm bảo mật: {remoteTokenResult.security.securityScore}/100
+                    </span>
+                    <span>Honeypot: {remoteTokenResult.security.isHoneypot ? 'CÓ' : 'KHÔNG'}</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1331,12 +1408,28 @@ export const SwapView: React.FC = () => {
                       <TokenLogo symbol={token.symbol} name={token.name} src={token.logoUrl} chainId={token.chainId} className="w-7 h-7" />
                       <div>
                         <div className="font-bold text-xs text-white group-hover:text-cyan-300 transition-colors flex items-center gap-2">
-                          {token.symbol}
+                          <span>{token.symbol}</span>
                           <span className="text-[10px] font-normal text-slate-400">{token.name}</span>
+                          {token.isVerified ? (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                              ✓ Verified
+                            </span>
+                          ) : token.isImpersonator ? (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-mono">
+                              Fake Clone
+                            </span>
+                          ) : token.isScamToken ? (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">
+                              Scam Risk
+                            </span>
+                          ) : null}
                         </div>
                         <div className="text-[10px] font-mono text-slate-500 flex items-center gap-1.5">
                           <span>{shortenAddress(token.address)}</span>
                           <span className="text-[9px] px-1 rounded bg-white/[0.06] text-slate-400">{token.chainId.toUpperCase()}</span>
+                          {token.category && (
+                            <span className="text-[9px] px-1 rounded bg-cyan-500/10 text-cyan-300">{token.category}</span>
+                          )}
                         </div>
                       </div>
                     </div>

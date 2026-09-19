@@ -567,6 +567,20 @@ async function runTests() {
 
   const ethAudit = await scanTokenSecurity('0x0000000000000000000000000000000000000000', 'ETH', 'ethereum');
   assert(ethAudit.verificationTier === 'VERIFIED', 'Native ETH is classified into VERIFIED tier');
+  assert(ethAudit.isImpersonator === false, 'Verified native ETH is not flagged as impersonator');
+  assert(ethAudit.isScamToken === false, 'Verified native ETH is not flagged as scam');
+
+  // Test 15b: Impersonation / Fake Token Detection
+  const fakeUsdtAudit = await scanTokenSecurity('0x1111111111111111111111111111111111111111', 'USDT', 'ethereum');
+  assert(fakeUsdtAudit.isImpersonator === true, 'Accurately detects fake USDT impersonating canonical token');
+  assert(fakeUsdtAudit.impersonatedSymbol === 'USDT', 'Identifies correct impersonated symbol');
+  assert(fakeUsdtAudit.riskLevel === 'CRITICAL', 'Assigns CRITICAL risk level to fake clone');
+  assert(fakeUsdtAudit.scamWarnings && fakeUsdtAudit.scamWarnings.length > 0, 'Populates descriptive scamWarnings for clone');
+
+  // Test 15c: Bytecode Scam & Honeypot Heuristics
+  const dangerousBytecode = '0xff'; // SELFDESTRUCT opcode (0xFF)
+  const dangerousForensics = scanBytecodeOpcodes(dangerousBytecode);
+  assert(dangerousForensics.hasSelfDestruct === true, 'Accurately detects SELFDESTRUCT opcode (0xFF)');
 
   // -------------------------------------------------------------
   // Test 17: Production Hardened Wallet Authentication & Nonce Replay Protection
