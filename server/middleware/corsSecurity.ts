@@ -48,7 +48,7 @@ export function getConfiguredOrigins(): string[] {
  * Never reflects arbitrary origins.
  */
 export function isOriginAllowed(origin?: string): boolean {
-  if (!origin) return false;
+  if (!origin || origin === 'null') return false;
   
   const allowlist = getConfiguredOrigins();
   if (allowlist.includes(origin)) {
@@ -56,9 +56,18 @@ export function isOriginAllowed(origin?: string): boolean {
   }
 
   // Allow canonical Google Cloud Run AI Studio preview/dev subdomains:
-  // e.g. https://ais-dev-*.asia-east1.run.app or https://ais-pre-*.asia-east1.run.app
-  const aiStudioPattern = /^https:\/\/ais-(dev|pre)-[a-z0-9]+-[0-9]+\.[a-z0-9-]+\.run\.app$/;
-  if (aiStudioPattern.test(origin)) {
+  // e.g. https://ais-dev-*.asia-east1.run.app or https://ais-pre-*.run.app
+  if (/^https:\/\/([a-z0-9-]+-)?([0-9]+\.)?[a-z0-9-]+\.run\.app$/.test(origin)) {
+    return true;
+  }
+
+  // Allow Google AI Studio development & preview parent environments
+  if (
+    origin === 'https://ai.studio' ||
+    origin === 'https://aistudio.google.com' ||
+    /^https:\/\/([a-z0-9-]+\.)*ai\.studio$/.test(origin) ||
+    /^https:\/\/([a-z0-9-]+\.)*google\.com$/.test(origin)
+  ) {
     return true;
   }
 

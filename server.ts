@@ -64,6 +64,9 @@ app.use(
       },
     },
     frameguard: false, // Frame ancestors in CSP manages iframe embedding safely for preview
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
     hsts: {
       maxAge: 31536000,
       includeSubDomains: true,
@@ -85,9 +88,6 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Dex-Engine', 'HYPERON-DEX Core v4.2.0-Institutional');
   res.setHeader('Permissions-Policy', 'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()');
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-  res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
   res.setHeader('X-Download-Options', 'noopen');
   res.setHeader('X-XSS-Protection', '1; mode=block');
