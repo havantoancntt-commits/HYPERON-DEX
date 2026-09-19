@@ -531,7 +531,7 @@ export interface CrossChainExecutionStatus {
   intentId: string;
   quoteId: string;
   intentHash: string;
-  status: 'SUBMITTED' | 'SOURCE_CONFIRMED' | 'ZK_ATTESTATION_RELAY' | 'DESTINATION_SETTLEMENT' | 'COMPLETED' | 'FAILED';
+  status: 'SUBMITTED' | 'SOURCE_CONFIRMED' | 'ZK_ATTESTATION_RELAY' | 'DESTINATION_SETTLEMENT' | 'COMPLETED' | 'FAILED' | 'NOT_CONFIGURED';
   currentStepIndex: number;
   fromChain: ChainId;
   toChain: ChainId;

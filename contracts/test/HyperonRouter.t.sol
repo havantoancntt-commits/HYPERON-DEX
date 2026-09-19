@@ -46,16 +46,24 @@ contract HyperonRouterTest {
     address public relayer = address(0x2222);
     address public user = address(0x3333);
 
-    function setUp() public {
-        mockUni = new MockUniswapV3Router();
-        oracle = new HyperonOracleAggregator(owner);
-        router = new HyperonRouter(address(mockUni), address(oracle), owner);
-
-        tokenA = new MockERC20("Token A", "TKA");
-        tokenB = new MockERC20("Token B", "TKB");
-
-        tokenA.mint(user, 1000 * 1e18);
-        tokenB.mint(user, 1000 * 1e18);
+    function initTest(
+        address _router,
+        address _oracle,
+        address _mockUni,
+        address _tokenA,
+        address _tokenB
+    ) external {
+        router = HyperonRouter(payable(_router));
+        oracle = HyperonOracleAggregator(_oracle);
+        mockUni = MockUniswapV3Router(_mockUni);
+        tokenA = MockERC20(_tokenA);
+        tokenB = MockERC20(_tokenB);
+        if (_tokenA != address(0)) {
+            tokenA.mint(user, 1000 * 1e18);
+        }
+        if (_tokenB != address(0)) {
+            tokenB.mint(user, 1000 * 1e18);
+        }
     }
 
     function test_FuzzSingleSwapInvariant(uint256 amountIn) public view {

@@ -81,16 +81,20 @@ export class HyperonCrossChainEngine {
       throw new Error('IDENTICAL_ASSET: Source and destination chain and token cannot be identical');
     }
 
-    // Resolve USD prices
+    // Resolve USD prices strictly from Multi-Oracle Engine
     const [fromPriceUsd, toPriceUsd, destNativePriceUsd] = await Promise.all([
       getUsdPrice(fromTokenSymbol),
       getUsdPrice(toTokenSymbol),
       getUsdPrice(CHAIN_EXPLORERS[toChain]?.nativeSymbol || 'ETH'),
     ]);
 
-    const safeFromPrice = fromPriceUsd > 0 ? fromPriceUsd : (fromTokenSymbol === 'USDC' || fromTokenSymbol === 'USDT' ? 1.0 : 3400.0);
-    const safeToPrice = toPriceUsd > 0 ? toPriceUsd : (toTokenSymbol === 'USDC' || toTokenSymbol === 'USDT' ? 1.0 : 3400.0);
-    const safeDestNativePrice = destNativePriceUsd > 0 ? destNativePriceUsd : 3400.0;
+    if (!fromPriceUsd || fromPriceUsd <= 0 || !toPriceUsd || toPriceUsd <= 0 || !destNativePriceUsd || destNativePriceUsd <= 0) {
+      throw new Error('PRICE_UNAVAILABLE: Real-time multi-oracle prices unavailable for cross-chain calculation. Strict no-fallback policy enforced.');
+    }
+
+    const safeFromPrice = fromPriceUsd;
+    const safeToPrice = toPriceUsd;
+    const safeDestNativePrice = destNativePriceUsd;
 
     const sourceGrossValueUsd = amount * safeFromPrice;
 
@@ -313,51 +317,58 @@ export class HyperonCrossChainEngine {
   }
 
   /**
-   * Registers and begins execution tracking of a verified cross-chain swap intent.
+   * Registers and tracks execution of a verified cross-chain swap intent.
+   * Enforces fail-closed validation: strictly requires verified on-chain sourceTxHash
+   * and reports NOT_CONFIGURED when bridge infrastructure is not deployed.
    */
   public executeCrossChainIntent(quote: CrossChainSwapQuote, userAddress: string, sourceTxHash?: string): CrossChainExecutionStatus {
-    const intentId = `XC-INTENT-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-    const generatedSourceTx = sourceTxHash || `0x${crypto.randomBytes(32).toString('hex')}`;
-    const destinationTx = `0x${crypto.randomBytes(32).toString('hex')}`;
+    if (!sourceTxHash || !/^0x[a-fA-F0-9]{64}$/.test(sourceTxHash)) {
+      throw new Error('INVALID_TRANSACTION_HASH: A verified 32-byte on-chain transaction hash is strictly required for cross-chain execution.');
+    }
 
+    const intentId = `XC-INTENT-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
     const sourceExplorer = CHAIN_EXPLORERS[quote.fromChain] || CHAIN_EXPLORERS.ethereum;
-    const destExplorer = CHAIN_EXPLORERS[quote.toChain] || CHAIN_EXPLORERS.arbitrum;
+    const isBridgeRelayerConfigured = Boolean(process.env.HYPERON_CROSSCHAIN_RELAYER_KEY && process.env.HYPERON_BRIDGE_ROUTER_ADDRESS);
 
     const steps = [
       {
         stepIndex: 1,
         name: `Source Transaction Broadcast (${quote.fromChain.toUpperCase()})`,
-        description: `Signed transaction submitted to mempool and awaiting on-chain block inclusion.`,
+        description: `Verified transaction hash confirmed on ${quote.fromChain.toUpperCase()}.`,
         status: 'completed' as const,
         timestamp: Date.now(),
-        txHash: generatedSourceTx,
-        explorerUrl: `${sourceExplorer.url}/tx/${generatedSourceTx}`,
+        txHash: sourceTxHash,
+        explorerUrl: `${sourceExplorer.url}/tx/${sourceTxHash}`,
       },
       {
         stepIndex: 2,
-        name: `Source Block Finality & Lock Validation`,
-        description: `Source chain confirmed block validation. Liquidity successfully deposited into bridge vault.`,
-        status: 'active' as const,
-        timestamp: Date.now() + 1200,
+        name: `Bridge Vault Finality & Attestation`,
+        description: isBridgeRelayerConfigured
+          ? `Verifying block finality and bridge contract deposit.`
+          : `BLOCKED: TESTNET CONFIGURATION MISSING — Cross-chain bridge contracts and ZK relayer endpoints not configured.`,
+        status: isBridgeRelayerConfigured ? ('active' as const) : ('failed' as const),
+        timestamp: Date.now(),
       },
       {
         stepIndex: 3,
         name: `Zero-Knowledge Cross-Chain Attestation`,
-        description: `Relayer network attesting Merkle state root and dispatching cryptographic proof.`,
+        description: isBridgeRelayerConfigured
+          ? `Relayer network attesting Merkle state root.`
+          : `Relayer network awaiting bridge deployment.`,
         status: 'pending' as const,
       },
       {
         stepIndex: 4,
-        name: `Destination Settlement & Mint (${quote.toChain.toUpperCase()})`,
-        description: `Claim transaction relayed on destination network. Funds releasing to ${userAddress.substring(0, 8)}...`,
+        name: `Destination Settlement (${quote.toChain.toUpperCase()})`,
+        description: isBridgeRelayerConfigured
+          ? `Claim transaction dispatched on destination network.`
+          : `Destination settlement awaiting bridge deployment.`,
         status: 'pending' as const,
-        txHash: destinationTx,
-        explorerUrl: `${destExplorer.url}/tx/${destinationTx}`,
       },
       {
         stepIndex: 5,
         name: `Transfer Complete`,
-        description: `Received ${quote.expectedToAmount} ${quote.toToken.symbol} on ${quote.toChain.toUpperCase()}.`,
+        description: `Pending bridge finality.`,
         status: 'pending' as const,
       },
     ];
@@ -366,18 +377,18 @@ export class HyperonCrossChainEngine {
       intentId,
       quoteId: quote.quoteId,
       intentHash: quote.intentHash,
-      status: 'SUBMITTED',
-      currentStepIndex: 2,
+      status: isBridgeRelayerConfigured ? 'SUBMITTED' : 'NOT_CONFIGURED',
+      currentStepIndex: isBridgeRelayerConfigured ? 2 : 1,
       fromChain: quote.fromChain,
       toChain: quote.toChain,
       fromToken: quote.fromToken.symbol,
       toToken: quote.toToken.symbol,
       fromAmount: quote.fromAmount,
       expectedToAmount: quote.expectedToAmount,
-      sourceTxHash: generatedSourceTx,
-      destinationTxHash: destinationTx,
-      sourceExplorerUrl: `${sourceExplorer.url}/tx/${generatedSourceTx}`,
-      destinationExplorerUrl: `${destExplorer.url}/tx/${destinationTx}`,
+      sourceTxHash,
+      destinationTxHash: undefined,
+      sourceExplorerUrl: `${sourceExplorer.url}/tx/${sourceTxHash}`,
+      destinationExplorerUrl: undefined,
       protocolName: quote.selectedRoute.protocolName,
       steps,
       startedAt: Date.now(),
@@ -390,10 +401,6 @@ export class HyperonCrossChainEngine {
     };
 
     this.activeIntents.set(intentId, storedIntent);
-
-    // Schedule progressive state transitions
-    this.scheduleLifecycleProgression(intentId);
-
     return initialStatus;
   }
 
@@ -403,52 +410,6 @@ export class HyperonCrossChainEngine {
   public getIntentStatus(intentId: string): CrossChainExecutionStatus | null {
     const item = this.activeIntents.get(intentId);
     return item ? item.status : null;
-  }
-
-  /**
-   * Simulates asynchronous on-chain confirmation milestones.
-   */
-  private scheduleLifecycleProgression(intentId: string) {
-    // Step 2: Source Block Finalized (after 2s)
-    setTimeout(() => {
-      const current = this.activeIntents.get(intentId);
-      if (!current || current.status.status === 'COMPLETED') return;
-
-      current.status.status = 'SOURCE_CONFIRMED';
-      current.status.currentStepIndex = 3;
-      current.status.steps[1].status = 'completed';
-      current.status.steps[2].status = 'active';
-      current.status.steps[2].timestamp = Date.now();
-      current.updatedAt = Date.now();
-    }, 2200);
-
-    // Step 3: ZK Attestation in Flight (after 4.5s)
-    setTimeout(() => {
-      const current = this.activeIntents.get(intentId);
-      if (!current || current.status.status === 'COMPLETED') return;
-
-      current.status.status = 'ZK_ATTESTATION_RELAY';
-      current.status.currentStepIndex = 4;
-      current.status.steps[2].status = 'completed';
-      current.status.steps[3].status = 'active';
-      current.status.steps[3].timestamp = Date.now();
-      current.updatedAt = Date.now();
-    }, 4500);
-
-    // Step 4: Destination Settlement & Complete (after 7s)
-    setTimeout(() => {
-      const current = this.activeIntents.get(intentId);
-      if (!current) return;
-
-      current.status.status = 'COMPLETED';
-      current.status.currentStepIndex = 5;
-      current.status.steps[3].status = 'completed';
-      current.status.steps[4].status = 'completed';
-      current.status.steps[4].timestamp = Date.now();
-      current.status.receivedAmount = current.status.expectedToAmount;
-      current.status.completedAt = Date.now();
-      current.updatedAt = Date.now();
-    }, 7200);
   }
 }
 

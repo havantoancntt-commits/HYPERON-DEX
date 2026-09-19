@@ -688,8 +688,12 @@ export class PoolDiscoveryService {
 
   /**
    * Seeds a verified pool record for testing or initial warmup.
+   * Strictly barred from execution in production environments.
    */
   seedPoolRecord(key: string, record: VerifiedPoolRecord): void {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('PROD_GUARD: seedPoolRecord is strictly forbidden in production mode');
+    }
     poolCache.set(key, record);
   }
 
