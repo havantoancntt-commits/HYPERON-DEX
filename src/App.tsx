@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { ShieldCheck } from 'lucide-react';
 import { WalletProvider } from './context/WalletContext';
 import { ExchangeProvider, useExchange } from './context/ExchangeContext';
 import { I18nProvider, useI18n } from './context/I18nContext';
@@ -10,6 +11,7 @@ import { AccountDetailsModal } from './components/AccountDetailsModal';
 import { ToastContainer } from './components/ToastContainer';
 import { motion, AnimatePresence } from 'motion/react';
 import { soundManager } from './lib/sound';
+import { initClientSecurityGuard } from './lib/clientSecurityGuard';
 
 // Views
 import { DashboardView } from './views/DashboardView';
@@ -41,7 +43,7 @@ import { AdminConsoleView } from './views/AdminConsoleView';
 import { SettingsView } from './views/SettingsView';
 
 const MainLayout: React.FC = () => {
-  const { activeView, selectedPair } = useExchange();
+  const { activeView, selectedPair, addToast, setActiveView } = useExchange();
   const { t, theme } = useI18n();
   const [telemetry, setTelemetry] = React.useState<{ latencyMs: number | null; gasPriceGwei: number | null; status: string }>({
     latencyMs: null,
@@ -52,6 +54,24 @@ const MainLayout: React.FC = () => {
   useEffect(() => {
     soundManager.playTick();
   }, [activeView]);
+
+  // Initialize Enterprise Client Anti-Tamper & Anti-Copy Security Guard
+  useEffect(() => {
+    const cleanup = initClientSecurityGuard({
+      enableContextMenuProtection: true,
+      enableDevToolsShortcutInterception: true,
+      enableDevToolsDetection: true,
+      enableDomMutationWatchdog: true,
+      onTamperWarning: (msg) => {
+        addToast({
+          title: 'HYPERON Sentinel Shield',
+          message: msg,
+          type: 'warning',
+        });
+      },
+    });
+    return cleanup;
+  }, [addToast]);
 
   useEffect(() => {
     let mounted = true;
@@ -187,6 +207,15 @@ const MainLayout: React.FC = () => {
           <span className="text-slate-400">RPC: <strong className="text-cyan-400">{t('app.rpc.flashbots')}</strong></span>
         </div>
         <div className="flex items-center gap-4 text-slate-400 font-medium">
+          <button
+            onClick={() => setActiveView('security-center')}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-cyan-950/40 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 hover:border-cyan-400 text-[9px] font-mono font-bold transition-all cursor-pointer"
+            title="Xem hệ thống bảo mật HYPERON Sentinel Threat Defense"
+          >
+            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+            <span>SENTINEL: ARMORED</span>
+          </button>
+          <span>|</span>
           <span className="text-indigo-400 font-bold">HYPERON PRO v4.8</span>
           <span>|</span>
           <span className="text-cyan-300">{t('app.ai.active')}</span>
