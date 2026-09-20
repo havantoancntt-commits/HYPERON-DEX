@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { createPublicClient, http, formatEther, Address } from 'viem';
+import { createPublicClient, http, formatEther, formatUnits, encodeFunctionData, Address } from 'viem';
 import { mainnet, base, arbitrum, optimism, bsc, polygon } from 'viem/chains';
 import { ChainId, TransactionHistoryItem } from '../types';
-import { SUPPORTED_CHAINS } from '../lib/constants';
+import { SUPPORTED_CHAINS, VERIFIED_TOKENS } from '../lib/constants';
 import { ReceiptVerifier } from '../lib/execution/ReceiptVerifier';
+import { ERC20_ABI } from '../lib/execution/TransactionBuilder';
 
 export type SupportedWalletType =
   | 'metamask'
@@ -14,6 +15,9 @@ export type SupportedWalletType =
   | 'trust'
   | 'rainbow'
   | 'bitget'
+  | 'zerion'
+  | 'brave'
+  | 'safe'
   | 'walletconnect'
   | 'injected'
   | 'sandbox'
@@ -90,6 +94,9 @@ interface WalletContextType {
   approveToken: (tokenSymbol: string) => Promise<void>;
   tokenApprovals: Record<string, boolean>;
   refreshBalances: () => Promise<void>;
+  activeCustomProvider: any;
+  checkAllowance: (tokenAddress: string, ownerAddress: string, spenderAddress: string) => Promise<bigint>;
+  approveTokenOnChain: (tokenAddress: string, spenderAddress: string, amountRaw?: bigint) => Promise<string>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -413,12 +420,78 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Helper to safely get the provider for a wallet type
-  const getInjectedProvider = (type?: SupportedWalletType, customProvider?: any) => {
+  const getInjectedProvider = useCallback((type?: SupportedWalletType, customProvider?: any) => {
     if (customProvider) return customProvider;
     if (typeof window === 'undefined') return null;
 
     const win = window as any;
 
+    // 1. Check EIP-6963 discovered providers first if type matches rdns or name
+    if (type && discoveredProviders.length > 0) {
+      const match = discoveredProviders.find((dp) => {
+        const rdns = (dp.info.rdns || '').toLowerCase();
+        const name = (dp.info.name || '').toLowerCase();
+        if (type === 'metamask' && (rdns.includes('io.metamask') || name.includes('metamask'))) return true;
+        if (type === 'rabby' && (rdns.includes('io.rabby') || name.includes('rabby'))) return true;
+        if (type === 'coinbase' && (rdns.includes('coinbase') || name.includes('coinbase'))) return true;
+        if (type === 'phantom' && (rdns.includes('phantom') || name.includes('phantom'))) return true;
+        if (type === 'okx' && (rdns.includes('okx') || rdns.includes('okex') || name.includes('okx'))) return true;
+        if (type === 'trust' && (rdns.includes('trust') || name.includes('trust'))) return true;
+        if (type === 'rainbow' && (rdns.includes('rainbow') || name.includes('rainbow'))) return true;
+        if (type === 'bitget' && (rdns.includes('bitget') || rdns.includes('bitkeep') || name.includes('bitget'))) return true;
+        if (type === 'zerion' && (rdns.includes('zerion') || name.includes('zerion'))) return true;
+        if (type === 'brave' && (rdns.includes('brave') || name.includes('brave'))) return true;
+        if (type === 'safe' && (rdns.includes('safe') || name.includes('safe'))) return true;
+        return false;
+      });
+      if (match?.provider) return match.provider;
+    }
+
+    // 2. Check multi-provider array on window.ethereum.providers
+    if (win.ethereum?.providers && Array.isArray(win.ethereum.providers)) {
+      if (type === 'metamask') {
+        const mm = win.ethereum.providers.find((p: any) => p.isMetaMask && !p.isRabby && !p.isBraveWallet && !p.isPhantom);
+        if (mm) return mm;
+      }
+      if (type === 'rabby') {
+        const rb = win.ethereum.providers.find((p: any) => p.isRabby);
+        if (rb) return rb;
+      }
+      if (type === 'coinbase') {
+        const cb = win.ethereum.providers.find((p: any) => p.isCoinbaseWallet);
+        if (cb) return cb;
+      }
+      if (type === 'phantom') {
+        const ph = win.ethereum.providers.find((p: any) => p.isPhantom);
+        if (ph) return ph;
+      }
+      if (type === 'okx') {
+        const ok = win.ethereum.providers.find((p: any) => p.isOkxWallet);
+        if (ok) return ok;
+      }
+      if (type === 'trust') {
+        const tr = win.ethereum.providers.find((p: any) => p.isTrust || p.isTrustWallet);
+        if (tr) return tr;
+      }
+      if (type === 'rainbow') {
+        const rn = win.ethereum.providers.find((p: any) => p.isRainbow);
+        if (rn) return rn;
+      }
+      if (type === 'bitget') {
+        const bg = win.ethereum.providers.find((p: any) => p.isBitKeep || p.isBitget);
+        if (bg) return bg;
+      }
+      if (type === 'zerion') {
+        const zr = win.ethereum.providers.find((p: any) => p.isZerion);
+        if (zr) return zr;
+      }
+      if (type === 'brave') {
+        const br = win.ethereum.providers.find((p: any) => p.isBraveWallet);
+        if (br) return br;
+      }
+    }
+
+    // 3. Dedicated window globals
     if (type === 'rabby') {
       return win.rabby || (win.ethereum?.isRabby ? win.ethereum : null);
     }
@@ -440,20 +513,26 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (type === 'bitget') {
       return win.bitkeep?.ethereum || win.binancew3w || null;
     }
+    if (type === 'zerion') {
+      return win.zerionWallet || (win.ethereum?.isZerion ? win.ethereum : null);
+    }
+    if (type === 'brave') {
+      return win.braveEthereum || (win.ethereum?.isBraveWallet ? win.ethereum : null);
+    }
+    if (type === 'safe') {
+      return win.safe || (win.ethereum?.isSafe ? win.ethereum : null);
+    }
     if (type === 'metamask') {
-      if (win.ethereum?.providers && Array.isArray(win.ethereum.providers)) {
-        const mm = win.ethereum.providers.find((p: any) => p.isMetaMask && !p.isRabby);
-        if (mm) return mm;
-      }
-      if (win.ethereum?.isMetaMask) return win.ethereum;
+      if (win.ethereum?.isMetaMask && !win.ethereum?.isRabby) return win.ethereum;
     }
 
     return win.ethereum || null;
-  };
+  }, [discoveredProviders]);
 
   // Query live on-chain balance when an injected wallet is connected
   const refreshBalances = useCallback(async () => {
     if (!address || !address.startsWith('0x') || address.length !== 42) return;
+    if (walletType === 'sandbox') return;
 
     try {
       const targetChain = CHAIN_MAP[chainId] || mainnet;
@@ -462,19 +541,57 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         transport: http(),
       });
 
-      const nativeBalance = await client.getBalance({ address: address as Address });
-      const ethVal = parseFloat(formatEther(nativeBalance));
+      const updatedBalances: Record<string, number> = {};
 
-      if (!isNaN(ethVal) && ethVal > 0) {
-        setBalances((prev) => ({
-          ...prev,
-          ETH: ethVal,
-        }));
+      // 1. Fetch live native balance
+      const nativeBalance = await client.getBalance({ address: address as Address });
+      const nativeVal = parseFloat(formatEther(nativeBalance));
+      if (!isNaN(nativeVal)) {
+        if (chainId === 'bsc') {
+          updatedBalances.BNB = nativeVal;
+        } else if (chainId === 'polygon') {
+          updatedBalances.POL = nativeVal;
+          updatedBalances.MATIC = nativeVal;
+        } else {
+          updatedBalances.ETH = nativeVal;
+        }
       }
+
+      // 2. Fetch live ERC-20 token balances for verified tokens on this chain
+      const chainTokens = VERIFIED_TOKENS.filter(
+        (t) => t.chainId === chainId && !t.isNative && t.address?.startsWith('0x') && t.address.length === 42
+      );
+
+      const balanceQueries = chainTokens.slice(0, 10).map(async (tok) => {
+        try {
+          const rawBal = await client.readContract({
+            address: tok.address as Address,
+            abi: ERC20_ABI,
+            functionName: 'balanceOf',
+            args: [address as Address],
+          } as any);
+          const formatted = parseFloat(formatUnits(rawBal as bigint, tok.decimals || 18));
+          return { symbol: tok.symbol, balance: formatted };
+        } catch {
+          return null;
+        }
+      });
+
+      const results = await Promise.allSettled(balanceQueries);
+      results.forEach((r) => {
+        if (r.status === 'fulfilled' && r.value) {
+          updatedBalances[r.value.symbol] = r.value.balance;
+        }
+      });
+
+      setBalances((prev) => ({
+        ...prev,
+        ...updatedBalances,
+      }));
     } catch {
       // In sandbox mode or RPC failover, retain initialized balances
     }
-  }, [address, chainId]);
+  }, [address, chainId, walletType]);
 
   useEffect(() => {
     refreshBalances();
@@ -741,18 +858,19 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const switchChain = async (newChainId: ChainId) => {
     setChainId(newChainId);
-    if (typeof window !== 'undefined' && (window as any).ethereum && walletType !== 'sandbox') {
+    const provider = activeCustomProvider || getInjectedProvider(walletType) || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+    if (provider && provider.request && walletType !== 'sandbox') {
       const chainConfig = SUPPORTED_CHAINS[newChainId];
       const chainHex = `0x${(newChainId === 'ethereum' ? 1 : newChainId === 'base' ? 8453 : newChainId === 'arbitrum' ? 42161 : newChainId === 'optimism' ? 10 : newChainId === 'bsc' ? 56 : 137).toString(16)}`;
       try {
-        await (window as any).ethereum.request({
+        await provider.request({
           method: 'wallet_switchEthereumChain',
           params: [{ chainId: chainHex }],
         });
       } catch (switchError: any) {
         if (switchError.code === 4902 && chainConfig) {
           try {
-            await (window as any).ethereum.request({
+            await provider.request({
               method: 'wallet_addEthereumChain',
               params: [
                 {
@@ -770,6 +888,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       }
     }
+    await refreshBalances();
   };
 
   const authenticateSiwe = async (): Promise<boolean> => {
@@ -878,7 +997,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const correlationId = `CORR-${randomHex}`;
 
     let txHash = '';
-    if (typeof window !== 'undefined' && (window as any).ethereum && walletType !== 'sandbox') {
+    const provider = activeCustomProvider || getInjectedProvider(walletType) || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+    if (provider && provider.request && walletType !== 'sandbox') {
       if (!txData.targetAddress || !txData.targetAddress.startsWith('0x') || txData.targetAddress.length !== 42) {
         throw new Error('INVALID_EXECUTION_TARGET: A verified on-chain router contract address is strictly required.');
       }
@@ -886,7 +1006,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         throw new Error('INVALID_EXECUTION_CALLDATA: Strict execution pipeline requires verified non-empty ABI calldata.');
       }
       try {
-        const hash = await (window as any).ethereum.request({
+        const hash = await provider.request({
           method: 'eth_sendTransaction',
           params: [
             {
@@ -919,8 +1039,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     let currentBlock = 0;
     try {
-      if (typeof window !== 'undefined' && (window as any).ethereum) {
-        const blockHex = await (window as any).ethereum.request({ method: 'eth_blockNumber' });
+      if (provider && provider.request) {
+        const blockHex = await provider.request({ method: 'eth_blockNumber' });
         currentBlock = parseInt(blockHex, 16);
       }
       if (!currentBlock) {
@@ -980,13 +1100,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Background receipt tracker: polling on-chain receipt without freezing the UI
       (async () => {
         try {
-          if (typeof window !== 'undefined' && (window as any).ethereum) {
+          if (provider && provider.request) {
             let attempts = 0;
             const maxAttempts = 30;
             while (attempts < maxAttempts) {
               await new Promise((resolve) => setTimeout(resolve, 2000));
               attempts++;
-              const receipt = await (window as any).ethereum.request({
+              const receipt = await provider.request({
                 method: 'eth_getTransactionReceipt',
                 params: [txHash],
               });
@@ -1042,6 +1162,74 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     return newTx;
   };
+
+  const checkAllowance = useCallback(
+    async (tokenAddress: string, ownerAddress: string, spenderAddress: string): Promise<bigint> => {
+      try {
+        if (!tokenAddress || !ownerAddress || !spenderAddress) return 0n;
+        if (!tokenAddress.startsWith('0x') || !ownerAddress.startsWith('0x') || !spenderAddress.startsWith('0x')) return 0n;
+        const targetChain = CHAIN_MAP[chainId] || mainnet;
+        const client = createPublicClient({
+          chain: targetChain,
+          transport: http(),
+        });
+        const allowance = await client.readContract({
+          address: tokenAddress as Address,
+          abi: ERC20_ABI,
+          functionName: 'allowance',
+          args: [ownerAddress as Address, spenderAddress as Address],
+        } as any);
+        return BigInt(allowance?.toString() || '0');
+      } catch (err) {
+        console.warn('Failed to read on-chain token allowance:', err);
+        return 0n;
+      }
+    },
+    [chainId]
+  );
+
+  const approveTokenOnChain = useCallback(
+    async (tokenAddress: string, spenderAddress: string, amountRaw?: bigint): Promise<string> => {
+      const provider =
+        activeCustomProvider ||
+        getInjectedProvider(walletType) ||
+        (typeof window !== 'undefined' ? (window as any).ethereum : null);
+      if (!provider) {
+        throw new Error('Không tìm thấy ví Web3 đã kết nối để gửi giao dịch phê duyệt.');
+      }
+      const maxUint256 = 115792089237316195423570985008687907853269984665640564039457584007913129639935n;
+      const amountToApprove = amountRaw || maxUint256;
+      const calldata = encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [spenderAddress as Address, amountToApprove],
+      });
+
+      const hash = await provider.request({
+        method: 'eth_sendTransaction',
+        params: [
+          {
+            from: address,
+            to: tokenAddress,
+            data: calldata,
+            value: '0x0',
+          },
+        ],
+      });
+
+      if (!hash) {
+        throw new Error('Giao dịch phê duyệt không trả về mã hash.');
+      }
+
+      setTokenApprovals((prev) => ({
+        ...prev,
+        [tokenAddress.toLowerCase()]: true,
+      }));
+
+      return hash;
+    },
+    [address, activeCustomProvider, walletType, getInjectedProvider]
+  );
 
   const approveToken = async (tokenSymbol: string) => {
     setTokenApprovals((prev) => ({
@@ -1102,6 +1290,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         approveToken,
         tokenApprovals,
         refreshBalances,
+        activeCustomProvider,
+        checkAllowance,
+        approveTokenOnChain,
       }}
     >
       {children}

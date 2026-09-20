@@ -75,7 +75,7 @@ export const ConnectWalletModal: React.FC = () => {
     const eth = win.ethereum;
 
     const detected: Record<string, boolean> = {
-      metamask: Boolean(eth?.isMetaMask && !eth?.isRabby),
+      metamask: Boolean(eth?.isMetaMask && !eth?.isRabby && !eth?.isPhantom && !eth?.isBraveWallet),
       rabby: Boolean(win.rabby || eth?.isRabby),
       coinbase: Boolean(win.coinbaseWalletExtension || eth?.isCoinbaseWallet),
       phantom: Boolean(win.phantom?.ethereum || eth?.isPhantom),
@@ -83,6 +83,9 @@ export const ConnectWalletModal: React.FC = () => {
       trust: Boolean(win.trustwallet || eth?.isTrust),
       rainbow: Boolean(win.rainbow || eth?.isRainbow),
       bitget: Boolean(win.bitkeep?.ethereum || win.binancew3w),
+      zerion: Boolean(win.zerionWallet || eth?.isZerion),
+      brave: Boolean(win.braveEthereum || eth?.isBraveWallet),
+      safe: Boolean(win.safe || eth?.isSafe),
       injected: Boolean(eth),
       walletconnect: true,
       sandbox: true,
@@ -90,15 +93,19 @@ export const ConnectWalletModal: React.FC = () => {
 
     // Also check EIP-6963 discovered providers
     discoveredProviders.forEach((dp) => {
-      const rdns = dp.info.rdns.toLowerCase();
-      if (rdns.includes('metamask')) detected.metamask = true;
-      if (rdns.includes('rabby')) detected.rabby = true;
-      if (rdns.includes('coinbase')) detected.coinbase = true;
-      if (rdns.includes('phantom')) detected.phantom = true;
-      if (rdns.includes('okx') || rdns.includes('okex')) detected.okx = true;
-      if (rdns.includes('trust')) detected.trust = true;
-      if (rdns.includes('rainbow')) detected.rainbow = true;
-      if (rdns.includes('bitget') || rdns.includes('bitkeep')) detected.bitget = true;
+      const rdns = (dp.info.rdns || '').toLowerCase();
+      const name = (dp.info.name || '').toLowerCase();
+      if (rdns.includes('metamask') || name.includes('metamask')) detected.metamask = true;
+      if (rdns.includes('rabby') || name.includes('rabby')) detected.rabby = true;
+      if (rdns.includes('coinbase') || name.includes('coinbase')) detected.coinbase = true;
+      if (rdns.includes('phantom') || name.includes('phantom')) detected.phantom = true;
+      if (rdns.includes('okx') || rdns.includes('okex') || name.includes('okx')) detected.okx = true;
+      if (rdns.includes('trust') || name.includes('trust')) detected.trust = true;
+      if (rdns.includes('rainbow') || name.includes('rainbow')) detected.rainbow = true;
+      if (rdns.includes('bitget') || rdns.includes('bitkeep') || name.includes('bitget')) detected.bitget = true;
+      if (rdns.includes('zerion') || name.includes('zerion')) detected.zerion = true;
+      if (rdns.includes('brave') || name.includes('brave')) detected.brave = true;
+      if (rdns.includes('safe') || name.includes('safe')) detected.safe = true;
     });
 
     setInstalledMap(detected);
@@ -200,6 +207,36 @@ export const ConnectWalletModal: React.FC = () => {
       iconUrl: 'https://assets.coingecko.com/markets/images/825/small/bitget.png',
       installUrl: 'https://web3.bitget.com/',
       isInstalled: Boolean(installedMap.bitget),
+      category: 'injected',
+    },
+    {
+      id: 'zerion',
+      name: 'Zerion Wallet',
+      description: 'Smart DeFi wallet with interactive multichain portfolio tracking',
+      badge: installedMap.zerion ? 'DETECTED' : undefined,
+      iconUrl: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
+      installUrl: 'https://zerion.io/',
+      isInstalled: Boolean(installedMap.zerion),
+      category: 'injected',
+    },
+    {
+      id: 'brave',
+      name: 'Brave Wallet',
+      description: 'Secure native browser wallet built directly into Brave',
+      badge: installedMap.brave ? 'DETECTED' : undefined,
+      iconUrl: 'https://assets.coingecko.com/coins/images/677/small/basic-attention-token.png',
+      installUrl: 'https://brave.com/wallet/',
+      isInstalled: Boolean(installedMap.brave),
+      category: 'injected',
+    },
+    {
+      id: 'safe',
+      name: 'Safe Multisig',
+      description: 'Smart contract wallet with multi-signature institutional security',
+      badge: installedMap.safe ? 'DETECTED' : 'INSTITUTIONAL',
+      iconUrl: 'https://assets.coingecko.com/coins/images/28148/small/safe.png',
+      installUrl: 'https://app.safe.global/',
+      isInstalled: Boolean(installedMap.safe),
       category: 'injected',
     },
     {
