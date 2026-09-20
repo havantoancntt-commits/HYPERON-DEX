@@ -323,6 +323,45 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   }, []);
 
+  // Synchronize server-side SIWE session state (Zero-Trust)
+  useEffect(() => {
+    let mounted = true;
+    const verifySession = async () => {
+      if (!address) {
+        setIsSiweAuthenticated(false);
+        setSiweSession(null);
+        return;
+      }
+      try {
+        const res = await fetch('/api/auth/session', { credentials: 'include' });
+        if (!mounted) return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.authenticated && data.session && data.session.walletAddress.toLowerCase() === address.toLowerCase()) {
+            setIsSiweAuthenticated(true);
+            setSiweSession({
+              address: data.session.walletAddress,
+              nonce: 'server_session',
+              verifiedAt: data.session.issuedAt,
+            });
+            return;
+          }
+        }
+        setIsSiweAuthenticated(false);
+        setSiweSession(null);
+      } catch {
+        if (mounted) {
+          setIsSiweAuthenticated(false);
+          setSiweSession(null);
+        }
+      }
+    };
+    verifySession();
+    return () => {
+      mounted = false;
+    };
+  }, [address]);
+
   const recordRecentAccount = (wType: SupportedWalletType, addr: string, name?: string) => {
     if (!addr) return;
     setRecentAccounts((prev) => {
@@ -684,6 +723,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setSiweSession(null);
     setActiveCustomProvider(null);
 
+    // Invalidate server session
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+
     if (typeof window !== 'undefined') {
       localStorage.removeItem('hyperon_wallet_connected');
       localStorage.removeItem('hyperon_wallet_address');
@@ -735,8 +777,24 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (!address) {
         throw new Error('WALLET_NOT_CONNECTED: An active wallet connection is required to authenticate.');
       }
-      // Step 1: Request fresh single-use cryptographic nonce and message from backend
-      const nonceRes = await fetch(`/api/auth/nonce?address=${address}&chainId=1`);
+
+      const chainNumericId =
+        chainId === 'ethereum'
+          ? '1'
+          : chainId === 'base'
+          ? '8453'
+          : chainId === 'arbitrum'
+          ? '42161'
+          : chainId === 'optimism'
+          ? '10'
+          : chainId === 'bsc'
+          ? '56'
+          : chainId === 'polygon'
+          ? '137'
+          : '1';
+
+      // Step 1: Request fresh single-use cryptographic nonce and message from backend with dynamic chainId
+      const nonceRes = await fetch(`/api/auth/nonce?address=${address}&chainId=${chainNumericId}`);
       if (!nonceRes.ok) {
         throw new Error('NONCE_UNAVAILABLE: Failed to obtain authenticated cryptographic nonce from server.');
       }
@@ -758,14 +816,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         throw new Error('SIGNATURE_UNAVAILABLE: Ethereum provider not available for personal_sign.');
       }
 
-      // Step 2: Cryptographically verify signature on backend and consume single-use nonce
+      // Step 2: Cryptographically verify signature on backend, create server session and store HttpOnly cookie
       const verifyRes = await fetch('/api/auth/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           address,
           signature,
           authMessage,
+          chainId: chainNumericId,
         }),
       });
 

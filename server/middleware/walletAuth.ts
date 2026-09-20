@@ -819,12 +819,535 @@ export class DistributedRelayNonceStoreAdapter implements IRelayNonceStore {
   }
 }
 
+export function normalizeChainId(chainId: string | number | undefined): string {
+  if (!chainId) return '1';
+  const str = String(chainId).toLowerCase().trim();
+  switch (str) {
+    case '1':
+    case '0x1':
+    case 'ethereum':
+    case 'eth':
+    case 'mainnet':
+      return '1';
+    case '8453':
+    case '0x2105':
+    case 'base':
+      return '8453';
+    case '42161':
+    case '0xa4b1':
+    case 'arbitrum':
+    case 'arb':
+    case 'arbitrum-one':
+      return '42161';
+    case '10':
+    case '0xa':
+    case 'optimism':
+    case 'op':
+      return '10';
+    case '56':
+    case '0x38':
+    case 'bsc':
+    case 'binance':
+      return '56';
+    case '137':
+    case '0x89':
+    case 'polygon':
+    case 'matic':
+      return '137';
+    default:
+      return str;
+  }
+}
+
+export interface ServerSession {
+  sessionId: string;
+  walletAddress: string;
+  chainId: string;
+  domain: string;
+  issuedAt: number;
+  expiresAt: number;
+  revokedAt: number | null;
+  roles: string[];
+  nonce: string;
+  clientIp?: string;
+  userAgent?: string;
+}
+
+export interface ISessionStore {
+  createSession(session: ServerSession): Promise<void> | void;
+  getSession(sessionId: string): Promise<ServerSession | null> | ServerSession | null;
+  revokeSession(sessionId: string): Promise<boolean> | boolean;
+  revokeAllWalletSessions(walletAddress: string): Promise<number> | number;
+  prune(): Promise<void> | void;
+}
+
+export class MemorySessionStore implements ISessionStore {
+  private sessions = new Map<string, ServerSession>();
+
+  createSession(session: ServerSession): void {
+    this.sessions.set(session.sessionId, { ...session });
+  }
+
+  getSession(sessionId: string): ServerSession | null {
+    const s = this.sessions.get(sessionId);
+    if (!s) return null;
+    if (Date.now() > s.expiresAt || s.revokedAt !== null) {
+      return null;
+    }
+    return { ...s };
+  }
+
+  revokeSession(sessionId: string): boolean {
+    const s = this.sessions.get(sessionId);
+    if (!s) return false;
+    s.revokedAt = Date.now();
+    return true;
+  }
+
+  revokeAllWalletSessions(walletAddress: string): number {
+    const norm = walletAddress.toLowerCase();
+    let count = 0;
+    for (const s of this.sessions.values()) {
+      if (s.walletAddress.toLowerCase() === norm && s.revokedAt === null) {
+        s.revokedAt = Date.now();
+        count++;
+      }
+    }
+    return count;
+  }
+
+  prune(): void {
+    const now = Date.now();
+    for (const [id, s] of this.sessions.entries()) {
+      if (now > s.expiresAt || (s.revokedAt && now - s.revokedAt > 3600000)) {
+        this.sessions.delete(id);
+      }
+    }
+  }
+}
+
+export class RedisDistributedSessionStore implements ISessionStore {
+  private client: Redis;
+  private prefix = 'hyp_sess:';
+  private walletPrefix = 'hyp_user_sess:';
+
+  constructor(redisUrl: string) {
+    this.client = new Redis(redisUrl, {
+      maxRetriesPerRequest: 3,
+      enableOfflineQueue: false,
+      lazyConnect: false,
+    });
+  }
+
+  async createSession(session: ServerSession): Promise<void> {
+    const ttlSeconds = Math.max(1, Math.floor((session.expiresAt - Date.now()) / 1000));
+    await this.client.set(`${this.prefix}${session.sessionId}`, JSON.stringify(session), 'EX', ttlSeconds);
+    await this.client.sadd(`${this.walletPrefix}${session.walletAddress.toLowerCase()}`, session.sessionId);
+  }
+
+  async getSession(sessionId: string): Promise<ServerSession | null> {
+    const raw = await this.client.get(`${this.prefix}${sessionId}`);
+    if (!raw) return null;
+    try {
+      const s = JSON.parse(raw) as ServerSession;
+      if (Date.now() > s.expiresAt || s.revokedAt !== null) return null;
+      return s;
+    } catch {
+      return null;
+    }
+  }
+
+  async revokeSession(sessionId: string): Promise<boolean> {
+    const raw = await this.client.get(`${this.prefix}${sessionId}`);
+    if (!raw) return false;
+    try {
+      const s = JSON.parse(raw) as ServerSession;
+      s.revokedAt = Date.now();
+      const ttlRemaining = Math.max(1, Math.floor((s.expiresAt - Date.now()) / 1000));
+      await this.client.set(`${this.prefix}${sessionId}`, JSON.stringify(s), 'EX', ttlRemaining);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async revokeAllWalletSessions(walletAddress: string): Promise<number> {
+    const key = `${this.walletPrefix}${walletAddress.toLowerCase()}`;
+    const sessionIds = await this.client.smembers(key);
+    let count = 0;
+    for (const sid of sessionIds) {
+      if (await this.revokeSession(sid)) count++;
+    }
+    await this.client.del(key);
+    return count;
+  }
+
+  async prune(): Promise<void> {}
+}
+
+export class PostgresDistributedSessionStore implements ISessionStore {
+  private pool: pg.Pool;
+
+  constructor(connectionString: string) {
+    this.pool = new pg.Pool({ connectionString, max: 10, idleTimeoutMillis: 30000 });
+    this.initTable().catch(() => {});
+  }
+
+  private async initTable(): Promise<void> {
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS wallet_sessions (
+        session_id VARCHAR(128) PRIMARY KEY,
+        wallet_address VARCHAR(42) NOT NULL,
+        chain_id VARCHAR(64) NOT NULL,
+        domain VARCHAR(255) NOT NULL,
+        issued_at BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        revoked_at BIGINT,
+        roles JSONB NOT NULL,
+        nonce VARCHAR(128) NOT NULL,
+        client_ip VARCHAR(64),
+        user_agent TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_wallet_sess_user ON wallet_sessions(wallet_address);
+      CREATE INDEX IF NOT EXISTS idx_wallet_sess_exp ON wallet_sessions(expires_at);
+    `);
+  }
+
+  async createSession(session: ServerSession): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO wallet_sessions (session_id, wallet_address, chain_id, domain, issued_at, expires_at, revoked_at, roles, nonce, client_ip, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (session_id) DO UPDATE SET
+         revoked_at = EXCLUDED.revoked_at,
+         expires_at = EXCLUDED.expires_at`,
+      [
+        session.sessionId,
+        session.walletAddress.toLowerCase(),
+        session.chainId,
+        session.domain,
+        session.issuedAt,
+        session.expiresAt,
+        session.revokedAt,
+        JSON.stringify(session.roles),
+        session.nonce,
+        session.clientIp || null,
+        session.userAgent || null,
+      ]
+    );
+  }
+
+  async getSession(sessionId: string): Promise<ServerSession | null> {
+    const res = await this.pool.query(`SELECT * FROM wallet_sessions WHERE session_id = $1`, [sessionId]);
+    if (res.rows.length === 0) return null;
+    const r = res.rows[0];
+    const now = Date.now();
+    const expiresAt = Number(r.expires_at);
+    const revokedAt = r.revoked_at ? Number(r.revoked_at) : null;
+    if (now > expiresAt || revokedAt !== null) return null;
+
+    return {
+      sessionId: r.session_id,
+      walletAddress: r.wallet_address,
+      chainId: r.chain_id,
+      domain: r.domain,
+      issuedAt: Number(r.issued_at),
+      expiresAt,
+      revokedAt,
+      roles: typeof r.roles === 'string' ? JSON.parse(r.roles) : r.roles,
+      nonce: r.nonce,
+      clientIp: r.client_ip || undefined,
+      userAgent: r.user_agent || undefined,
+    };
+  }
+
+  async revokeSession(sessionId: string): Promise<boolean> {
+    const res = await this.pool.query(
+      `UPDATE wallet_sessions SET revoked_at = $1 WHERE session_id = $2 AND revoked_at IS NULL`,
+      [Date.now(), sessionId]
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async revokeAllWalletSessions(walletAddress: string): Promise<number> {
+    const res = await this.pool.query(
+      `UPDATE wallet_sessions SET revoked_at = $1 WHERE wallet_address = $2 AND revoked_at IS NULL`,
+      [Date.now(), walletAddress.toLowerCase()]
+    );
+    return res.rowCount ?? 0;
+  }
+
+  async prune(): Promise<void> {
+    const now = Date.now();
+    await this.pool.query(`DELETE FROM wallet_sessions WHERE expires_at < $1`, [now]);
+  }
+}
+
+export class FailClosedSessionStore implements ISessionStore {
+  createSession(): void {
+    throw new Error('SESSION_STORE_UNAVAILABLE: Production requires distributed store (Redis or Postgres). Authentication fails closed.');
+  }
+  getSession(): null {
+    throw new Error('SESSION_STORE_UNAVAILABLE: Production requires distributed store (Redis or Postgres). Authentication fails closed.');
+  }
+  revokeSession(): boolean {
+    throw new Error('SESSION_STORE_UNAVAILABLE: Production requires distributed store (Redis or Postgres). Authentication fails closed.');
+  }
+  revokeAllWalletSessions(): number {
+    throw new Error('SESSION_STORE_UNAVAILABLE: Production requires distributed store (Redis or Postgres). Authentication fails closed.');
+  }
+  prune(): void {}
+}
+
+export class DistributedSessionStoreAdapter implements ISessionStore {
+  private activeStore: ISessionStore;
+  public readonly mode: 'DISTRIBUTED_REDIS' | 'DISTRIBUTED_POSTGRES' | 'DEV_LOCAL_STORE' | 'FAIL_CLOSED';
+
+  constructor(options?: { forceStore?: ISessionStore }) {
+    if (options?.forceStore) {
+      this.activeStore = options.forceStore;
+      this.mode = 'DEV_LOCAL_STORE';
+      return;
+    }
+
+    const isProduction =
+      process.env.NODE_ENV === 'production' ||
+      process.env.REQUIRE_DISTRIBUTED_SESSION_STORE === 'true';
+
+    const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.REDIS_URL;
+    const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+
+    if (redisUrl) {
+      this.activeStore = new RedisDistributedSessionStore(redisUrl);
+      this.mode = 'DISTRIBUTED_REDIS';
+    } else if (dbUrl) {
+      this.activeStore = new PostgresDistributedSessionStore(dbUrl);
+      this.mode = 'DISTRIBUTED_POSTGRES';
+    } else if (isProduction) {
+      this.activeStore = new FailClosedSessionStore();
+      this.mode = 'FAIL_CLOSED';
+    } else {
+      this.activeStore = new MemorySessionStore();
+      this.mode = 'DEV_LOCAL_STORE';
+    }
+  }
+
+  createSession(session: ServerSession): Promise<void> | void {
+    return this.activeStore.createSession(session);
+  }
+  getSession(sessionId: string): Promise<ServerSession | null> | ServerSession | null {
+    return this.activeStore.getSession(sessionId);
+  }
+  revokeSession(sessionId: string): Promise<boolean> | boolean {
+    return this.activeStore.revokeSession(sessionId);
+  }
+  revokeAllWalletSessions(walletAddress: string): Promise<number> | number {
+    return this.activeStore.revokeAllWalletSessions(walletAddress);
+  }
+  prune(): Promise<void> | void {
+    return this.activeStore.prune();
+  }
+}
+
+export const sessionStore: ISessionStore = new DistributedSessionStoreAdapter();
+export const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+export function resolveUserRoles(address: string): string[] {
+  const norm = address.toLowerCase();
+  const roles = new Set<string>(['USER', 'TRADER']);
+
+  const adminList = (process.env.ADMIN_ADDRESSES || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const oracleList = (process.env.ORACLE_OPERATOR_ADDRESSES || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const relayerList = (process.env.RELAYER_ADDRESSES || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const governorList = (process.env.GOVERNOR_ADDRESSES || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (adminList.includes(norm)) {
+    roles.add('ADMIN');
+    roles.add('GOVERNOR');
+    roles.add('ORACLE_OPERATOR');
+    roles.add('RELAYER');
+  }
+  if (oracleList.includes(norm)) roles.add('ORACLE_OPERATOR');
+  if (relayerList.includes(norm)) roles.add('RELAYER');
+  if (governorList.includes(norm)) roles.add('GOVERNOR');
+
+  return Array.from(roles);
+}
+
+export async function createAuthenticatedSession(params: {
+  walletAddress: string;
+  chainId: string;
+  domain?: string;
+  nonce: string;
+  clientIp?: string;
+  userAgent?: string;
+}): Promise<ServerSession> {
+  const sessionId = `hyp_sess_${crypto.randomBytes(32).toString('hex')}`;
+  const now = Date.now();
+  const expiresAt = now + SESSION_TTL_MS;
+  const roles = resolveUserRoles(params.walletAddress);
+
+  const session: ServerSession = {
+    sessionId,
+    walletAddress: params.walletAddress.toLowerCase(),
+    chainId: normalizeChainId(params.chainId),
+    domain: params.domain || DEFAULT_AUTH_DOMAIN,
+    issuedAt: now,
+    expiresAt,
+    revokedAt: null,
+    roles,
+    nonce: params.nonce,
+    clientIp: params.clientIp,
+    userAgent: params.userAgent,
+  };
+
+  await sessionStore.createSession(session);
+  return session;
+}
+
+export function extractSessionId(req: Request): string | null {
+  const cookieHeader = req.headers.cookie;
+  if (cookieHeader) {
+    const match = cookieHeader.match(/(?:^|;\s*)hyp_session_id=([^;]+)/);
+    if (match && match[1]) {
+      return decodeURIComponent(match[1]);
+    }
+  }
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7).trim();
+    if (token.startsWith('hyp_sess_')) {
+      return token;
+    }
+  }
+
+  const xSession = req.headers['x-session-id'] as string;
+  if (xSession && xSession.trim().startsWith('hyp_sess_')) {
+    return xSession.trim();
+  }
+
+  return null;
+}
+
+export function requireSession(options?: { roles?: string[]; chainId?: string }) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const sessionId = extractSessionId(req);
+    if (!sessionId) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'AUTH_REQUIRED',
+          message: 'Authenticated server session required. Please sign in via SIWE.',
+          retryable: false,
+        },
+        code: 'AUTH_REQUIRED',
+        message: 'Authenticated server session required. Please sign in via SIWE.',
+      });
+    }
+
+    let session: ServerSession | null = null;
+    try {
+      session = await sessionStore.getSession(sessionId);
+    } catch (err: any) {
+      if (err?.message?.includes('SESSION_STORE_UNAVAILABLE')) {
+        return res.status(503).json({
+          success: false,
+          error: {
+            code: 'SESSION_STORE_UNAVAILABLE',
+            message: err.message,
+            retryable: false,
+          },
+          code: 'SESSION_STORE_UNAVAILABLE',
+          message: err.message,
+        });
+      }
+      return res.status(500).json({ success: false, error: 'Failed to retrieve session' });
+    }
+
+    if (!session) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'SESSION_INVALID',
+          message: 'Session is invalid, expired, or revoked. Please authenticate again.',
+          retryable: false,
+        },
+        code: 'SESSION_INVALID',
+        message: 'Session is invalid, expired, or revoked. Please authenticate again.',
+      });
+    }
+
+    // Dynamic Chain Binding Check
+    const targetChain =
+      options?.chainId ||
+      (req.headers['x-chain-id'] as string) ||
+      req.body?.chainId ||
+      (req.query?.chainId as string);
+
+    if (targetChain) {
+      const normReq = normalizeChainId(targetChain);
+      const normSess = normalizeChainId(session.chainId);
+      if (normReq !== normSess) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'CHAIN_MISMATCH',
+            message: `Session is bound to chain ${session.chainId} (${normSess}), but request requires chain ${targetChain} (${normReq}).`,
+            retryable: false,
+          },
+          code: 'CHAIN_MISMATCH',
+          message: `Session is bound to chain ${session.chainId} (${normSess}), but request requires chain ${targetChain} (${normReq}).`,
+        });
+      }
+    }
+
+    // Role-based Access Control (RBAC)
+    if (options?.roles && options.roles.length > 0) {
+      const hasRole = options.roles.some((r) => session!.roles.includes(r));
+      if (!hasRole) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN_INSUFFICIENT_PERMISSIONS',
+            message: `Action requires one of roles [${options.roles.join(', ')}]. Current roles: [${session.roles.join(', ')}].`,
+            retryable: false,
+          },
+          code: 'FORBIDDEN_INSUFFICIENT_PERMISSIONS',
+          message: `Action requires one of roles [${options.roles.join(', ')}]. Current roles: [${session.roles.join(', ')}].`,
+        });
+      }
+    }
+
+    (req as any).session = session;
+    (req as any).authenticatedUser = session.walletAddress;
+    (req as any).userRoles = session.roles;
+    (req as any).sessionId = session.sessionId;
+
+    next();
+  };
+}
+
 export const nonceStore: INonceStore = new DistributedNonceStoreAdapter();
 export const relayNonceStore: IRelayNonceStore = new DistributedRelayNonceStoreAdapter();
 const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes validity
 export const DEFAULT_AUTH_DOMAIN = 'hyperon.dex';
 
-const cleanupTimer = setInterval(() => nonceStore.prune(), 60 * 1000);
+const cleanupTimer = setInterval(() => {
+  nonceStore.prune();
+  sessionStore.prune();
+}, 60 * 1000);
 if (cleanupTimer && typeof cleanupTimer.unref === 'function') {
   cleanupTimer.unref();
 }
@@ -1067,13 +1590,13 @@ export async function verifyWalletAuth(
   }
 
   // 3. Chain ID Binding
-  if (parsed.chainId && record.chainId && parsed.chainId.toLowerCase() !== record.chainId.toLowerCase()) {
+  if (parsed.chainId && record.chainId && normalizeChainId(parsed.chainId) !== normalizeChainId(record.chainId)) {
     return { verified: false, code: 'CHAIN_MISMATCH', reason: `CHAIN_MISMATCH: Message chainId (${parsed.chainId}) does not match record chainId (${record.chainId})` };
   }
-  if (chainExpected && parsed.chainId && parsed.chainId.toLowerCase() !== chainExpected.toLowerCase()) {
+  if (chainExpected && parsed.chainId && normalizeChainId(parsed.chainId) !== normalizeChainId(chainExpected)) {
     return { verified: false, code: 'CHAIN_MISMATCH', reason: `CHAIN_MISMATCH: Message chainId (${parsed.chainId}) does not match expected chainId (${chainExpected})` };
   }
-  if (chainExpected && record.chainId && record.chainId.toLowerCase() !== chainExpected.toLowerCase()) {
+  if (chainExpected && record.chainId && normalizeChainId(record.chainId) !== normalizeChainId(chainExpected)) {
     return { verified: false, code: 'CHAIN_MISMATCH', reason: `CHAIN_MISMATCH: Stored chainId (${record.chainId}) does not match expected chainId (${chainExpected})` };
   }
 
@@ -1156,6 +1679,23 @@ export async function verifyWalletAuth(
  * Express Middleware strictly enforcing cryptographic wallet authentication for privileged endpoints.
  */
 export async function requireWalletAuth(req: Request, res: Response, next: NextFunction) {
+  // Check if caller has an active authenticated session
+  const sessionId = extractSessionId(req);
+  if (sessionId) {
+    try {
+      const session = await sessionStore.getSession(sessionId);
+      if (session) {
+        (req as any).session = session;
+        (req as any).authenticatedUser = session.walletAddress;
+        (req as any).userRoles = session.roles;
+        (req as any).sessionId = session.sessionId;
+        return next();
+      }
+    } catch {
+      // Fallback to signature authentication
+    }
+  }
+
   const userAddress = req.body?.userAddress || (req.headers['x-wallet-address'] as string);
   const signature = req.body?.signature || (req.headers['authorization']?.replace(/^Bearer\s+/i, '') as string);
   const authMessage = req.body?.authMessage || (req.headers['x-auth-message'] as string);

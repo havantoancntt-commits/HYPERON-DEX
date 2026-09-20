@@ -11,7 +11,20 @@ import { scanTokenSecurity } from './server/services/scanner';
 import { generateMarketIntelligence, generateQuantitativeSignals } from './server/services/aiIntelligence';
 import { getLiveBlockNumber, getLiveGasPrice, getNativeBalance } from './server/services/rpc';
 import { DEX_ERROR_CODES, createDexError, ERROR_MESSAGES, DexErrorCode, DexError } from './src/lib/errorCodes';
-import { requireWalletAuth, issueWalletNonce, verifyWalletAuth } from './server/middleware/walletAuth';
+import {
+  requireWalletAuth,
+  issueWalletNonce,
+  verifyWalletAuth,
+  parseAuthMessage,
+  createAuthenticatedSession,
+  requireSession,
+  sessionStore,
+  SESSION_TTL_MS,
+  DEFAULT_AUTH_DOMAIN,
+} from './server/middleware/walletAuth';
+import { whaleRadar } from './server/services/whaleRadar';
+import { transactionLifecycle } from './server/services/transactionLifecycle';
+import { poolDiscovery } from './server/services/poolDiscovery';
 import { isAddress } from 'viem';
 import helmet from 'helmet';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -864,34 +877,73 @@ app.post(['/api/transactions/build', '/api/build-transaction'], async (req: Requ
 // -------------------------------------------------------------
 // 5b. Minimal Zero-Trust Transaction Relayer API
 // -------------------------------------------------------------
-app.post('/api/submit', async (req: Request, res: Response) => {
+app.post('/api/submit', requireSession(), async (req: Request, res: Response) => {
   try {
-    const { signedTx, zkProof, routeCommitment, routeHash, chainId, userAddress } = req.body;
-    if (!chainId) {
-      return res.status(400).json({
-        success: false,
-        error: 'INVALID_CHAIN: chainId is strictly required for relayer submission',
-      });
-    }
-    const result = await relayTransaction({
+    const session = (req as any).session;
+    const {
       signedTx,
-      routeCommitment: routeCommitment || zkProof,
-      zkProof: zkProof || routeCommitment,
+      zkProof,
+      routeCommitment,
       routeHash,
       chainId,
       userAddress,
-    });
+      targetRouter,
+      tokenIn,
+      tokenOut,
+      amountIn,
+      amountOutMinimum,
+      calldata,
+    } = req.body;
+
+    if (userAddress && userAddress.toLowerCase() !== session.walletAddress.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        error: 'FORBIDDEN_WALLET_MISMATCH: Authenticated session does not match submitted userAddress',
+      });
+    }
+
+    const result = await transactionLifecycle.submitTransaction(
+      {
+        signedTx,
+        userAddress: session.walletAddress,
+        chainId: chainId || session.chainId,
+        targetRouter,
+        tokenIn,
+        tokenOut,
+        amountIn,
+        amountOutMinimum,
+        calldata,
+        routeHash,
+        routeCommitment: routeCommitment || zkProof,
+        zkProof: zkProof || routeCommitment,
+      },
+      {
+        walletAddress: session.walletAddress,
+        chainId: session.chainId,
+        sessionId: session.sessionId,
+      }
+    );
+
     res.json({
-      success: true,
+      success: result.success,
       result,
-      message: 'Transaction relayed via private Flashbots mempool with Cryptographic Route Commitment verification',
+      record: result.record,
+      message: result.message || 'Transaction lifecycle validated, simulated, and broadcast via private Flashbots mempool',
     });
   } catch (err: any) {
     res.status(400).json({
       success: false,
-      error: err?.message || 'Failed to relay transaction',
+      error: err?.message || 'Failed to process transaction through lifecycle manager',
     });
   }
+});
+
+app.get('/api/tx/lifecycle/:id', (req: Request, res: Response) => {
+  const intent = transactionLifecycle.getIntent(req.params.id);
+  if (!intent) {
+    return res.status(404).json({ error: 'INTENT_NOT_FOUND', message: 'Transaction intent not found in lifecycle manager' });
+  }
+  res.json({ intent });
 });
 
 const handleRelay = async (req: Request, res: Response) => {
@@ -1065,40 +1117,46 @@ app.get('/api/v1/oracle/consolidated/:symbol', (req: Request, res: Response) => 
   res.json(report);
 });
 
-app.post('/api/v1/oracle/circuit-breaker/reset', (req: Request, res: Response) => {
-  const { symbol, operator, reason, verifiedPriceUsd } = req.body || {};
-  if (!symbol || typeof symbol !== 'string' || symbol.trim().length === 0) {
-    return res.status(400).json({ error: 'INVALID_SYMBOL', message: 'Symbol string is strictly required' });
-  }
-  if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
-    return res.status(400).json({
-      error: 'AUDIT_REASON_REQUIRED',
-      message: 'A substantive audit reason (minimum 5 characters) is required to reset a tripped circuit breaker.',
-    });
-  }
-
-  if (verifiedPriceUsd !== undefined) {
-    const numPrice = Number(verifiedPriceUsd);
-    if (isNaN(numPrice) || !isFinite(numPrice) || numPrice <= 0) {
+app.post(
+  '/api/v1/oracle/circuit-breaker/reset',
+  requireSession({ roles: ['ORACLE_OPERATOR', 'GOVERNOR', 'ADMIN'] }),
+  (req: Request, res: Response) => {
+    const { symbol, reason, verifiedPriceUsd } = req.body || {};
+    if (!symbol || typeof symbol !== 'string' || symbol.trim().length === 0) {
+      return res.status(400).json({ error: 'INVALID_SYMBOL', message: 'Symbol string is strictly required' });
+    }
+    if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
       return res.status(400).json({
-        error: 'INVALID_VERIFIED_PRICE',
-        message: 'verifiedPriceUsd must be a strictly positive finite number.',
+        error: 'AUDIT_REASON_REQUIRED',
+        message: 'A substantive audit reason (minimum 5 characters) is required to reset a tripped circuit breaker.',
       });
     }
-  }
 
-  const result = resetCircuitBreaker(
-    symbol.trim().toUpperCase(),
-    operator || (req as any).authenticatedUser || 'GOVERNANCE_TIMELOCK',
-    reason.trim(),
-    verifiedPriceUsd !== undefined ? Number(verifiedPriceUsd) : undefined
-  );
+    if (verifiedPriceUsd !== undefined) {
+      const numPrice = Number(verifiedPriceUsd);
+      if (isNaN(numPrice) || !isFinite(numPrice) || numPrice <= 0) {
+        return res.status(400).json({
+          error: 'INVALID_VERIFIED_PRICE',
+          message: 'verifiedPriceUsd must be a strictly positive finite number.',
+        });
+      }
+    }
 
-  if (!result.success) {
-    return res.status(400).json({ error: 'RESET_FAILED', message: result.message });
+    const operator = (req as any).authenticatedUser || (req as any).session?.walletAddress || 'GOVERNANCE_TIMELOCK';
+
+    const result = resetCircuitBreaker(
+      symbol.trim().toUpperCase(),
+      operator,
+      reason.trim(),
+      verifiedPriceUsd !== undefined ? Number(verifiedPriceUsd) : undefined
+    );
+
+    if (!result.success) {
+      return res.status(400).json({ error: 'RESET_FAILED', message: result.message });
+    }
+    res.json({ symbol: symbol.toUpperCase(), isTripped: false, message: result.message, operator });
   }
-  res.json({ symbol: symbol.toUpperCase(), isTripped: false, message: result.message });
-});
+);
 
 app.get('/api/v1/oracle/circuit-breaker/audit-logs', (_req: Request, res: Response) => {
   res.json({ auditLogs: getCircuitBreakerAuditLogs() });
@@ -1110,7 +1168,7 @@ app.get('/api/v1/oracle/circuit-breaker/audit-logs', (_req: Request, res: Respon
 app.get('/api/auth/nonce', (req: Request, res: Response) => {
   try {
     const address = req.query.address as string;
-    const chainId = (req.query.chainId as string) || 'ethereum';
+    const chainId = (req.query.chainId as string) || '1';
     if (!address || !isAddress(address)) {
       return res.status(400).json({ error: 'INVALID_ADDRESS', message: 'Valid EVM address required to generate authentication nonce.' });
     }
@@ -1123,7 +1181,7 @@ app.get('/api/auth/nonce', (req: Request, res: Response) => {
 
 app.post('/api/auth/verify', async (req: Request, res: Response) => {
   try {
-    const { address, signature, authMessage } = req.body;
+    const { address, signature, authMessage, chainId } = req.body;
     if (!address || !signature || !authMessage) {
       return res.status(400).json({ error: 'INVALID_INPUT', message: 'address, signature, and authMessage are required.' });
     }
@@ -1135,10 +1193,66 @@ app.post('/api/auth/verify', async (req: Request, res: Response) => {
     if (!result.verified) {
       return res.status(401).json({ error: result.code || 'AUTHENTICATION_FAILED', reason: result.reason });
     }
-    return res.json({ success: true, verifiedAddress: address, sessionExpiresAt: Date.now() + 5 * 60 * 1000 });
+
+    const parsed = parseAuthMessage(authMessage);
+    const resolvedChain = chainId || parsed.chainId || '1';
+
+    const session = await createAuthenticatedSession({
+      walletAddress: address,
+      chainId: resolvedChain,
+      domain: parsed.domain || DEFAULT_AUTH_DOMAIN,
+      nonce: parsed.nonce || 'auth_nonce',
+      clientIp: req.ip || (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress,
+      userAgent: req.headers['user-agent'],
+    });
+
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie('hyp_session_id', session.sessionId, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: 'lax',
+      maxAge: SESSION_TTL_MS,
+      path: '/',
+    });
+
+    return res.json({
+      success: true,
+      verifiedAddress: session.walletAddress,
+      sessionId: session.sessionId,
+      session: {
+        walletAddress: session.walletAddress,
+        chainId: session.chainId,
+        roles: session.roles,
+        expiresAt: session.expiresAt,
+        issuedAt: session.issuedAt,
+      },
+    });
   } catch (err: any) {
     return res.status(500).json({ error: 'AUTH_VERIFY_FAILED', message: err?.message });
   }
+});
+
+app.get('/api/auth/session', requireSession(), (req: Request, res: Response) => {
+  const session = (req as any).session;
+  res.json({
+    authenticated: true,
+    session: {
+      walletAddress: session.walletAddress,
+      chainId: session.chainId,
+      roles: session.roles,
+      expiresAt: session.expiresAt,
+      issuedAt: session.issuedAt,
+    },
+  });
+});
+
+app.post('/api/auth/logout', async (req: Request, res: Response) => {
+  const sessionId = (req as any).sessionId || (req.headers.cookie?.match(/hyp_session_id=([^;]+)/)?.[1]);
+  if (sessionId) {
+    await sessionStore.revokeSession(sessionId);
+  }
+  res.clearCookie('hyp_session_id', { path: '/' });
+  res.json({ success: true, message: 'Logged out successfully' });
 });
 
 // -------------------------------------------------------------
@@ -1372,9 +1486,30 @@ app.get('/api/crosschain/track/:intentId', (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/liquidity/pools', (req: Request, res: Response) => {
+app.get('/api/liquidity/pools', async (req: Request, res: Response) => {
   try {
-    res.json({ pools: SAMPLE_POOLS });
+    const chainId = (req.query.chainId as any) || undefined;
+    const isProd = process.env.NODE_ENV === 'production' || process.env.APP_MODE === 'PRODUCTION';
+
+    const livePools = await poolDiscovery.getAllLiveVerifiedPools(chainId);
+    if (livePools && livePools.length > 0) {
+      return res.json({ pools: livePools, source: 'ONCHAIN_VERIFIED_DISCOVERY' });
+    }
+
+    if (isProd) {
+      return res.status(503).json({
+        error: 'NO_LIVE_POOLS',
+        code: 'NO_LIVE_POOLS',
+        message: 'No live on-chain pools verified on current RPC nodes. Synthetic fallback prohibited in production.',
+        pools: [],
+      });
+    }
+
+    res.json({
+      pools: SAMPLE_POOLS,
+      isSimulation: true,
+      notice: 'DEV_SIMULATION_DATA',
+    });
   } catch (err: unknown) {
     res.status(500).json({ error: 'Failed to retrieve liquidity pools' });
   }
@@ -1382,7 +1517,15 @@ app.get('/api/liquidity/pools', (req: Request, res: Response) => {
 
 app.get('/api/staking/vaults', (req: Request, res: Response) => {
   try {
-    res.json({ vaults: SAMPLE_STAKING_VAULTS });
+    const isProd = process.env.NODE_ENV === 'production' || process.env.APP_MODE === 'PRODUCTION';
+    if (isProd) {
+      return res.json({
+        vaults: [],
+        status: 'VAULTS_NOT_CONFIGURED',
+        message: 'No production staking contracts configured on connected network',
+      });
+    }
+    res.json({ vaults: SAMPLE_STAKING_VAULTS, isSimulation: true });
   } catch (err: unknown) {
     res.status(500).json({ error: 'Failed to retrieve staking vaults' });
   }
@@ -1391,55 +1534,21 @@ app.get('/api/staking/vaults', (req: Request, res: Response) => {
 // -------------------------------------------------------------
 // 11. On-Chain Whale Radar API
 // -------------------------------------------------------------
-app.get('/api/onchain/whales', (req: Request, res: Response) => {
+app.get('/api/onchain/whales', async (req: Request, res: Response) => {
   try {
-    const ethP = getPrice('ETH');
-    const btcP = getPrice('WBTC');
-    const now = Date.now();
+    const chainId = (req.query.chainId as any) || 'ethereum';
+    const limit = parseInt(req.query.limit as string) || 20;
+    const minUsd = parseInt(req.query.minUsd as string) || 100000;
 
-    res.json({
-      transactions: [
-        {
-          id: 'tx-whale-01',
-          txHash: '0x8f2d9c44b1a3e8712f0099e4b6c31a78891d4e0821cba34091aefc321890abcd',
-          timestamp: now - 45000,
-          walletLabel: 'Tier-1 Institutional Market Maker',
-          walletTier: 'Mega Whale (> $25M)',
-          action: 'ACCUMULATE',
-          symbol: 'ETH',
-          amountTokens: 4500,
-          valueUsd: Number((4500 * ethP).toFixed(0)),
-          fromAddress: '0x1111111254fb6c44bac0bed2854e76f90643097d (1inch Aggregator)',
-          toAddress: '0x9a84d262529944a95a485542845c43d8a0f9b311 (Institutional Safe)',
-          aiSentiment: 'BULLISH',
-          aiInterpretation: 'Spot absorption across Uniswap v3 pool depth with immediate cold custody transfer.',
-        },
-        {
-          id: 'tx-whale-02',
-          txHash: '0x33b45c22998a1f33ee4901bba29487cfa90123efca8911029485bbceee981290',
-          timestamp: now - 180000,
-          walletLabel: 'Crypto Venture Alpha Fund',
-          walletTier: 'Institutional Fund',
-          action: 'CEX_WITHDRAWAL',
-          symbol: 'WBTC',
-          amountTokens: 120,
-          valueUsd: Number((120 * btcP).toFixed(0)),
-          fromAddress: '0x28c6c06298d514db089934071355e5743bf21d60 (Binance Hot Wallet)',
-          toAddress: '0x3cd751e6b0078be393132286c442345e5dc49699 (Custody Safe)',
-          aiSentiment: 'BULLISH',
-          aiInterpretation: 'Exchange reserve drainage reducing available liquid supply in market orderbooks.',
-        },
-      ],
-      netflows24h: {
-        totalWhaleVolumeUsd: 148500000,
-        cexNetDrainUsd: -89200000,
-        smartMoneySentiment: 'Strong Accumulation (68% Bullish Flow)',
-        topAccumulatedAsset: 'ETH / WBTC',
-      },
+    const data = await whaleRadar.getWhaleTransactions(chainId, limit, minUsd);
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({
+      status: 'ERROR',
+      error: err?.message || 'Failed to scan on-chain whale transactions',
+      transactions: [],
+      netflows24h: { totalWhaleVolumeUsd: 0, cexNetDrainUsd: 0, tier1VolumeRatio: 0 },
     });
-  } catch (err: unknown) {
-    console.error('[HYPERON-DEX] Whale radar error:', err);
-    res.status(500).json({ error: 'Failed to retrieve whale transactions' });
   }
 });
 
@@ -1554,7 +1663,7 @@ app.get('/api/payments/invoices', (req: Request, res: Response) => {
 // -------------------------------------------------------------
 // 15. Admin & Observability Telemetry API
 // -------------------------------------------------------------
-app.get('/api/admin/metrics', async (req: Request, res: Response) => {
+app.get('/api/admin/metrics', requireSession({ roles: ['ADMIN'] }), async (req: Request, res: Response) => {
   try {
     const [ethBlock, baseBlock, arbBlock, optBlock, bscBlock, polyBlock] = await Promise.all([
       getLiveBlockNumber('ethereum'),
