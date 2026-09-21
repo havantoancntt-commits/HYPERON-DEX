@@ -1,10 +1,16 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
 import { useI18n } from '../context/I18nContext';
 import { formatCurrency, formatPercent, shortenAddress } from '../lib/utils';
 import { Hyperon3DLogo, TokenLogo, ChainLogo } from '../components/CryptoIcon';
 import { soundManager } from '../lib/sound';
+import { GenesisDeployerModal } from '../components/GenesisDeployerModal';
+import {
+  getHyprContractAddress,
+  DEFAULT_HYPR_ADDRESS,
+  resetHyprContractAddress,
+} from '../lib/hyprConfig';
 import {
   Sparkles,
   Flame,
@@ -27,10 +33,10 @@ import {
   ArrowUpRight,
   Check,
   ChevronRight,
-  AlertCircle
+  AlertCircle,
+  Rocket,
+  Code2
 } from 'lucide-react';
-
-const HYPR_CONTRACT_ADDRESS = '0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0';
 
 interface TimeframeData {
   label: string;
@@ -92,53 +98,55 @@ const TIMEFRAMES: Record<string, { priceChange: number; points: { time: string; 
   },
 };
 
+const CANONICAL_HYPR_ADDRESS = DEFAULT_HYPR_ADDRESS;
+
 const MULTICHAIN_DEPLOYMENTS = [
   {
     chainId: 'ethereum',
     name: 'Ethereum Mainnet',
     type: 'Canonical Native ERC-20',
-    address: HYPR_CONTRACT_ADDRESS,
-    explorer: `https://etherscan.io/token/${HYPR_CONTRACT_ADDRESS}`,
+    address: CANONICAL_HYPR_ADDRESS,
+    explorer: `https://etherscan.io/token/${CANONICAL_HYPR_ADDRESS}`,
     verified: true,
   },
   {
     chainId: 'arbitrum',
     name: 'Arbitrum One',
     type: 'LayerZero OFT v2 (Arbitrum L2)',
-    address: HYPR_CONTRACT_ADDRESS,
-    explorer: `https://arbiscan.io/token/${HYPR_CONTRACT_ADDRESS}`,
+    address: CANONICAL_HYPR_ADDRESS,
+    explorer: `https://arbiscan.io/token/${CANONICAL_HYPR_ADDRESS}`,
     verified: true,
   },
   {
     chainId: 'base',
     name: 'Base',
     type: 'LayerZero OFT v2 (Coinbase L2)',
-    address: HYPR_CONTRACT_ADDRESS,
-    explorer: `https://basescan.org/token/${HYPR_CONTRACT_ADDRESS}`,
+    address: CANONICAL_HYPR_ADDRESS,
+    explorer: `https://basescan.org/token/${CANONICAL_HYPR_ADDRESS}`,
     verified: true,
   },
   {
     chainId: 'optimism',
     name: 'OP Mainnet',
     type: 'Superchain Native Bridge',
-    address: HYPR_CONTRACT_ADDRESS,
-    explorer: `https://optimistic.etherscan.io/token/${HYPR_CONTRACT_ADDRESS}`,
+    address: CANONICAL_HYPR_ADDRESS,
+    explorer: `https://optimistic.etherscan.io/token/${CANONICAL_HYPR_ADDRESS}`,
     verified: true,
   },
   {
     chainId: 'polygon',
     name: 'Polygon PoS',
     type: 'PoS State Bridge & OFT',
-    address: HYPR_CONTRACT_ADDRESS,
-    explorer: `https://polygonscan.com/token/${HYPR_CONTRACT_ADDRESS}`,
+    address: CANONICAL_HYPR_ADDRESS,
+    explorer: `https://polygonscan.com/token/${CANONICAL_HYPR_ADDRESS}`,
     verified: true,
   },
   {
     chainId: 'bsc',
     name: 'BNB Smart Chain',
     type: 'BEP-20 Omnichain Fungible',
-    address: HYPR_CONTRACT_ADDRESS,
-    explorer: `https://bscscan.com/token/${HYPR_CONTRACT_ADDRESS}`,
+    address: CANONICAL_HYPR_ADDRESS,
+    explorer: `https://bscscan.com/token/${CANONICAL_HYPR_ADDRESS}`,
     verified: true,
   },
 ];
@@ -152,6 +160,18 @@ export const HyprCoinView: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [isAddingWallet, setIsAddingWallet] = useState(false);
   const [isClaimingFaucet, setIsClaimingFaucet] = useState(false);
+  const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
+  const [currentContractAddress, setCurrentContractAddress] = useState(getHyprContractAddress());
+
+  useEffect(() => {
+    const handleAddressChange = (e: any) => {
+      if (e.detail) setCurrentContractAddress(e.detail);
+    };
+    window.addEventListener('hypr-address-updated', handleAddressChange);
+    return () => window.removeEventListener('hypr-address-updated', handleAddressChange);
+  }, []);
+
+  const isCustomContract = currentContractAddress.toLowerCase() !== DEFAULT_HYPR_ADDRESS.toLowerCase();
 
   const hyprToken = getLiveToken('HYPR');
   const hyprPrice = hyprToken?.priceUsd || 4.82;
@@ -168,12 +188,12 @@ export const HyprCoinView: React.FC = () => {
   }, [userHyprBalance]);
 
   const copyContractAddress = () => {
-    navigator.clipboard.writeText(HYPR_CONTRACT_ADDRESS);
+    navigator.clipboard.writeText(currentContractAddress);
     setCopied(true);
     soundManager.playTick();
     addToast({
       title: 'Đã Sao Chép Hợp Đồng',
-      message: `${shortenAddress(HYPR_CONTRACT_ADDRESS, 8)} đã lưu vào khay nhớ tạm.`,
+      message: `${shortenAddress(currentContractAddress, 8)} đã lưu vào khay nhớ tạm.`,
       type: 'success',
     });
     setTimeout(() => setCopied(false), 2500);
@@ -188,7 +208,7 @@ export const HyprCoinView: React.FC = () => {
     soundManager.playTick();
     try {
       await addTokenToWallet({
-        address: HYPR_CONTRACT_ADDRESS,
+        address: currentContractAddress,
         symbol: 'HYPR',
         decimals: 18,
         image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0/logo.png',
@@ -276,7 +296,7 @@ export const HyprCoinView: React.FC = () => {
               <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-slate-400 font-mono">
                 <span className="text-slate-400">Smart Contract (Omnichain):</span>
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/10 text-cyan-300 hover:border-cyan-500/40 transition-colors">
-                  <span>{shortenAddress(HYPR_CONTRACT_ADDRESS, 8)}</span>
+                  <span>{shortenAddress(currentContractAddress, 8)}</span>
                   <button
                     onClick={copyContractAddress}
                     className="p-0.5 hover:text-white transition-colors cursor-pointer"
@@ -285,8 +305,29 @@ export const HyprCoinView: React.FC = () => {
                     {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                 </div>
+                {isCustomContract ? (
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+                    HỢP ĐỒNG ON-CHAIN CHÍNH CHỦ
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 text-[10px]">
+                    CANONICAL TESTNET
+                  </span>
+                )}
+                {isCustomContract && (
+                  <button
+                    onClick={() => {
+                      resetHyprContractAddress();
+                      soundManager.playTick();
+                    }}
+                    className="text-[10px] text-slate-400 hover:text-rose-400 underline cursor-pointer"
+                    title="Khôi phục địa chỉ mặc định"
+                  >
+                    Đặt lại mặc định
+                  </button>
+                )}
                 <a
-                  href={`https://etherscan.io/token/${HYPR_CONTRACT_ADDRESS}`}
+                  href={`https://etherscan.io/token/${currentContractAddress}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors underline-offset-2 hover:underline"
@@ -318,6 +359,14 @@ export const HyprCoinView: React.FC = () => {
             {/* Main CTA Buttons */}
             <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
               <button
+                onClick={() => setIsDeployModalOpen(true)}
+                className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-black font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 transition-all cursor-pointer"
+                title="Tạo và deploy token HYPR thật 100% on-chain lên Sepolia, Base, Arbitrum"
+              >
+                <Rocket className="w-4 h-4" /> Deploy On-Chain Thật
+              </button>
+
+              <button
                 onClick={handleAddTokenToWallet}
                 disabled={isAddingWallet}
                 className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition-all cursor-pointer"
@@ -341,6 +390,42 @@ export const HyprCoinView: React.FC = () => {
                 <ArrowLeftRight className="w-4 h-4" /> Swap HYPR Ngay
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 1.5 PROMINENT ON-CHAIN GENESIS DEPLOYMENT BANNER */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-cyan-950/40 via-blue-950/30 to-purple-950/40 border border-cyan-400/30 p-5 sm:p-6 shadow-xl">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-blue-600/30 border border-cyan-400/40 flex items-center justify-center shrink-0 shadow-md">
+              <Rocket className="w-6 h-6 text-cyan-400 animate-pulse" />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-black text-white">
+                  Xưởng Triển Khai On-Chain (Genesis Token Launch Studio)
+                </h2>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-mono text-[10px] font-bold">
+                  SẴN SÀNG TRIỂN KHAI
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                Bạn muốn biến <strong>HYPR</strong> thành đồng coin thật 100% trên blockchain để bất kỳ ai trên thế giới cũng có thể tra cứu trên Etherscan, thêm vào ví cá nhân và swap bằng tiền thật? Triển khai ngay chỉ với 1 cú nhấp chuột (hỗ trợ Sepolia Testnet miễn phí gas, Base, Arbitrum, BSC, Polygon).
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+            <button
+              onClick={() => {
+                soundManager.playTick();
+                setIsDeployModalOpen(true);
+              }}
+              className="w-full md:w-auto px-5 py-3 rounded-2xl bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 hover:from-cyan-300 hover:to-indigo-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer"
+            >
+              <Rocket className="w-4 h-4" /> Khởi Chạy Deploy Token Thật
+            </button>
           </div>
         </div>
       </div>
@@ -695,6 +780,12 @@ export const HyprCoinView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Genesis Launch Studio Modal */}
+      <GenesisDeployerModal
+        isOpen={isDeployModalOpen}
+        onClose={() => setIsDeployModalOpen(false)}
+      />
     </div>
   );
 };
