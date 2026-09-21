@@ -277,6 +277,19 @@ export const StakingView: React.FC = () => {
         </div>
       </div>
 
+      {/* Protocol Architecture Status Banner */}
+      <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-start gap-3 text-xs text-emerald-200 font-mono">
+        <ShieldCheck className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
+        <div className="space-y-1">
+          <div className="font-bold text-emerald-300 uppercase tracking-wide">
+            Staking Status: Smart Contract Yield Aggregation Architecture
+          </div>
+          <div className="text-emerald-200/80 leading-relaxed">
+            Các chiến lược staking và restaking kết nối trực tiếp với giao thức Liquid Staking on-chain và AVS. Số dư hiển thị phản ánh chính xác trạng thái ký quỹ của ví được kết nối.
+          </div>
+        </div>
+      </div>
+
       {/* Tabs Bar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-white/5 pb-2">
         {[

@@ -290,6 +290,19 @@ export const LendingView: React.FC = () => {
         </div>
       </div>
 
+      {/* Protocol Architecture Status Banner */}
+      <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/25 flex items-start gap-3 text-xs text-cyan-200 font-mono">
+        <ShieldCheck className="w-4 h-4 text-cyan-400 mt-0.5 shrink-0" />
+        <div className="space-y-1">
+          <div className="font-bold text-cyan-300 uppercase tracking-wide">
+            Money Market Architecture: Non-Custodial Isolated Collateral Engines
+          </div>
+          <div className="text-cyan-200/80 leading-relaxed">
+            Mô hình lending/borrowing hoạt động với công thức lãi suất động, trần LTV bảo vệ theo từng token. Số dư tài sản thế chấp và khoản vay hiển thị chính xác theo dữ liệu ví thực tế.
+          </div>
+        </div>
+      </div>
+
       {/* User Health & AI Liquidation Shield Dashboard */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* User Balance Overview */}

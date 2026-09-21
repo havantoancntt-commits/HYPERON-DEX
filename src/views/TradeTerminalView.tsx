@@ -124,48 +124,9 @@ export const TradeTerminalView: React.FC = () => {
   const [orderBook, setOrderBook] = useState<OrderBook | null>(null);
   const [recentTrades, setRecentTrades] = useState<TradeRecord[]>([]);
 
-  const [userOrders, setUserOrders] = useState<UserOrder[]>([
-    {
-      id: 'ORD-88219',
-      pair: 'ETH/USDC',
-      type: 'limit',
-      side: 'buy',
-      price: 3340.00,
-      amount: 2.5,
-      filledAmount: 0,
-      status: 'open',
-      createdAt: Date.now() - 3600000,
-      chainId: 'ethereum',
-    },
-    {
-      id: 'ORD-88220',
-      pair: 'ETH/USDC',
-      type: 'take_profit',
-      side: 'sell',
-      price: 3680.00,
-      amount: 1.8,
-      filledAmount: 0,
-      status: 'open',
-      createdAt: Date.now() - 7200000,
-      chainId: 'ethereum',
-    },
-  ]);
-
-  const [positions, setPositions] = useState<Position[]>([
-    {
-      id: 'POS-001',
-      pair: 'ETH-PERP',
-      side: 'long',
-      leverage: 10,
-      entryPrice: 3380.00,
-      markPrice: activePair.priceUsd,
-      size: 5.0,
-      margin: 1690.00,
-      liquidationPrice: 3080.00,
-      unrealizedPnl: (activePair.priceUsd - 3380.00) * 5.0,
-      pnlPercentage: ((activePair.priceUsd - 3380.00) / 3380.00) * 10 * 100,
-    }
-  ]);
+  // Fail-closed user state: initialize clean without synthetic pre-filled orders or positions
+  const [userOrders, setUserOrders] = useState<UserOrder[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
 
   const prevSymbolRef = useRef<string>('');
 

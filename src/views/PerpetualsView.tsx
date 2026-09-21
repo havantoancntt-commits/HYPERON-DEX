@@ -21,7 +21,8 @@ import {
   Layers,
   ChevronDown,
   RefreshCw,
-  Info
+  Info,
+  AlertTriangle
 } from 'lucide-react';
 
 export const PerpetualsView: React.FC = () => {
@@ -48,7 +49,7 @@ export const PerpetualsView: React.FC = () => {
   const [executing, setExecuting] = useState<boolean>(false);
 
   const currentToken = selectedPair.base;
-  const currentPrice = getLivePrice(currentToken.symbol) || 3420.50;
+  const currentPrice = getLivePrice(currentToken.symbol) || currentToken.priceUsd || 0;
 
   // Sync with selectedSignal if provided
   useEffect(() => {
@@ -169,8 +170,8 @@ export const PerpetualsView: React.FC = () => {
       setExecuting(false);
 
       addToast({
-        title: `Lệnh ${side} ${currentToken.symbol} Thành Công!`,
-        message: `Vị thế $${formatCurrency(positionSizeUsd)} (${leverage}x) đã khớp với giá Mark $${formatCurrency(currentPrice)}.`,
+        title: `[Mô phỏng] Vị thế ${side} ${currentToken.symbol} Thành Công`,
+        message: `Vị thế mô phỏng $${formatCurrency(positionSizeUsd)} (${leverage}x) đã khớp với giá Mark $${formatCurrency(currentPrice)} (Off-chain Virtual Clearinghouse).`,
         type: 'success',
       });
     }, 1200);
@@ -179,8 +180,8 @@ export const PerpetualsView: React.FC = () => {
   const handleClosePosition = (id: string) => {
     setPositions(positions.filter(p => p.id !== id));
     addToast({
-      title: 'Đã Đóng Vị Thế Thành Công',
-      message: 'Lợi nhuận và ký quỹ đã được giải ngân về ví phi tập trung của bạn.',
+      title: 'Đã Đóng Vị Thế (Mô phỏng)',
+      message: 'Lợi nhuận và ký quỹ mô phỏng đã được giải phóng.',
       type: 'success',
     });
   };
@@ -188,6 +189,19 @@ export const PerpetualsView: React.FC = () => {
   return (
     <div className="space-y-6">
       <EcosystemFlowBanner />
+
+      {/* Protocol Architecture Status Banner */}
+      <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-3 text-xs text-amber-200 font-mono">
+        <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+        <div className="space-y-1">
+          <div className="font-bold text-amber-300 uppercase tracking-wide">
+            Protocol Status: Testnet Virtual vAMM Clearinghouse
+          </div>
+          <div className="text-amber-200/80 leading-relaxed">
+            Module giao dịch phái sinh (Perpetuals) hiện hoạt động trên động cơ mô phỏng khớp lệnh và quản trị rủi ro margin nội bộ. Smart Contract on-chain perpetual clearinghouse và mạng lưới bot thanh lý tự động chưa kích hoạt trên mainnet.
+          </div>
+        </div>
+      </div>
 
       {/* Header & Market Stats Ribbon */}
       <div className="p-5 rounded-2xl bg-gradient-to-r from-[#0B1020] via-[#090D1A] to-[#070912] border border-cyan-500/20 shadow-xl flex flex-wrap items-center justify-between gap-4 font-mono">

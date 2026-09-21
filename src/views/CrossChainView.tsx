@@ -251,6 +251,19 @@ export const CrossChainView: React.FC = () => {
         </div>
       </div>
 
+      {/* Relayer & Intent Network Notice */}
+      <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/25 flex items-start gap-3 text-xs text-cyan-200 font-mono">
+        <ShieldCheck className="w-4 h-4 text-cyan-400 mt-0.5 shrink-0" />
+        <div className="space-y-1">
+          <div className="font-bold text-cyan-300 uppercase tracking-wide">
+            Cross-Chain Relayer & Intent Verification
+          </div>
+          <div className="text-cyan-200/80 leading-relaxed">
+            Hệ thống chuyển giao cross-chain phối hợp với Stargate, Across, Wormhole và Relayer Node. Phí giao dịch giao thức được phân bổ minh bạch trực tiếp về các địa chỉ Treasury đã xác thực trên từng chuỗi (Ethereum, Solana, BSC, TRON, Arbitrum, Base).
+          </div>
+        </div>
+      </div>
+
       {/* Main Bridge Container */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Input Form */}

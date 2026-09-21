@@ -1558,39 +1558,10 @@ app.get('/api/onchain/whales', async (req: Request, res: Response) => {
 // -------------------------------------------------------------
 app.get('/api/launchpad/projects', (req: Request, res: Response) => {
   try {
+    // Fail-closed: do not manufacture fake sales, raised balances or unverified contract addresses
     res.json({
-      projects: [
-        {
-          id: 'launch-aether-ai',
-          name: 'Aether Quantum Agents (AQA)',
-          symbol: 'AQA',
-          tagline: 'Autonomous AI On-Chain Execution Swarm with Zero-Knowledge Proofs',
-          description:
-            'Next-generation AI agents executing high-frequency MEV arbitrage, cross-chain yield optimization, and autonomous treasury rebalancing verified by RISC Zero zkVM proofs.',
-          logoUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80',
-          category: 'AI Agents',
-          securityScore: 92,
-          isAuditVerified: true,
-          tokenPriceUsd: 0.15,
-          totalRaiseUsd: 1500000,
-          currentRaisedUsd: 1245000,
-          participantsCount: 3820,
-          minAllocationUsd: 50,
-          maxAllocationUsd: 5000,
-          startDate: '2026-08-25',
-          endDate: '2026-09-02',
-          status: 'LIVE',
-          vestingSchedule: '25% at TGE, 75% linear unlock over 6 months',
-          contractAddress: '0x8892A48E91029384756611029485766110294888',
-          acceptedToken: 'USDC',
-          features: [
-            'Liquidity Lock Verification via Uncx Lock Contract',
-            'Audit Verification by OpenZeppelin & CertiK',
-            'Anti-Bot & Anti-Whale max 1.5% wallet cap',
-            'Non-Custodial Escrow Contract with Auto-Refund if soft cap unmet',
-          ],
-        },
-      ],
+      projects: [],
+      notice: 'No active mainnet token launchpad sales registered on-chain. Fair launch deployment factory available for custom deployments.',
     });
   } catch (err: unknown) {
     res.status(500).json({ error: 'Failed to retrieve launchpad projects' });
@@ -1602,30 +1573,11 @@ app.get('/api/launchpad/projects', (req: Request, res: Response) => {
 // -------------------------------------------------------------
 app.get('/api/perpetuals/positions', (req: Request, res: Response) => {
   try {
-    const ethP = getPrice('ETH');
+    // Fail-closed: return user-actual open positions (none on cold load) and document protocol status
     res.json({
-      positions: [
-        {
-          id: 'perp-pos-01',
-          pair: 'ETH/USDC-PERP',
-          symbol: 'ETH',
-          side: 'LONG',
-          entryPrice: 3340.0,
-          markPrice: ethP,
-          liquidationPrice: 3120.0,
-          sizeUsd: 60000,
-          marginUsd: 4000,
-          leverage: 15,
-          pnlUsd: Number((((ethP - 3340) / 3340) * 60000).toFixed(2)),
-          pnlPercent: Number((((ethP - 3340) / 3340) * 15 * 100).toFixed(2)),
-          takeProfitPrice: 3850.0,
-          stopLossPrice: 3260.0,
-          trailingStopPercent: 2.0,
-          fundingRate8hPercent: 0.0085,
-          fundingEarnedUsd: 38.4,
-          openedAt: Date.now() - 3600000 * 36,
-        },
-      ],
+      positions: [],
+      protocolStatus: 'ONCHAIN_CONTRACT_PENDING',
+      message: 'Decentralized perpetual clearinghouse contract not yet deployed on mainnet.',
     });
   } catch (err: unknown) {
     res.status(500).json({ error: 'Failed to retrieve perpetuals positions' });

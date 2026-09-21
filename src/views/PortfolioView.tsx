@@ -17,26 +17,54 @@ import {
 } from 'lucide-react';
 
 export const PortfolioView: React.FC = () => {
-  const { balances } = useWallet();
+  const { balances, isConnected } = useWallet();
   const { openSwapWithTokens, addToast, getLiveToken, tickDirections } = useExchange();
 
   const [activeNetworkFilter, setActiveNetworkFilter] = useState<string>('all');
 
-  const holdings = [
-    { token: getLiveToken('ETH'), amount: balances.ETH || 4.85, avgBuyPrice: 2890.00 },
-    { token: getLiveToken('USDC'), amount: balances.USDC || 14250, avgBuyPrice: 1.00 },
-    { token: getLiveToken('USDT'), amount: balances.USDT || 5600, avgBuyPrice: 1.00 },
-    { token: getLiveToken('WBTC'), amount: balances.WBTC || 0.38, avgBuyPrice: 68400.00 },
-    { token: getLiveToken('UNI'), amount: balances.UNI || 240, avgBuyPrice: 7.20 },
-    { token: getLiveToken('HYPR'), amount: balances.HYPR || 2500, avgBuyPrice: 3.10 },
+  const rawHoldings = [
+    { token: getLiveToken('ETH'), amount: balances.ETH ?? 0, avgBuyPrice: 2890.00 },
+    { token: getLiveToken('USDC'), amount: balances.USDC ?? 0, avgBuyPrice: 1.00 },
+    { token: getLiveToken('USDT'), amount: balances.USDT ?? 0, avgBuyPrice: 1.00 },
+    { token: getLiveToken('WBTC'), amount: balances.WBTC ?? 0, avgBuyPrice: 68400.00 },
+    { token: getLiveToken('UNI'), amount: balances.UNI ?? 0, avgBuyPrice: 7.20 },
+    { token: getLiveToken('HYPR'), amount: balances.HYPR ?? balances.AETH ?? 0, avgBuyPrice: 3.10 },
   ];
+
+  const holdings = isConnected ? rawHoldings.filter(h => h.amount > 0) : rawHoldings;
 
   const totalValue = holdings.reduce((sum, h) => sum + h.amount * h.token.priceUsd, 0);
   const totalCostBasis = holdings.reduce((sum, h) => sum + h.amount * h.avgBuyPrice, 0);
   const unrealizedPnL = totalValue - totalCostBasis;
-  const unrealizedPnLPercent = (unrealizedPnL / totalCostBasis) * 100;
+  const unrealizedPnLPercent = totalCostBasis > 0 ? (unrealizedPnL / totalCostBasis) * 100 : 0;
 
   const exportCsv = () => {
+    if (holdings.length === 0) {
+      addToast({
+        title: 'No Data to Export',
+        message: 'No active asset balances available to compile tax ledger.',
+        type: 'warning',
+      });
+      return;
+    }
+    const headers = 'Asset,Symbol,Chain,Amount,CurrentPriceUSD,TotalValueUSD,EstimatedCostBasisUSD,UnrealizedPnLUSD\n';
+    const rows = holdings.map(h => {
+      const val = h.amount * h.token.priceUsd;
+      const cost = h.amount * h.avgBuyPrice;
+      const pnl = val - cost;
+      return `"${h.token.name}","${h.token.symbol}","${h.token.chainId}",${h.amount},${h.token.priceUsd},${val.toFixed(2)},${cost.toFixed(2)},${pnl.toFixed(2)}`;
+    }).join('\n');
+    
+    const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `hyperon-dex-portfolio-${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
     addToast({
       title: 'Ledger Exported',
       message: 'Cryptographic portfolio ledger downloaded as CSV for accounting.',

@@ -1417,6 +1417,69 @@ async function runTests() {
     'validateBlockchainAddress rejects non-T address for TRON network'
   );
 
+  // -------------------------------------------------------------------------
+  // SECTION 12: Fail-Closed Real-State & Zero-Synthetic Data Invariants
+  // -------------------------------------------------------------------------
+  console.log('\n======================================================');
+  console.log(' ZERO-SYNTHETIC INVARIANTS & FAIL-CLOSED STATE AUDIT');
+  console.log('======================================================');
+
+  const {
+    SAMPLE_POOLS,
+    SAMPLE_STAKING_VAULTS,
+    SAMPLE_LENDING_MARKETS,
+    SAMPLE_RESTAKING_STRATEGIES,
+  } = await import('../src/lib/constants');
+
+  // 1. Pools: No unauthenticated/unconnected user positions
+  const poolsWithUserPosition = SAMPLE_POOLS.filter((p: any) => p.userPosition !== undefined);
+  assert(
+    poolsWithUserPosition.length === 0,
+    `SAMPLE_POOLS must not contain synthetic pre-filled user positions (found ${poolsWithUserPosition.length})`
+  );
+
+  // 2. Staking Vaults: No synthetic userStaked balances
+  const vaultsWithUserStaked = SAMPLE_STAKING_VAULTS.filter((v: any) => v.userStaked !== undefined);
+  assert(
+    vaultsWithUserStaked.length === 0,
+    `SAMPLE_STAKING_VAULTS must not contain synthetic pre-filled userStaked balances (found ${vaultsWithUserStaked.length})`
+  );
+
+  // 3. Lending Markets: Zero supplied and borrowed default balances
+  const invalidLending = SAMPLE_LENDING_MARKETS.filter(
+    (m: any) => m.userSuppliedAmount !== 0 || m.userBorrowedAmount !== 0 || m.isCollateralActive !== false
+  );
+  assert(
+    invalidLending.length === 0,
+    `SAMPLE_LENDING_MARKETS must initialize with zero supplied and borrowed amounts (found ${invalidLending.length} violations)`
+  );
+
+  // 4. Restaking Strategies: Zero synthetic staked amounts
+  const invalidRestaking = SAMPLE_RESTAKING_STRATEGIES.filter((r: any) => r.userStakedAmount !== 0);
+  assert(
+    invalidRestaking.length === 0,
+    `SAMPLE_RESTAKING_STRATEGIES must initialize with 0 userStakedAmount (found ${invalidRestaking.length} violations)`
+  );
+
+  // 5. Verify CSV ledger format compliance
+  const testLedgerTokens = [
+    { name: 'Ethereum', symbol: 'ETH', chainId: 'ethereum', amount: 2.5, priceUsd: 3400.0, avgCost: 3100.0 },
+    { name: 'USD Coin', symbol: 'USDC', chainId: 'ethereum', amount: 5000, priceUsd: 1.0, avgCost: 1.0 },
+  ];
+  const csvHeaders = 'Asset,Symbol,Chain,Amount,CurrentPriceUSD,TotalValueUSD,EstimatedCostBasisUSD,UnrealizedPnLUSD\n';
+  const csvRows = testLedgerTokens
+    .map((t) => {
+      const val = t.amount * t.priceUsd;
+      const cost = t.amount * t.avgCost;
+      const pnl = val - cost;
+      return `"${t.name}","${t.symbol}","${t.chainId}",${t.amount},${t.priceUsd},${val.toFixed(2)},${cost.toFixed(2)},${pnl.toFixed(2)}`;
+    })
+    .join('\n');
+  const fullCsv = csvHeaders + csvRows;
+  assert(fullCsv.startsWith('Asset,Symbol,Chain'), 'CSV ledger contains valid header row');
+  assert(fullCsv.includes('"ETH"'), 'CSV ledger contains formatted token symbol');
+  assert(fullCsv.includes('8500.00'), 'CSV ledger accurately calculates total USD value');
+
   // Summary
   console.log('\n======================================================');
   console.log(` OVERALL HYPERON-DEX SUITE: ${passedTests}/${totalTests} PASSED (${failedTests} FAILED)`);

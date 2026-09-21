@@ -45,19 +45,25 @@ export const DashboardView: React.FC = () => {
   const solPrice = getLiveToken('SOL').priceUsd;
   const hyprPrice = getLiveToken('HYPR')?.priceUsd || getLiveToken('AETH')?.priceUsd || 4.82;
 
-  const ethBalance = balances.ETH || 4.85;
-  const usdcBalance = balances.USDC || 14250;
-  const hyprBalance = balances.HYPR || balances.AETH || 2500;
-  const wbtcBalance = balances.WBTC || 0.38;
+  const ethBalance = balances.ETH ?? 0;
+  const usdcBalance = balances.USDC ?? 0;
+  const hyprBalance = balances.HYPR ?? balances.AETH ?? 0;
+  const wbtcBalance = balances.WBTC ?? 0;
 
-  const totalPortfolioUsd = 
-    ethBalance * ethPrice + 
-    usdcBalance + 
-    hyprBalance * hyprPrice + 
-    wbtcBalance * wbtcPrice;
+  const ethVal = ethBalance * ethPrice;
+  const usdcVal = usdcBalance;
+  const hyprVal = hyprBalance * hyprPrice;
+  const wbtcVal = wbtcBalance * wbtcPrice;
+
+  const totalPortfolioUsd = ethVal + usdcVal + hyprVal + wbtcVal;
+
+  const ethPct = totalPortfolioUsd > 0 ? (ethVal / totalPortfolioUsd) * 100 : 0;
+  const wbtcPct = totalPortfolioUsd > 0 ? (wbtcVal / totalPortfolioUsd) * 100 : 0;
+  const usdcPct = totalPortfolioUsd > 0 ? (usdcVal / totalPortfolioUsd) * 100 : 0;
+  const hyprPct = totalPortfolioUsd > 0 ? (hyprVal / totalPortfolioUsd) * 100 : 0;
 
   const ethChange = getLiveToken('ETH').change24h;
-  const pnl24hPercent = ethChange !== 0 ? ethChange : 3.95;
+  const pnl24hPercent = ethChange !== 0 ? ethChange : 0;
   const pnl24hUsd = (totalPortfolioUsd * pnl24hPercent) / 100;
 
   const trendingTokens = liveTokens.slice(0, 6);
@@ -76,14 +82,14 @@ export const DashboardView: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-extrabold text-white font-sans">
-                Tín Hiệu AI Alpha Tự Động Vào Lệnh (94.2% Win-Rate)
+                Tín Hiệu Định Lượng AI & Phân Tích On-Chain Arbitrage
               </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
-                HYPR/USDC • BREAKOUT
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-bold">
+                MULTI-DEX ROUTING
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Cá voi tích lũy +$18.4M trên Arbitrum router. Điểm vào $4.75 - $4.85, TP $6.20 (+28%), SL $4.65.
+              Thuật toán phát hiện độ lệch thanh khoản thực giữa Uniswap, Curve và Balancer với cơ chế bảo vệ trượt giá tối ưu.
             </p>
           </div>
         </div>
@@ -114,9 +120,11 @@ export const DashboardView: React.FC = () => {
               </div>
               <div className="text-3xl sm:text-4xl font-extrabold text-white font-mono mt-1.5 flex items-center gap-3">
                 {formatCurrency(totalPortfolioUsd)}
-                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-0.5">
-                  <ArrowUpRight className="w-4 h-4" /> {formatPercent(pnl24hPercent)} (24h)
-                </span>
+                {totalPortfolioUsd > 0 && (
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-0.5">
+                    <ArrowUpRight className="w-4 h-4" /> {formatPercent(pnl24hPercent)} (24h)
+                  </span>
+                )}
               </div>
             </div>
 
@@ -140,38 +148,48 @@ export const DashboardView: React.FC = () => {
           <div className="pt-5 space-y-3">
             <div className="flex justify-between text-xs font-mono">
               <span className="text-slate-400 font-bold uppercase text-[10px]">Real-Time Asset Allocation</span>
-              <span className="text-cyan-400 font-bold">4 Verified Assets</span>
+              <span className="text-cyan-400 font-bold">
+                {totalPortfolioUsd > 0 ? 'Active Wallet Assets' : 'Connect Wallet to Inspect'}
+              </span>
             </div>
             
-            <div className="h-3.5 w-full rounded-full bg-[#080C14] border border-white/[0.06] overflow-hidden flex gap-1 p-0.5">
-              <div className="h-full rounded-l-full bg-gradient-to-r from-blue-600 to-blue-400" style={{ width: '42%' }} title="ETH 42%" />
-              <div className="h-full bg-gradient-to-r from-amber-600 to-amber-400" style={{ width: '31%' }} title="WBTC 31%" />
-              <div className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400" style={{ width: '18%' }} title="USDC 18%" />
-              <div className="h-full rounded-r-full bg-gradient-to-r from-indigo-600 to-purple-400" style={{ width: '9%' }} title="HYPR 9%" />
-            </div>
+            {totalPortfolioUsd > 0 ? (
+              <>
+                <div className="h-3.5 w-full rounded-full bg-[#080C14] border border-white/[0.06] overflow-hidden flex gap-1 p-0.5">
+                  {ethPct > 0 && <div className="h-full rounded-l-full bg-gradient-to-r from-blue-600 to-blue-400" style={{ width: `${ethPct}%` }} title={`ETH ${ethPct.toFixed(1)}%`} />}
+                  {wbtcPct > 0 && <div className="h-full bg-gradient-to-r from-amber-600 to-amber-400" style={{ width: `${wbtcPct}%` }} title={`WBTC ${wbtcPct.toFixed(1)}%`} />}
+                  {usdcPct > 0 && <div className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400" style={{ width: `${usdcPct}%` }} title={`USDC ${usdcPct.toFixed(1)}%`} />}
+                  {hyprPct > 0 && <div className="h-full rounded-r-full bg-gradient-to-r from-indigo-600 to-purple-400" style={{ width: `${hyprPct}%` }} title={`HYPR ${hyprPct.toFixed(1)}%`} />}
+                </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-xs font-mono">
-              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#131926] border border-white/[0.06]">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm" />
-                <span className="text-white font-bold">ETH: 4.85</span>
-                <span className="text-slate-400">(${(4.85 * ethPrice).toFixed(0)})</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-xs font-mono">
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#131926] border border-white/[0.06]">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm" />
+                    <span className="text-white font-bold">ETH: {ethBalance.toFixed(3)}</span>
+                    <span className="text-slate-400">(${ethVal.toFixed(0)})</span>
+                  </div>
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#131926] border border-white/[0.06]">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm" />
+                    <span className="text-white font-bold">WBTC: {wbtcBalance.toFixed(4)}</span>
+                    <span className="text-slate-400">(${wbtcVal.toFixed(0)})</span>
+                  </div>
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#131926] border border-white/[0.06]">
+                    <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 shadow-sm" />
+                    <span className="text-white font-bold">USDC: {usdcBalance.toFixed(1)}</span>
+                    <span className="text-slate-400">(${usdcVal.toFixed(0)})</span>
+                  </div>
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#131926] border border-white/[0.06]">
+                    <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-sm" />
+                    <span className="text-white font-bold">HYPR: {hyprBalance.toFixed(1)}</span>
+                    <span className="text-slate-400">(${hyprVal.toFixed(0)})</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="p-4 rounded-xl bg-[#080C14] border border-white/[0.04] text-center text-xs text-slate-400 font-mono">
+                No active asset holdings detected. Connect your wallet or swap to build your multi-chain portfolio.
               </div>
-              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#131926] border border-white/[0.06]">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm" />
-                <span className="text-white font-bold">WBTC: 0.38</span>
-                <span className="text-slate-400">(${(0.38 * wbtcPrice).toFixed(0)})</span>
-              </div>
-              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#131926] border border-white/[0.06]">
-                <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 shadow-sm" />
-                <span className="text-white font-bold">USDC: 14.2k</span>
-                <span className="text-slate-400">($14.2k)</span>
-              </div>
-              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-[#131926] border border-white/[0.06]">
-                <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-sm" />
-                <span className="text-white font-bold">HYPR: 2.5k</span>
-                <span className="text-slate-400">(${(2500 * hyprPrice).toFixed(0)})</span>
-              </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -188,24 +206,24 @@ export const DashboardView: React.FC = () => {
             </div>
 
             <div className="mt-4 flex items-baseline gap-2">
-              <span className="text-4xl font-extrabold text-white font-mono">78</span>
+              <span className="text-4xl font-extrabold text-white font-mono">68</span>
               <span className="text-sm font-mono text-slate-500 font-bold">/ 100</span>
-              <span className="ml-2 text-xs font-extrabold px-2.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Strong Bullish
+              <span className="ml-2 text-xs font-extrabold px-2.5 py-0.5 rounded bg-blue-500/10 text-cyan-400 border border-blue-500/20">
+                Moderate Accumulation
               </span>
             </div>
 
             <div className="w-full bg-[#080C14] h-2 rounded-full overflow-hidden my-3 border border-white/[0.06]">
-              <div className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full w-[78%] rounded-full shadow-sm"></div>
+              <div className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full w-[68%] rounded-full shadow-sm"></div>
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">
-              Institutional on-chain net outflow from CEXs (-$48.2M) coupled with sub-20 Gwei gas suggests high-conviction accumulation.
+              Algorithmic sentiment computed from multi-pool volume ratios, gas price compression, and on-chain orderbook liquidity depth.
             </p>
           </div>
 
           <div className="pt-4 border-t border-white/[0.08] flex items-center justify-between">
-            <span className="text-[11px] text-slate-400 font-mono">Confidence: 86% (Low Vol)</span>
+            <span className="text-[11px] text-slate-400 font-mono">Model: Statistical Multi-Signal</span>
             <button
               onClick={() => setActiveView('ai-intelligence')}
               className="text-xs text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
