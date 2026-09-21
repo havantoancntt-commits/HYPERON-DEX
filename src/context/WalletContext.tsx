@@ -97,6 +97,7 @@ interface WalletContextType {
   activeCustomProvider: any;
   checkAllowance: (tokenAddress: string, ownerAddress: string, spenderAddress: string) => Promise<bigint>;
   approveTokenOnChain: (tokenAddress: string, spenderAddress: string, amountRaw?: bigint) => Promise<string>;
+  addTokenToWallet: (token: { address: string; symbol: string; decimals: number; image?: string }) => Promise<boolean>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -1245,6 +1246,34 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }));
   };
 
+  const addTokenToWallet = useCallback(
+    async (token: { address: string; symbol: string; decimals: number; image?: string }): Promise<boolean> => {
+      try {
+        const provider = activeCustomProvider || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+        if (!provider) {
+          throw new Error('Chưa phát hiện tiện ích mở rộng ví Web3 trên trình duyệt.');
+        }
+        const wasAdded = await provider.request({
+          method: 'wallet_watchAsset',
+          params: {
+            type: 'ERC20',
+            options: {
+              address: token.address,
+              symbol: token.symbol,
+              decimals: token.decimals,
+              image: token.image || undefined,
+            },
+          },
+        });
+        return Boolean(wasAdded);
+      } catch (err: any) {
+        console.warn('[WalletContext] Failed to watchAsset:', err);
+        throw err;
+      }
+    },
+    [activeCustomProvider]
+  );
+
   return (
     <WalletContext.Provider
       value={{
@@ -1293,6 +1322,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         activeCustomProvider,
         checkAllowance,
         approveTokenOnChain,
+        addTokenToWallet,
       }}
     >
       {children}

@@ -140,6 +140,16 @@ export const Header: React.FC = () => {
             <span className="text-white tracking-wider text-[10px] font-bold">HYPERON QUANTUM ORACLE</span>
           </div>
 
+          <button
+            onClick={() => setActiveView('hypr-coin')}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 hover:bg-cyan-500/25 transition-all text-xs font-mono font-bold cursor-pointer shrink-0 shadow-sm shadow-cyan-500/10"
+            title="Xem chi tiết đồng coin HYPR Native"
+          >
+            <Hyperon3DLogo className="w-3.5 h-3.5" />
+            <span>HYPR $4.82</span>
+            <span className="text-emerald-400 text-[10px] font-bold">+18.6%</span>
+          </button>
+
           <div className="h-3 w-px bg-white/10 shrink-0" />
 
           {/* Quick Real-Time Asset Stream */}
@@ -246,6 +256,17 @@ export const Header: React.FC = () => {
         <div className="flex items-center gap-3">
           {/* Institutional Primary Desktop Navigation Links */}
           <div className="hidden xl:flex items-center gap-1 bg-[#090C14] p-1 rounded-2xl border border-white/[0.08] text-xs font-medium shadow-inner">
+            <button
+              onClick={() => setActiveView('hypr-coin')}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeView === 'hypr-coin'
+                  ? 'bg-cyan-500/20 text-cyan-300 font-extrabold border border-cyan-400/40 shadow-sm shadow-cyan-500/20'
+                  : 'text-cyan-400 hover:text-cyan-200 hover:bg-cyan-500/10'
+              }`}
+            >
+              <Hyperon3DLogo className="w-3.5 h-3.5" />
+              <span>HYPR Coin</span>
+            </button>
             <button
               onClick={() => setActiveView('trade')}
               className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${

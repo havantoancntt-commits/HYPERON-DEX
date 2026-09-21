@@ -10,6 +10,7 @@ export type ProductView =
   | 'trade'
   | 'markets'
   | 'token-details'
+  | 'hypr-coin'
   | 'portfolio'
   | 'launchpad'
   | 'onchain-radar'

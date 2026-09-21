@@ -79,6 +79,7 @@ export const Navigation: React.FC = () => {
     {
       title: t('nav.section.trade'),
       items: [
+        { id: 'hypr-coin', label: 'Đồng HYPR (Native)', icon: Coins, badge: 'ECOSYSTEM', badgeColor: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30' },
         { id: 'swap', label: t('nav.swap'), icon: ArrowLeftRight, badge: 'Best MEV', badgeColor: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20' },
         { id: 'perpetuals', label: t('nav.perpetuals'), icon: LineChart, badge: '50x', badgeColor: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
         { id: 'trade', label: t('nav.trade'), icon: TrendingUp },
