@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SlidersHorizontal, ShieldAlert, Cpu, Activity, Lock, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useExchange } from '../context/ExchangeContext';
+import { TreasuryManagementPanel } from '../components/TreasuryManagementPanel';
 
 export const AdminConsoleView: React.FC = () => {
   const { addToast } = useExchange();
@@ -115,6 +116,9 @@ export const AdminConsoleView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Protocol Fee Treasury & Revenue Split (Institutional Omnichain Addresses) */}
+      <TreasuryManagementPanel />
 
       {/* RPC Latency & Failover Matrix */}
       <div className="rounded-2xl bg-[#0A0A0A] border border-white/5 p-5 shadow-xl space-y-3">

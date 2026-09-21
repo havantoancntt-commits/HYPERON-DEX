@@ -6,6 +6,7 @@ import { ChainId, CrossChainSwapQuote, CrossChainBridgeRoute, CrossChainExecutio
 import { formatCurrency, formatCrypto } from '../lib/utils';
 import { ChainLogo, DexProtocolIcon, TokenLogo } from '../components/CryptoIcon';
 import { CrossChainExecutionModal } from '../components/CrossChainExecutionModal';
+import { getFeeRecipientForChain, getFeeRecipientConfig } from '../lib/treasuryConfig';
 import {
   GitFork,
   ArrowRight,
@@ -23,6 +24,8 @@ import {
   Flame,
   Layers,
   Award,
+  Coins,
+  ExternalLink,
 } from 'lucide-react';
 
 const CROSS_CHAIN_TOKENS = [
@@ -589,6 +592,31 @@ export const CrossChainView: React.FC = () => {
                 Attested by Hyperon Decentralized ZK-Relayers. Zero synthetic tokens, instant destination finality.
               </p>
             </div>
+
+            {/* Protocol Fee Routing Details */}
+            {(() => {
+              const srcConfig = getFeeRecipientConfig(fromChain);
+              return (
+                <div className="p-3 rounded-xl bg-black/40 border border-white/5 flex items-center justify-between text-[11px] font-mono">
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <Coins className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Kho bạc nhận phí {srcConfig.shortName}:</span>
+                    <span className="text-white font-bold" title={srcConfig.address}>
+                      {srcConfig.address.slice(0, 8)}...{srcConfig.address.slice(-6)}
+                    </span>
+                  </div>
+                  <a
+                    href={srcConfig.explorerUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+                  >
+                    <span>Explorer</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>

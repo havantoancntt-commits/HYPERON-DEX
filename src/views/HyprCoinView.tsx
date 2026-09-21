@@ -722,6 +722,70 @@ export const HyprCoinView: React.FC = () => {
             </p>
           </div>
         </div>
+
+        {/* Multi-chain fee collection addresses feeding the buyback & burn engine */}
+        <div className="p-4 rounded-2xl bg-black/40 border border-rose-500/20 space-y-3 font-mono text-xs">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2 text-rose-300 font-bold">
+              <Flame className="w-4 h-4 text-rose-400" />
+              <span>Dòng Chảy Doanh Thu Giao Thức (6 Địa Chỉ On-Chain Thu Phí Quyết Toán)</span>
+            </div>
+            <span className="text-[10px] text-slate-400">
+              30% được trích lập tự động cho quỹ Mua Lại & Đốt HYPR
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {[
+              { name: 'Ethereum Mainnet', short: 'ETH', addr: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9', exp: 'https://etherscan.io/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9', color: '#627EEA' },
+              { name: 'Solana Network', short: 'SOL', addr: '5zz8MHDqLTV3yBX3Qs2KnmjvMzh6qvbzMC4b6zfXAtt4', exp: 'https://solscan.io/account/5zz8MHDqLTV3yBX3Qs2KnmjvMzh6qvbzMC4b6zfXAtt4', color: '#14F195' },
+              { name: 'BNB Smart Chain', short: 'BSC', addr: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9', exp: 'https://bscscan.com/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9', color: '#F3BA2F' },
+              { name: 'TRON (TRC-20)', short: 'TRX', addr: 'TLzquLdPwYGf8q71V6E4mPAAnPYgvxQNBj', exp: 'https://tronscan.org/#/address/TLzquLdPwYGf8q71V6E4mPAAnPYgvxQNBj', color: '#FF0013' },
+              { name: 'Arbitrum One', short: 'ARB', addr: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9', exp: 'https://arbiscan.io/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9', color: '#28A0F0' },
+              { name: 'Base L2', short: 'BASE', addr: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9', exp: 'https://basescan.org/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9', color: '#0052FF' },
+            ].map((chain) => (
+              <div
+                key={chain.short}
+                className="p-2.5 rounded-xl bg-[#090D18] border border-white/5 flex items-center justify-between gap-2"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: chain.color }} />
+                    <span className="text-white font-bold text-[11px] truncate">{chain.name}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate" title={chain.addr}>
+                    {chain.addr.slice(0, 6)}...{chain.addr.slice(-4)}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(chain.addr);
+                      addToast({
+                        title: 'Đã Sao Chép',
+                        message: `Địa chỉ thu phí ${chain.short}: ${chain.addr}`,
+                        type: 'success',
+                      });
+                    }}
+                    className="p-1 rounded bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white cursor-pointer"
+                    title="Sao chép"
+                  >
+                    <Copy className="w-3 h-3" />
+                  </button>
+                  <a
+                    href={chain.exp}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="p-1 rounded bg-white/5 hover:bg-white/15 text-slate-300 hover:text-cyan-400"
+                    title="Mở Explorer"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* 5. Multi-Chain Deployments & Smart Contracts Verification */}

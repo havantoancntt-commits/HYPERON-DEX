@@ -44,6 +44,7 @@ import { corsSecurityMiddleware } from './server/middleware/corsSecurity';
 import { antiScraperMiddleware } from './server/middleware/antiScraper';
 import { hyperonCrossChainEngine } from './server/services/crossChainEngine';
 import { TransactionBuilder } from './src/lib/execution/TransactionBuilder';
+import { treasuryService } from './server/services/treasuryService';
 
 const app = express();
 const PORT = 3000;
@@ -1636,12 +1637,13 @@ app.get('/api/perpetuals/positions', (req: Request, res: Response) => {
 // -------------------------------------------------------------
 app.get('/api/payments/invoices', (req: Request, res: Response) => {
   try {
+    const verifiedTreasuryAddress = treasuryService.getFeeRecipient('ethereum');
     res.json({
       invoices: [
         {
           id: 'inv-hyperon-8891',
           title: 'Web3 Institutional Liquidity Infrastructure License',
-          recipientWallet: '0x71C28B932F99B52EDb3C0257B4393608F79E9E42',
+          recipientWallet: verifiedTreasuryAddress,
           amountUsd: 450.0,
           preferredToken: 'USDC',
           status: 'PAID',
@@ -1649,14 +1651,57 @@ app.get('/api/payments/invoices', (req: Request, res: Response) => {
           createdAt: Date.now() - 7200000,
           txHash: '0x9910293847566110294857661102948576611029485766110293847566112233',
           items: [
-            { description: 'Dedicated AI Inference Node (30 Days)', qty: 1, unitPrice: 350.0 },
-            { description: 'Priority MEV Flashbots Bundle Slot', qty: 1, unitPrice: 100.0 },
+            { description: 'Dedicated AI Inference Node (30 Days)', qty: 350.0, unitPrice: 350.0 },
+            { description: 'Priority MEV Flashbots Bundle Slot', qty: 100.0, unitPrice: 100.0 },
           ],
         },
       ],
     });
   } catch (err: unknown) {
     res.status(500).json({ error: 'Failed to retrieve invoices' });
+  }
+});
+
+// -------------------------------------------------------------
+// 14.5 Institutional Protocol Fee Treasury API
+// -------------------------------------------------------------
+app.get('/api/protocol/treasury', (_req: Request, res: Response) => {
+  try {
+    const all = treasuryService.getAllTreasuryRecipients();
+    res.json({
+      success: true,
+      protocol: 'HYPERON-DEX Omnichain Treasury',
+      recipients: all,
+      stats: {
+        total24hFeesUsd: Object.values(all).reduce((acc, curr) => acc + curr.totalCollectedUsd24h, 0),
+        supportedChainsCount: Object.keys(all).length,
+        status: 'OPERATIONAL',
+      },
+    });
+  } catch (err: unknown) {
+    res.status(500).json({ error: 'Failed to retrieve protocol treasury configuration' });
+  }
+});
+
+app.put('/api/protocol/treasury', (req: Request, res: Response) => {
+  try {
+    const { chainId, address } = req.body;
+    if (!chainId || !address || typeof address !== 'string') {
+      res.status(400).json({ error: 'chainId and address are required' });
+      return;
+    }
+    const updated = treasuryService.updateRecipient(chainId, address);
+    if (!updated) {
+      res.status(404).json({ error: `Chain ${chainId} not found in treasury configuration` });
+      return;
+    }
+    res.json({
+      success: true,
+      message: `Protocol fee recipient for ${chainId} updated successfully`,
+      newAddress: address.trim(),
+    });
+  } catch (err: unknown) {
+    res.status(500).json({ error: 'Failed to update protocol treasury recipient' });
   }
 });
 

@@ -2,9 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useExchange } from '../context/ExchangeContext';
 import { useWallet } from '../context/WalletContext';
 import { Web3MerchantInvoice } from '../types';
-import { formatCurrency } from '../lib/utils';
+import { formatCurrency, shortenAddress } from '../lib/utils';
 import { TokenLogo } from '../components/CryptoIcon';
 import { EcosystemFlowBanner } from '../components/EcosystemFlowBanner';
+import {
+  getTreasuryRecipients,
+  getFeeRecipientForChain,
+  FeeRecipientConfig,
+  DEFAULT_PROTOCOL_FEE_RECIPIENTS
+} from '../lib/treasuryConfig';
 import {
   CreditCard,
   QrCode,
@@ -16,7 +22,9 @@ import {
   ExternalLink,
   ShieldCheck,
   Zap,
-  RefreshCw
+  RefreshCw,
+  Coins,
+  Check
 } from 'lucide-react';
 
 export const PaymentsView: React.FC = () => {
@@ -32,9 +40,22 @@ export const PaymentsView: React.FC = () => {
   const [invTitle, setInvTitle] = useState<string>('');
   const [invAmount, setInvAmount] = useState<string>('150.00');
   const [invToken, setInvToken] = useState<string>('USDC');
+  const [invChain, setInvChain] = useState<string>('ethereum');
+  const [invRecipient, setInvRecipient] = useState<string>(() => getFeeRecipientForChain('ethereum'));
+  const [useCustomWallet, setUseCustomWallet] = useState<boolean>(false);
   const [invNote, setInvNote] = useState<string>('');
   const [creating, setCreating] = useState<boolean>(false);
   const [paying, setPaying] = useState<boolean>(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const treasuryRecipients = getTreasuryRecipients();
+
+  // Update recipient when chain changes if not using custom wallet
+  useEffect(() => {
+    if (!useCustomWallet) {
+      setInvRecipient(getFeeRecipientForChain(invChain));
+    }
+  }, [invChain, useCustomWallet]);
 
   const fetchInvoices = async () => {
     try {
@@ -68,14 +89,15 @@ export const PaymentsView: React.FC = () => {
 
     setCreating(true);
     setTimeout(() => {
+      const targetRecipient = invRecipient.trim() || getFeeRecipientForChain(invChain);
       const newInv: Web3MerchantInvoice = {
         id: `inv-${Date.now()}`,
         title: invTitle,
-        recipientWallet: address || '0x3aC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD',
+        recipientWallet: targetRecipient,
         amountUsd: parseFloat(invAmount) || 0,
         preferredToken: invToken,
         status: 'PENDING',
-        customerNote: invNote || 'Web3 Gateway instant settlement',
+        customerNote: invNote || `Quyết toán qua mạng ${invChain.toUpperCase()} vào ví phí giao thức`,
         createdAt: Date.now(),
         items: [{ description: invTitle, qty: 1, unitPrice: parseFloat(invAmount) || 0 }],
       };
@@ -89,7 +111,7 @@ export const PaymentsView: React.FC = () => {
 
       addToast({
         title: 'Tạo Hóa Đơn Thanh Toán Thành Công!',
-        message: `Mã hóa đơn ${newInv.id} đã sẵn sàng nhận thanh toán qua QR Code hoặc Web3 Wallet.`,
+        message: `Mã hóa đơn ${newInv.id} đã sẵn sàng nhận tiền về ví ${shortenAddress(targetRecipient)} trên mạng ${invChain.toUpperCase()}.`,
         type: 'success',
       });
     }, 1000);
@@ -215,6 +237,77 @@ export const PaymentsView: React.FC = () => {
         </div>
       </div>
 
+      {/* Multi-Chain Fee Settlement Treasury Strip */}
+      <div className="p-4 rounded-2xl bg-[#090D18] border border-emerald-500/20 shadow-lg space-y-3 font-mono text-xs">
+        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-white/5">
+          <div className="flex items-center gap-2 text-emerald-400 font-bold">
+            <Coins className="w-4 h-4" />
+            <span>Địa Chỉ Kho Bạc Nhận Phí & Quyết Toán Giao Thức (6 Chuỗi Đã Xác Minh)</span>
+          </div>
+          <span className="text-[10px] text-slate-400">
+            Tự động định tuyến khi tạo hóa đơn hoặc thu phí DEX
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {(['ethereum', 'solana', 'bsc', 'tron', 'arbitrum', 'base'] as const).map((chainKey) => {
+            const conf = treasuryRecipients[chainKey] || DEFAULT_PROTOCOL_FEE_RECIPIENTS[chainKey];
+            if (!conf) return null;
+            const isCopied = copiedKey === chainKey;
+
+            return (
+              <div
+                key={chainKey}
+                className="p-2.5 rounded-xl bg-black/40 border border-white/5 flex items-center justify-between gap-2 hover:border-emerald-500/30 transition-colors"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="w-5 h-5 rounded-md flex items-center justify-center font-bold text-[9px]"
+                    style={{ backgroundColor: `${conf.color}25`, color: conf.color }}
+                  >
+                    {conf.iconSymbol}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-white text-[11px] font-bold truncate">{conf.shortName}</div>
+                    <div className="text-[10px] text-slate-400 truncate" title={conf.address}>
+                      {shortenAddress(conf.address, 5)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(conf.address);
+                      setCopiedKey(chainKey);
+                      addToast({
+                        title: 'Đã Sao Chép Địa Chỉ',
+                        message: `${conf.shortName}: ${conf.address}`,
+                        type: 'success',
+                      });
+                      setTimeout(() => setCopiedKey(null), 1800);
+                    }}
+                    className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white cursor-pointer"
+                    title="Sao chép địa chỉ"
+                  >
+                    {isCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                  <a
+                    href={conf.explorerUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="p-1 rounded bg-white/5 hover:bg-white/10 text-slate-300 hover:text-emerald-400"
+                    title="Xem trên explorer"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Invoices List */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -336,6 +429,62 @@ export const PaymentsView: React.FC = () => {
                     <option value="USDT">USDT</option>
                     <option value="ETH">ETH</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Multi-chain settlement network */}
+              <div className="space-y-1">
+                <label className="text-slate-400 flex items-center justify-between">
+                  <span>Mạng Lưới Quyết Toán (Settlement Chain):</span>
+                  <span className="text-[10px] text-emerald-400 font-mono">Đồng bộ ví nhận phí</span>
+                </label>
+                <select
+                  value={invChain}
+                  onChange={(e) => setInvChain(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-[#060912] border border-white/10 text-white outline-none font-sans"
+                >
+                  <option value="ethereum">Ethereum Mainnet (0x8774...a5A9)</option>
+                  <option value="solana">Solana Network (5zz8...Att4)</option>
+                  <option value="bsc">BNB Smart Chain (0x8774...a5A9)</option>
+                  <option value="tron">TRON TRC-20 (TLzqu...QNBj)</option>
+                  <option value="arbitrum">Arbitrum One (0x8774...a5A9)</option>
+                  <option value="base">Base L2 (0x8774...a5A9)</option>
+                </select>
+              </div>
+
+              {/* Recipient Address */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-slate-400">Ví Thụ Hưởng (Recipient):</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUseCustomWallet(!useCustomWallet);
+                      if (useCustomWallet) {
+                        setInvRecipient(getFeeRecipientForChain(invChain));
+                      } else if (address) {
+                        setInvRecipient(address);
+                      }
+                    }}
+                    className="text-[10px] text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+                  >
+                    {useCustomWallet ? 'Dùng ví kho bạc mặc định' : 'Dùng ví cá nhân đang kết nối'}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={invRecipient}
+                  onChange={(e) => {
+                    setInvRecipient(e.target.value);
+                    setUseCustomWallet(true);
+                  }}
+                  className="w-full p-2.5 rounded-xl bg-[#060912] border border-white/10 text-emerald-400 font-mono text-[11px] outline-none"
+                  required
+                />
+                <div className="text-[10px] text-slate-500 font-mono">
+                  {useCustomWallet
+                    ? 'Ví thụ hưởng tùy chỉnh.'
+                    : 'Địa chỉ kho bạc thu phí chính thức đã xác minh cho mạng này.'}
                 </div>
               </div>
 

@@ -2,7 +2,8 @@ import React from 'react';
 import { SwapQuote, RouteSplit } from '../../types';
 import { TokenLogo, DexProtocolIcon } from '../CryptoIcon';
 import { shortenAddress } from '../../lib/utils';
-import { ArrowRight, Sparkles, ShieldCheck, Zap, GitBranch, Layers } from 'lucide-react';
+import { getFeeRecipientConfig } from '../../lib/treasuryConfig';
+import { ArrowRight, Sparkles, ShieldCheck, Zap, GitBranch, Layers, Coins, ExternalLink } from 'lucide-react';
 
 interface RouteVisualizationProps {
   quote: SwapQuote;
@@ -188,6 +189,30 @@ export const RouteVisualization: React.FC<RouteVisualizationProps> = ({
           <span className="text-cyan-400 font-medium">Latency: {quote.calculationLatencyMs || 14}ms</span>
         </div>
       </div>
+
+      {/* Protocol Fee Routing Transparency */}
+      {(() => {
+        const chainKey = quote.chainId || 'ethereum';
+        const feeConf = getFeeRecipientConfig(chainKey);
+        return (
+          <div className="mt-2 pt-1.5 border-t border-white/[0.03] flex items-center justify-between text-[9px] font-mono text-slate-500">
+            <div className="flex items-center gap-1.5">
+              <Coins className="w-3 h-3 text-cyan-500" />
+              <span>Phí định tuyến (0.10%) chuyển về kho bạc {feeConf.shortName}:</span>
+              <span className="text-slate-300 font-bold">{shortenAddress(feeConf.address, 4)}</span>
+            </div>
+            <a
+              href={feeConf.explorerUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-cyan-400/80 hover:text-cyan-300 flex items-center gap-0.5"
+            >
+              <span>On-Chain Verified</span>
+              <ExternalLink className="w-2.5 h-2.5" />
+            </a>
+          </div>
+        );
+      })()}
     </div>
   );
 };
