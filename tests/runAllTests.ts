@@ -59,6 +59,12 @@ import {
   RouteCategory,
   setCustomAllowedOriginsForTest,
 } from '../server/middleware/corsSecurity';
+import { treasuryService, SERVER_TREASURY_RECIPIENTS } from '../server/services/treasuryService';
+import {
+  DEFAULT_PROTOCOL_FEE_RECIPIENTS,
+  getFeeRecipientForChain,
+  validateBlockchainAddress,
+} from '../src/lib/treasuryConfig';
 import { runUltraRouterTests } from './UltraRouter.test';
 import { runUniswapV3Suite } from './uniswapV3Verification';
 import { runProductionHardenTests } from './productionHarden.test';
@@ -1290,6 +1296,126 @@ async function runTests() {
   totalTests += execRes.total;
   passedTests += execRes.passed;
   failedTests += execRes.failed;
+
+  // -------------------------------------------------------------
+  // Test 20: Institutional Protocol Fee Treasury & Omnichain Address Integrity Suite
+  // -------------------------------------------------------------
+  console.log('\n======================================================');
+  console.log(' PROTOCOL FEE TREASURY & MULTI-CHAIN ADDRESS VERIFICATION');
+  console.log('======================================================');
+
+  // 1. Exact address matching
+  const expectedAddresses = {
+    ethereum: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
+    solana: '5zz8MHDqLTV3yBX3Qs2KnmjvMzh6qvbzMC4b6zfXAtt4',
+    bsc: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
+    tron: 'TLzquLdPwYGf8q71V6E4mPAAnPYgvxQNBj',
+    arbitrum: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
+    base: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
+  };
+
+  assert(
+    DEFAULT_PROTOCOL_FEE_RECIPIENTS.ethereum.address === expectedAddresses.ethereum,
+    'Client Treasury Ethereum recipient exactly matches 0x87743246e8cfBc3760a82dAAD00987b1d971a5A9'
+  );
+  assert(
+    DEFAULT_PROTOCOL_FEE_RECIPIENTS.solana.address === expectedAddresses.solana,
+    'Client Treasury Solana recipient exactly matches 5zz8MHDqLTV3yBX3Qs2KnmjvMzh6qvbzMC4b6zfXAtt4'
+  );
+  assert(
+    DEFAULT_PROTOCOL_FEE_RECIPIENTS.bsc.address === expectedAddresses.bsc,
+    'Client Treasury BSC recipient exactly matches 0x87743246e8cfBc3760a82dAAD00987b1d971a5A9'
+  );
+  assert(
+    DEFAULT_PROTOCOL_FEE_RECIPIENTS.tron.address === expectedAddresses.tron,
+    'Client Treasury TRON recipient exactly matches TLzquLdPwYGf8q71V6E4mPAAnPYgvxQNBj'
+  );
+  assert(
+    DEFAULT_PROTOCOL_FEE_RECIPIENTS.arbitrum.address === expectedAddresses.arbitrum,
+    'Client Treasury Arbitrum recipient exactly matches 0x87743246e8cfBc3760a82dAAD00987b1d971a5A9'
+  );
+  assert(
+    DEFAULT_PROTOCOL_FEE_RECIPIENTS.base.address === expectedAddresses.base,
+    'Client Treasury Base recipient exactly matches 0x87743246e8cfBc3760a82dAAD00987b1d971a5A9'
+  );
+
+  // 2. Server Treasury Exact Parity
+  assert(
+    SERVER_TREASURY_RECIPIENTS.ethereum.address === expectedAddresses.ethereum,
+    'Server Treasury Ethereum recipient matches expected address'
+  );
+  assert(
+    SERVER_TREASURY_RECIPIENTS.solana.address === expectedAddresses.solana,
+    'Server Treasury Solana recipient matches expected address'
+  );
+  assert(
+    SERVER_TREASURY_RECIPIENTS.bsc.address === expectedAddresses.bsc,
+    'Server Treasury BSC recipient matches expected address'
+  );
+  assert(
+    SERVER_TREASURY_RECIPIENTS.tron.address === expectedAddresses.tron,
+    'Server Treasury TRON recipient matches expected address'
+  );
+  assert(
+    SERVER_TREASURY_RECIPIENTS.arbitrum.address === expectedAddresses.arbitrum,
+    'Server Treasury Arbitrum recipient matches expected address'
+  );
+  assert(
+    SERVER_TREASURY_RECIPIENTS.base.address === expectedAddresses.base,
+    'Server Treasury Base recipient matches expected address'
+  );
+
+  // 3. Alias & Resolver Function Tests
+  assert(
+    treasuryService.getFeeRecipient('solana') === expectedAddresses.solana &&
+    treasuryService.getFeeRecipient('sol') === expectedAddresses.solana,
+    'treasuryService resolves Solana and alias sol'
+  );
+  assert(
+    treasuryService.getFeeRecipient('tron') === expectedAddresses.tron &&
+    treasuryService.getFeeRecipient('trx') === expectedAddresses.tron,
+    'treasuryService resolves TRON and alias trx'
+  );
+  assert(
+    treasuryService.getFeeRecipient('bsc') === expectedAddresses.bsc &&
+    treasuryService.getFeeRecipient('binance') === expectedAddresses.bsc,
+    'treasuryService resolves BSC and alias binance'
+  );
+  assert(
+    getFeeRecipientForChain('solana') === expectedAddresses.solana &&
+    getFeeRecipientForChain('sol') === expectedAddresses.solana,
+    'client getFeeRecipientForChain resolves solana'
+  );
+  assert(
+    getFeeRecipientForChain('tron') === expectedAddresses.tron,
+    'client getFeeRecipientForChain resolves tron'
+  );
+
+  // 4. Address Format Validation
+  assert(
+    validateBlockchainAddress(expectedAddresses.ethereum, 'EVM').valid,
+    'validateBlockchainAddress accepts valid EVM address'
+  );
+  assert(
+    !validateBlockchainAddress('0xinvalid', 'EVM').valid,
+    'validateBlockchainAddress rejects short EVM address'
+  );
+  assert(
+    validateBlockchainAddress(expectedAddresses.solana, 'Solana').valid,
+    'validateBlockchainAddress accepts valid Solana Base58 address'
+  );
+  assert(
+    !validateBlockchainAddress('0x87743246e8cfBc3760a82dAAD00987b1d971a5A9', 'Solana').valid,
+    'validateBlockchainAddress rejects EVM address for Solana network'
+  );
+  assert(
+    validateBlockchainAddress(expectedAddresses.tron, 'Tron').valid,
+    'validateBlockchainAddress accepts valid TRON address starting with T'
+  );
+  assert(
+    !validateBlockchainAddress('0x87743246e8cfBc3760a82dAAD00987b1d971a5A9', 'Tron').valid,
+    'validateBlockchainAddress rejects non-T address for TRON network'
+  );
 
   // Summary
   console.log('\n======================================================');
