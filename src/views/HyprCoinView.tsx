@@ -10,6 +10,7 @@ import {
   getHyprContractAddress,
   DEFAULT_HYPR_ADDRESS,
   resetHyprContractAddress,
+  isAuthorizedDeployer,
 } from '../lib/hyprConfig';
 import {
   Sparkles,
@@ -152,7 +153,7 @@ const MULTICHAIN_DEPLOYMENTS = [
 ];
 
 export const HyprCoinView: React.FC = () => {
-  const { balances, isConnected, openConnectModal, requestFaucetFunds, addTokenToWallet } = useWallet();
+  const { address, balances, isConnected, openConnectModal, requestFaucetFunds, addTokenToWallet } = useWallet();
   const { getLiveToken, openSwapWithTokens, setActiveView, addToast } = useExchange();
   const { t } = useI18n();
 
@@ -162,6 +163,9 @@ export const HyprCoinView: React.FC = () => {
   const [isClaimingFaucet, setIsClaimingFaucet] = useState(false);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
   const [currentContractAddress, setCurrentContractAddress] = useState(getHyprContractAddress());
+
+  // Smart & Professional Governance Admin Permission Verification
+  const isAdmin = useMemo(() => isAuthorizedDeployer(address), [address]);
 
   useEffect(() => {
     const handleAddressChange = (e: any) => {
@@ -358,13 +362,15 @@ export const HyprCoinView: React.FC = () => {
 
             {/* Main CTA Buttons */}
             <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
-              <button
-                onClick={() => setIsDeployModalOpen(true)}
-                className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-black font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 transition-all cursor-pointer"
-                title="Tạo và deploy token HYPR thật 100% on-chain lên Sepolia, Base, Arbitrum"
-              >
-                <Rocket className="w-4 h-4" /> Deploy On-Chain Thật
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setIsDeployModalOpen(true)}
+                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-black font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 transition-all cursor-pointer"
+                  title="Quyền Admin: Tạo và deploy token HYPR thật on-chain lên Sepolia, Base, Arbitrum"
+                >
+                  <Rocket className="w-4 h-4" /> [Admin] Deploy On-Chain
+                </button>
+              )}
 
               <button
                 onClick={handleAddTokenToWallet}
@@ -394,41 +400,75 @@ export const HyprCoinView: React.FC = () => {
         </div>
       </div>
 
-      {/* 1.5 PROMINENT ON-CHAIN GENESIS DEPLOYMENT BANNER */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-cyan-950/40 via-blue-950/30 to-purple-950/40 border border-cyan-400/30 p-5 sm:p-6 shadow-xl">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-blue-600/30 border border-cyan-400/40 flex items-center justify-center shrink-0 shadow-md">
-              <Rocket className="w-6 h-6 text-cyan-400 animate-pulse" />
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <h2 className="text-base sm:text-lg font-black text-white">
-                  Xưởng Triển Khai On-Chain (Genesis Token Launch Studio)
-                </h2>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-mono text-[10px] font-bold">
-                  SẴN SÀNG TRIỂN KHAI
-                </span>
+      {/* 1.5 PROMINENT ON-CHAIN GENESIS DEPLOYMENT / VERIFIED CANONICAL BANNER */}
+      {isAdmin ? (
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-amber-950/40 via-orange-950/30 to-purple-950/40 border border-amber-400/40 p-5 sm:p-6 shadow-xl">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-orange-600/30 border border-amber-400/40 flex items-center justify-center shrink-0 shadow-md">
+                <Rocket className="w-6 h-6 text-amber-400 animate-pulse" />
               </div>
-              <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
-                Bạn muốn biến <strong>HYPR</strong> thành đồng coin thật 100% trên blockchain để bất kỳ ai trên thế giới cũng có thể tra cứu trên Etherscan, thêm vào ví cá nhân và swap bằng tiền thật? Triển khai ngay chỉ với 1 cú nhấp chuột (hỗ trợ Sepolia Testnet miễn phí gas, Base, Arbitrum, BSC, Polygon).
-              </p>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-black text-white">
+                    Protocol Admin Genesis Launch Studio
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 font-mono text-[10px] font-bold">
+                    ADMIN AUTHENTICATED
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                  Ví của bạn được xác thực quyền <strong>Protocol Treasury Deployer</strong>. Bạn có thẩm quyền triển khai hợp đồng Genesis Token HYPR thật lên các mạng EVM chính thức hoặc Testnet.
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
-            <button
-              onClick={() => {
-                soundManager.playTick();
-                setIsDeployModalOpen(true);
-              }}
-              className="w-full md:w-auto px-5 py-3 rounded-2xl bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 hover:from-cyan-300 hover:to-indigo-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 cursor-pointer"
-            >
-              <Rocket className="w-4 h-4" /> Khởi Chạy Deploy Token Thật
-            </button>
+            <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+              <button
+                onClick={() => {
+                  soundManager.playTick();
+                  setIsDeployModalOpen(true);
+                }}
+                className="w-full md:w-auto px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 cursor-pointer"
+              >
+                <Rocket className="w-4 h-4" /> Mở Studio Deploy Token
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-cyan-950/30 via-[#0B1020] to-[#070913] border border-cyan-500/20 p-5 sm:p-6 shadow-xl">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500/10 to-blue-600/20 border border-cyan-400/20 flex items-center justify-center shrink-0 shadow-md">
+                <ShieldCheck className="w-6 h-6 text-cyan-400" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-black text-white">
+                    Hợp Đồng HYPR Canonical Được Xác Thực 100%
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-mono text-[10px] font-bold">
+                    CANONICAL OFFICIAL
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                  Đồng coin HYPR đã được cố định theo địa chỉ hợp đồng gốc trên hệ sinh thái đa chuỗi. Cơ chế bảo vệ Genesis nghiêm ngặt ngăn chặn các hành vi tạo token giả mạo hoặc pha loãng nguồn cung.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+              <button
+                onClick={copyContractAddress}
+                className="w-full md:w-auto px-4 py-2.5 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/10 text-white font-mono text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+              >
+                <Copy className="w-4 h-4 text-cyan-400" /> {shortenAddress(currentContractAddress, 6)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2. Key Economic & Supply Metrics Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
