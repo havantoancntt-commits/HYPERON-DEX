@@ -18,6 +18,12 @@ export type SupportedWalletType =
   | 'zerion'
   | 'brave'
   | 'safe'
+  | 'binance'
+  | 'kraken'
+  | 'exodus'
+  | 'backpack'
+  | 'uniswap'
+  | 'onekey'
   | 'walletconnect'
   | 'injected'
   | 'sandbox'
@@ -437,7 +443,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (type === 'coinbase' && (rdns.includes('coinbase') || name.includes('coinbase'))) return true;
         if (type === 'phantom' && (rdns.includes('phantom') || name.includes('phantom'))) return true;
         if (type === 'okx' && (rdns.includes('okx') || rdns.includes('okex') || name.includes('okx'))) return true;
-        if (type === 'trust' && (rdns.includes('trust') || name.includes('trust'))) return true;
+        if (type === 'trust' && (rdns.includes('trust') || rdns.includes('com.trustwallet.app') || name.includes('trust'))) return true;
+        if (type === 'binance' && (rdns.includes('binance') || name.includes('binance'))) return true;
+        if (type === 'kraken' && (rdns.includes('kraken') || name.includes('kraken'))) return true;
+        if (type === 'exodus' && (rdns.includes('exodus') || name.includes('exodus'))) return true;
+        if (type === 'backpack' && (rdns.includes('backpack') || name.includes('backpack'))) return true;
+        if (type === 'uniswap' && (rdns.includes('uniswap') || name.includes('uniswap'))) return true;
+        if (type === 'onekey' && (rdns.includes('onekey') || name.includes('onekey'))) return true;
         if (type === 'rainbow' && (rdns.includes('rainbow') || name.includes('rainbow'))) return true;
         if (type === 'bitget' && (rdns.includes('bitget') || rdns.includes('bitkeep') || name.includes('bitget'))) return true;
         if (type === 'zerion' && (rdns.includes('zerion') || name.includes('zerion'))) return true;
@@ -471,8 +483,24 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (ok) return ok;
       }
       if (type === 'trust') {
-        const tr = win.ethereum.providers.find((p: any) => p.isTrust || p.isTrustWallet);
+        const tr = win.ethereum.providers.find((p: any) => p.isTrust || p.isTrustWallet || p.isTrustWalletExtension);
         if (tr) return tr;
+      }
+      if (type === 'binance') {
+        const bn = win.ethereum.providers.find((p: any) => p.isBinance || p.isBinanceW3W || p.isBinanceWallet);
+        if (bn) return bn;
+      }
+      if (type === 'kraken') {
+        const kr = win.ethereum.providers.find((p: any) => p.isKraken);
+        if (kr) return kr;
+      }
+      if (type === 'exodus') {
+        const ex = win.ethereum.providers.find((p: any) => p.isExodus);
+        if (ex) return ex;
+      }
+      if (type === 'backpack') {
+        const bp = win.ethereum.providers.find((p: any) => p.isBackpack);
+        if (bp) return bp;
       }
       if (type === 'rainbow') {
         const rn = win.ethereum.providers.find((p: any) => p.isRainbow);
@@ -493,6 +521,27 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     // 3. Dedicated window globals
+    if (type === 'trust') {
+      return win.trustwallet || win.trustWallet || (win.ethereum?.isTrust || win.ethereum?.isTrustWallet ? win.ethereum : null) || win.ethereum || null;
+    }
+    if (type === 'binance') {
+      return win.binancew3w?.ethereum || win.BinanceChain || win.binance || (win.ethereum?.isBinance ? win.ethereum : null);
+    }
+    if (type === 'kraken') {
+      return win.kraken?.ethereum || win.kraken || null;
+    }
+    if (type === 'exodus') {
+      return win.exodus?.ethereum || win.exodus || null;
+    }
+    if (type === 'backpack') {
+      return win.backpack?.ethereum || win.backpack || null;
+    }
+    if (type === 'uniswap') {
+      return win.uniswap?.ethereum || win.uniswap || null;
+    }
+    if (type === 'onekey') {
+      return win.$onekey?.ethereum || win.onekey || null;
+    }
     if (type === 'rabby') {
       return win.rabby || (win.ethereum?.isRabby ? win.ethereum : null);
     }
@@ -504,9 +553,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     if (type === 'okx') {
       return win.okxwallet || (win.ethereum?.isOkxWallet ? win.ethereum : null);
-    }
-    if (type === 'trust') {
-      return win.trustwallet || (win.ethereum?.isTrust ? win.ethereum : null);
     }
     if (type === 'rainbow') {
       return win.rainbow || (win.ethereum?.isRainbow ? win.ethereum : null);
@@ -525,6 +571,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     if (type === 'metamask') {
       if (win.ethereum?.isMetaMask && !win.ethereum?.isRabby) return win.ethereum;
+      return win.ethereum || null;
     }
 
     return win.ethereum || null;

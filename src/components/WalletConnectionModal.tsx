@@ -51,8 +51,10 @@ export interface WalletProviderInfo {
   badgeType?: 'primary' | 'success' | 'warning' | 'info';
   iconUrl: string;
   installUrl: string;
+  deepLinkUrl?: string;
   isPopular?: boolean;
   securityFeature: string;
+  category: 'popular' | 'mobile' | 'institutional' | 'extension';
 }
 
 export type ModalTab = 'providers' | 'networks' | 'qrcode' | 'session';
@@ -89,6 +91,8 @@ export const WalletConnectionModal: React.FC = () => {
   // Navigation & View States
   const [activeTab, setActiveTab] = useState<ModalTab>('providers');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<'all' | 'popular' | 'mobile' | 'institutional'>('all');
+  const [selectedAssistantWallet, setSelectedAssistantWallet] = useState<WalletProviderInfo | null>(null);
   
   // Connection & Execution States
   const [connectingId, setConnectingId] = useState<string | null>(null);
@@ -112,29 +116,58 @@ export const WalletConnectionModal: React.FC = () => {
     const eth = win.ethereum;
 
     const detected: Record<string, boolean> = {
+      trust: Boolean(win.trustwallet || win.trustWallet || eth?.isTrust || eth?.isTrustWallet || eth?.isTrustWalletExtension),
       metamask: Boolean(eth?.isMetaMask && !eth?.isRabby),
-      rabby: Boolean(win.rabby || eth?.isRabby),
+      binance: Boolean(win.binancew3w || win.BinanceChain || win.binance || eth?.isBinance),
+      okx: Boolean(win.okxwallet || eth?.isOkxWallet),
       coinbase: Boolean(win.coinbaseWalletExtension || eth?.isCoinbaseWallet),
       phantom: Boolean(win.phantom?.ethereum || eth?.isPhantom),
-      okx: Boolean(win.okxwallet || eth?.isOkxWallet),
-      trust: Boolean(win.trustwallet || eth?.isTrust),
+      rabby: Boolean(win.rabby || eth?.isRabby),
+      bitget: Boolean(win.bitkeep?.ethereum || eth?.isBitKeep),
       rainbow: Boolean(win.rainbow || eth?.isRainbow),
-      bitget: Boolean(win.bitkeep?.ethereum || win.binancew3w),
+      kraken: Boolean(win.kraken),
+      exodus: Boolean(win.exodus || eth?.isExodus),
+      backpack: Boolean(win.backpack || eth?.isBackpack),
+      safe: Boolean(win.safe || eth?.isSafe),
+      brave: Boolean(win.braveEthereum || eth?.isBraveWallet),
       injected: Boolean(eth),
       walletconnect: true,
       sandbox: true,
     };
 
+    // Check multi-provider array in window.ethereum.providers
+    if (eth?.providers && Array.isArray(eth.providers)) {
+      eth.providers.forEach((p: any) => {
+        if (p.isTrust || p.isTrustWallet) detected.trust = true;
+        if (p.isMetaMask && !p.isRabby) detected.metamask = true;
+        if (p.isCoinbaseWallet) detected.coinbase = true;
+        if (p.isRabby) detected.rabby = true;
+        if (p.isPhantom) detected.phantom = true;
+        if (p.isOkxWallet) detected.okx = true;
+        if (p.isBitKeep) detected.bitget = true;
+        if (p.isRainbow) detected.rainbow = true;
+        if (p.isBinance) detected.binance = true;
+      });
+    }
+
     // Integrate EIP-6963 multi-provider discovery
     discoveredProviders.forEach((dp) => {
-      const rdns = dp.info.rdns.toLowerCase();
-      if (rdns.includes('metamask')) detected.metamask = true;
-      if (rdns.includes('rabby')) detected.rabby = true;
-      if (rdns.includes('coinbase')) detected.coinbase = true;
-      if (rdns.includes('phantom')) detected.phantom = true;
-      if (rdns.includes('okx') || rdns.includes('okex')) detected.okx = true;
-      if (rdns.includes('trust')) detected.trust = true;
-      if (rdns.includes('rainbow')) detected.rainbow = true;
+      const rdns = (dp.info.rdns || '').toLowerCase();
+      const name = (dp.info.name || '').toLowerCase();
+      if (rdns.includes('trust') || name.includes('trust')) detected.trust = true;
+      if (rdns.includes('metamask') || name.includes('metamask')) detected.metamask = true;
+      if (rdns.includes('binance') || name.includes('binance')) detected.binance = true;
+      if (rdns.includes('okx') || rdns.includes('okex') || name.includes('okx')) detected.okx = true;
+      if (rdns.includes('coinbase') || name.includes('coinbase')) detected.coinbase = true;
+      if (rdns.includes('phantom') || name.includes('phantom')) detected.phantom = true;
+      if (rdns.includes('rabby') || name.includes('rabby')) detected.rabby = true;
+      if (rdns.includes('bitget') || rdns.includes('bitkeep') || name.includes('bitget')) detected.bitget = true;
+      if (rdns.includes('rainbow') || name.includes('rainbow')) detected.rainbow = true;
+      if (rdns.includes('kraken') || name.includes('kraken')) detected.kraken = true;
+      if (rdns.includes('exodus') || name.includes('exodus')) detected.exodus = true;
+      if (rdns.includes('backpack') || name.includes('backpack')) detected.backpack = true;
+      if (rdns.includes('safe') || name.includes('safe')) detected.safe = true;
+      if (rdns.includes('brave') || name.includes('brave')) detected.brave = true;
     });
 
     setInstalledMap(detected);
@@ -153,6 +186,7 @@ export const WalletConnectionModal: React.FC = () => {
       setConnectionError(null);
       setConnectingId(null);
       setConnectingStep('');
+      setSelectedAssistantWallet(null);
       
       // If already connected, default tab to session management or providers
       if (isConnected) {
@@ -174,105 +208,208 @@ export const WalletConnectionModal: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isConnectModalOpen, closeConnectModal]);
 
-  // Providers list with primary support for MetaMask, WalletConnect, Coinbase, Rabby
+  // Providers list with primary support for Trust Wallet, MetaMask, Binance, Coinbase, OKX, Rabby
   const providers: WalletProviderInfo[] = useMemo(() => [
+    {
+      id: 'trust',
+      name: 'Trust Wallet',
+      shortDesc: 'Ví Web3 phi tập trung chính thức đa chuỗi 70M+ người dùng, bảo mật tuyệt đối',
+      badge: installedMap.trust ? 'ĐÃ CÀI ĐẶT' : 'TOP PHỔ BIẾN & MOBILE',
+      badgeType: 'success',
+      iconUrl: 'https://assets.coingecko.com/coins/images/11085/small/Trust.png',
+      installUrl: 'https://trustwallet.com/download',
+      deepLinkUrl: typeof window !== 'undefined' ? `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(window.location.href)}` : undefined,
+      isPopular: true,
+      category: 'popular',
+      securityFeature: 'Bảo mật 100% Non-Custodial, mã hóa sinh trắc học & kiểm toán CertiK',
+    },
     {
       id: 'metamask',
       name: 'MetaMask',
-      shortDesc: 'The gold standard Web3 wallet with 30M+ active users',
-      badge: installedMap.metamask ? 'INSTALLED' : 'MOST POPULAR',
+      shortDesc: 'Ví Web3 tiêu chuẩn toàn cầu trên di động và tiện ích mở rộng trình duyệt',
+      badge: installedMap.metamask ? 'ĐÃ CÀI ĐẶT' : 'TIÊU CHUẨN TOÀN CẦU',
       badgeType: installedMap.metamask ? 'success' : 'primary',
       iconUrl: 'https://assets.coingecko.com/markets/images/681/small/metamask.png',
       installUrl: 'https://metamask.io/download/',
+      deepLinkUrl: typeof window !== 'undefined' ? `https://metamask.app.link/dapp/${window.location.host + window.location.pathname}` : undefined,
       isPopular: true,
-      securityFeature: 'EIP-1193 & Hardware Ledger Compatible',
+      category: 'popular',
+      securityFeature: 'Chuẩn EIP-1193 & Tương thích ví cứng Ledger / Trezor',
     },
     {
-      id: 'rabby',
-      name: 'Rabby Wallet',
-      shortDesc: 'Designed for DeFi users with instant pre-sign risk scanning',
-      badge: installedMap.rabby ? 'INSTALLED' : 'DEFI SECURITY PRO',
-      badgeType: installedMap.rabby ? 'success' : 'info',
-      iconUrl: 'https://assets.coingecko.com/markets/images/1284/small/rabby.png',
-      installUrl: 'https://rabby.io/',
+      id: 'binance',
+      name: 'Binance Web3 Wallet',
+      shortDesc: 'Cổng kết nối phi tập trung chính thức từ Binance với bảo mật phân mảnh MPC',
+      badge: installedMap.binance ? 'ĐÃ CÀI ĐẶT' : 'BẢO MẬT MPC',
+      badgeType: 'primary',
+      iconUrl: 'https://assets.coingecko.com/markets/images/52/small/binance.jpg',
+      installUrl: 'https://www.binance.com/vi/web3wallet',
       isPopular: true,
-      securityFeature: 'Simulates transaction execution balance impact',
-    },
-    {
-      id: 'coinbase',
-      name: 'Coinbase Wallet',
-      shortDesc: 'Self-custody & Smart Wallet with passkey biometrics',
-      badge: installedMap.coinbase ? 'INSTALLED' : 'PASSKEY READY',
-      badgeType: installedMap.coinbase ? 'success' : 'warning',
-      iconUrl: 'https://assets.coingecko.com/markets/images/569/small/coinbase.png',
-      installUrl: 'https://www.coinbase.com/wallet',
-      isPopular: true,
-      securityFeature: 'Institutional MPC & Passkey Biometric Login',
-    },
-    {
-      id: 'walletconnect',
-      name: 'WalletConnect v2',
-      shortDesc: 'Pair with 300+ mobile EVM wallets via QR code or universal link',
-      badge: 'MOBILE QR',
-      badgeType: 'info',
-      iconUrl: 'https://assets.coingecko.com/coins/images/23307/small/walletconnect.png',
-      installUrl: 'https://walletconnect.com/',
-      isPopular: true,
-      securityFeature: 'Encrypted relay-protocol with zero private key leak',
+      category: 'popular',
+      securityFeature: 'Công nghệ phân mảnh khóa đa bên MPC, không lo mất Private Key',
     },
     {
       id: 'okx',
       name: 'OKX Web3 Wallet',
-      shortDesc: 'Multi-chain decentralized powerhouse with DEX aggregator',
-      badge: installedMap.okx ? 'INSTALLED' : 'MULTI-CHAIN',
-      badgeType: installedMap.okx ? 'success' : undefined,
+      shortDesc: 'Hệ sinh thái phi tập trung đa chuỗi kết nối hơn 80+ blockchain',
+      badge: installedMap.okx ? 'ĐÃ CÀI ĐẶT' : 'ĐA CHUỖI MẠNH MẼ',
+      badgeType: 'info',
       iconUrl: 'https://assets.coingecko.com/markets/images/96/small/okx.png',
       installUrl: 'https://www.okx.com/web3',
-      securityFeature: 'MPC Sharded key infrastructure',
+      deepLinkUrl: typeof window !== 'undefined' ? `okx://wallet/dapp/details?dappUrl=${encodeURIComponent(window.location.href)}` : undefined,
+      isPopular: true,
+      category: 'popular',
+      securityFeature: 'MPC Sharded key & phát hiện mã độc hợp đồng thông minh',
+    },
+    {
+      id: 'coinbase',
+      name: 'Coinbase Wallet & Smart Wallet',
+      shortDesc: 'Ví tự lưu ký thế hệ mới với công nghệ Passkey sinh trắc học FaceID/Vân tay',
+      badge: installedMap.coinbase ? 'ĐÃ CÀI ĐẶT' : 'PASSKEY READY',
+      badgeType: installedMap.coinbase ? 'success' : 'warning',
+      iconUrl: 'https://assets.coingecko.com/markets/images/569/small/coinbase.png',
+      installUrl: 'https://www.coinbase.com/wallet',
+      deepLinkUrl: typeof window !== 'undefined' ? `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(window.location.href)}` : undefined,
+      isPopular: true,
+      category: 'popular',
+      securityFeature: 'Đăng nhập sinh trắc học Passkey chuẩn ERC-4337 Account Abstraction',
+    },
+    {
+      id: 'rabby',
+      name: 'Rabby Wallet',
+      shortDesc: 'Tối ưu tuyệt đối cho DeFi với tính năng mô phỏng rủi ro trước khi ký',
+      badge: installedMap.rabby ? 'ĐÃ CÀI ĐẶT' : 'DEFI SECURITY PRO',
+      badgeType: installedMap.rabby ? 'success' : 'info',
+      iconUrl: 'https://assets.coingecko.com/markets/images/1284/small/rabby.png',
+      installUrl: 'https://rabby.io/',
+      isPopular: true,
+      category: 'popular',
+      securityFeature: 'Mô phỏng thay đổi số dư tài sản chính xác trước khi gửi giao dịch',
     },
     {
       id: 'phantom',
       name: 'Phantom EVM',
-      shortDesc: 'Ultra-fast multi-chain wallet for Ethereum, Base, and Solana',
-      badge: installedMap.phantom ? 'INSTALLED' : undefined,
+      shortDesc: 'Trải nghiệm đa chuỗi siêu tốc cho Ethereum, Base, Polygon và Solana',
+      badge: installedMap.phantom ? 'ĐÃ CÀI ĐẶT' : 'MULTI-VM',
       badgeType: installedMap.phantom ? 'success' : undefined,
       iconUrl: 'https://assets.coingecko.com/coins/images/21800/small/phantom.png',
       installUrl: 'https://phantom.app/',
-      securityFeature: 'Real-time malicious contract blocker',
+      deepLinkUrl: typeof window !== 'undefined' ? `https://phantom.app/ul/browse/${encodeURIComponent(window.location.href)}?ref=${encodeURIComponent(window.location.host)}` : undefined,
+      category: 'popular',
+      securityFeature: 'Chặn giao dịch lừa đảo thời gian thực & cảnh báo mã độc',
+    },
+    {
+      id: 'bitget',
+      name: 'Bitget Wallet (BitKeep)',
+      shortDesc: 'Ví phi tập trung toàn cầu với hơn 19M người dùng và swap cross-chain',
+      badge: installedMap.bitget ? 'ĐÃ CÀI ĐẶT' : 'SWAP NATIVE',
+      iconUrl: 'https://assets.coingecko.com/markets/images/825/small/bitget.png',
+      installUrl: 'https://web3.bitget.com/',
+      deepLinkUrl: typeof window !== 'undefined' ? `https://bkcode.vip?action=dapp&url=${encodeURIComponent(window.location.href)}` : undefined,
+      category: 'popular',
+      securityFeature: 'Quỹ bảo vệ tài sản $300M & kiểm toán bảo mật hợp đồng',
     },
     {
       id: 'rainbow',
       name: 'Rainbow Wallet',
-      shortDesc: 'Fun, colorful and delightful Ethereum & L2 wallet experience',
-      badge: installedMap.rainbow ? 'INSTALLED' : undefined,
+      shortDesc: 'Giao diện mượt mà, tối ưu hàng đầu cho Ethereum & các giải pháp Layer 2',
+      badge: installedMap.rainbow ? 'ĐÃ CÀI ĐẶT' : undefined,
       badgeType: installedMap.rainbow ? 'success' : undefined,
       iconUrl: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
       installUrl: 'https://rainbow.me/',
-      securityFeature: 'Optimized for mobile DeFi & ENS profiles',
+      deepLinkUrl: typeof window !== 'undefined' ? `https://rnbwapp.com/ul/dapp?url=${encodeURIComponent(window.location.href)}` : undefined,
+      category: 'mobile',
+      securityFeature: 'Tối ưu hóa ENS và quản lý tài sản L2 tốc độ cao',
+    },
+    {
+      id: 'kraken',
+      name: 'Kraken Wallet',
+      shortDesc: 'Ví mã nguồn mở tự lưu ký đạt chuẩn kiểm toán bảo mật cao nhất',
+      badge: installedMap.kraken ? 'ĐÃ CÀI ĐẶT' : 'MÃ NGUỒN MỞ',
+      iconUrl: 'https://assets.coingecko.com/markets/images/29/small/kraken.png',
+      installUrl: 'https://www.kraken.com/wallet',
+      category: 'institutional',
+      securityFeature: 'Kiểm toán độc lập 100% mã nguồn mở & Zero Tracking',
+    },
+    {
+      id: 'safe',
+      name: 'Safe Multisig (Gnosis)',
+      shortDesc: 'Ví hợp đồng thông minh đa chữ ký tiêu chuẩn cho tổ chức và quỹ đầu tư',
+      badge: installedMap.safe ? 'ĐÃ CÀI ĐẶT' : 'DOANH NGHIỆP',
+      badgeType: 'warning',
+      iconUrl: 'https://assets.coingecko.com/coins/images/28148/small/safe.png',
+      installUrl: 'https://app.safe.global/',
+      category: 'institutional',
+      securityFeature: 'Yêu cầu M-of-N chữ ký xác thực, bảo vệ quỹ tuyệt đối',
+    },
+    {
+      id: 'brave',
+      name: 'Brave Wallet',
+      shortDesc: 'Ví nguyên bản tích hợp trực tiếp vào nhân trình duyệt Brave',
+      badge: installedMap.brave ? 'ĐÃ CÀI ĐẶT' : 'BẢO MẬT BROWSER',
+      iconUrl: 'https://assets.coingecko.com/coins/images/677/small/basic-attention-token.png',
+      installUrl: 'https://brave.com/wallet/',
+      category: 'extension',
+      securityFeature: 'Chạy trực tiếp ở nhân C++, miễn nhiễm mã độc extension',
+    },
+    {
+      id: 'injected',
+      name: 'Trình Duyệt Web3 (Auto Injected)',
+      shortDesc: 'Tự động phát hiện bất kỳ tiện ích hoặc ứng dụng Web3 nào đang hoạt động',
+      badge: 'TỰ ĐỘNG',
+      iconUrl: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
+      installUrl: 'https://ethereum.org/en/wallets/find-wallet/',
+      category: 'extension',
+      securityFeature: 'Tuân thủ nghiêm ngặt tiêu chuẩn EIP-6963 và EIP-1193',
+    },
+    {
+      id: 'walletconnect',
+      name: 'WalletConnect v2 Protocol',
+      shortDesc: 'Ghép nối qua mã QR với hơn 300+ ví di động trên iOS và Android',
+      badge: 'QUÉT QR / MOBILE',
+      badgeType: 'info',
+      iconUrl: 'https://assets.coingecko.com/coins/images/23307/small/walletconnect.png',
+      installUrl: 'https://walletconnect.com/',
+      isPopular: true,
+      category: 'mobile',
+      securityFeature: 'Mã hóa đầu cuối End-to-End Encryption không bao giờ rò rỉ khóa',
     },
     {
       id: 'sandbox',
-      name: 'Simulated Sandbox Account',
-      shortDesc: 'High-balance institutional test accounts with simulated gas & liquidity',
-      badge: 'ZERO RISK',
+      name: 'Tài Khoản Sandbox Thử Nghiệm',
+      shortDesc: 'Trải nghiệm ngay lập tức với số dư nạp sẵn ETH, USDT, HYPR - Không rủi ro',
+      badge: '1-CHẠM THỬ NGHIỆM',
       badgeType: 'warning',
-      iconUrl: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
+      iconUrl: 'https://assets.coingecko.com/coins/images/325/small/Tether.png',
       installUrl: '#',
-      securityFeature: 'Full RPC sandbox simulation with 100+ ETH liquidity',
+      category: 'institutional',
+      securityFeature: 'Môi trường giả lập hoàn toàn an toàn, kiểm thử thanh khoản tự do',
     },
   ], [installedMap]);
 
-  // Filter providers by search query
+  // Filter providers by search query and category
   const filteredProviders = useMemo(() => {
-    if (!searchQuery.trim()) return providers;
+    let list = providers;
+
+    // Filter by Category
+    if (selectedCategory === 'popular') {
+      list = list.filter((p) => p.isPopular || p.category === 'popular');
+    } else if (selectedCategory === 'mobile') {
+      list = list.filter((p) => p.category === 'mobile' || p.deepLinkUrl || p.id === 'walletconnect' || p.id === 'trust');
+    } else if (selectedCategory === 'institutional') {
+      list = list.filter((p) => p.category === 'institutional' || p.id === 'safe' || p.id === 'kraken' || p.id === 'sandbox');
+    }
+
+    if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase();
-    return providers.filter(
+    return list.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.shortDesc.toLowerCase().includes(q) ||
-        p.id?.toLowerCase().includes(q)
+        p.id?.toLowerCase().includes(q) ||
+        p.securityFeature?.toLowerCase().includes(q)
     );
-  }, [providers, searchQuery]);
+  }, [providers, searchQuery, selectedCategory]);
 
   // Current chain configuration
   const currentChainConfig = SUPPORTED_CHAINS[chainId] || SUPPORTED_CHAINS.ethereum;
@@ -290,29 +427,45 @@ export const WalletConnectionModal: React.FC = () => {
       return;
     }
 
-    // If extension is not installed, open download link and show helpful notice
+    // If Sandbox, connect directly
+    if (provider.id === 'sandbox') {
+      try {
+        setConnectingStep('Khởi tạo phiên Sandbox thử nghiệm an toàn...');
+        await connectWallet('sandbox');
+        soundManager.playSuccess();
+        addToast({
+          title: 'Kích hoạt Sandbox thành công',
+          message: 'Đã sẵn sàng giao dịch thử nghiệm với thanh khoản đầy đủ.',
+          type: 'success',
+        });
+        closeConnectModal();
+      } finally {
+        setConnectingId(null);
+        setConnectingStep('');
+      }
+      return;
+    }
+
+    const win = typeof window !== 'undefined' ? (window as any) : null;
+    const hasAnyEth = Boolean(win?.ethereum || win?.trustwallet || win?.binancew3w || win?.okxwallet || win?.phantom);
+
+    // If wallet extension is not detected in browser AND no injected provider is present:
+    // Open the Smart Assistant directly (offering 1-tap mobile deep link, QR scan, or install)
     if (
-      provider.id !== 'sandbox' &&
       provider.id !== 'injected' &&
       !installedMap[provider.id as string] &&
-      provider.installUrl !== '#'
+      !hasAnyEth
     ) {
-      setConnectingStep('Extension not detected. Opening download portal...');
-      window.open(provider.installUrl, '_blank', 'noopener,noreferrer');
+      setSelectedAssistantWallet(provider);
       setConnectingId(null);
-      addToast({
-        title: `${provider.name} Not Found`,
-        message: `Vui lòng cài đặt tiện ích mở rộng ${provider.name} hoặc dùng Sandbox / WalletConnect.`,
-        type: 'warning',
-      });
       return;
     }
 
     try {
-      setConnectingStep('Initializing EIP-1193 handshake...');
-      await new Promise((r) => setTimeout(r, 400));
+      setConnectingStep(`Đang kết nối giao thức EIP-1193 với ${provider.name}...`);
+      await new Promise((r) => setTimeout(r, 250));
 
-      setConnectingStep('Requesting account access & signature permission...');
+      setConnectingStep('Yêu cầu cấp quyền truy cập tài khoản & chữ ký bảo mật...');
 
       if (isConnected) {
         // If already connected, use seamless wallet switch
@@ -331,12 +484,24 @@ export const WalletConnectionModal: React.FC = () => {
     } catch (err: any) {
       soundManager.playAlert();
       const msg = err?.message || 'Kết nối bị từ chối bởi người dùng.';
-      setConnectionError(msg);
-      addToast({
-        title: 'Kết nối thất bại',
-        message: msg,
-        type: 'error',
-      });
+
+      // If error indicates provider was not found or extension not available, offer Smart Connection Assistant
+      if (
+        msg.includes('chưa được cài đặt') ||
+        msg.includes('Không tìm thấy') ||
+        msg.includes('not installed') ||
+        msg.includes('not found') ||
+        msg.includes('undefined')
+      ) {
+        setSelectedAssistantWallet(provider);
+      } else {
+        setConnectionError(msg);
+        addToast({
+          title: 'Kết nối thất bại',
+          message: msg,
+          type: 'error',
+        });
+      }
     } finally {
       setConnectingId(null);
       setConnectingStep('');
@@ -575,6 +740,182 @@ export const WalletConnectionModal: React.FC = () => {
                   <span className="text-cyan-400 font-bold">{filteredProviders.length} Ví Khả Dụng</span>
                 </div>
               </div>
+
+              {/* Category Filter Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
+                <button
+                  onClick={() => setSelectedCategory('all')}
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                    selectedCategory === 'all'
+                      ? 'bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20'
+                      : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                  }`}
+                >
+                  Tất Cả ({providers.length})
+                </button>
+                <button
+                  onClick={() => setSelectedCategory('popular')}
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                    selectedCategory === 'popular'
+                      ? 'bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20'
+                      : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                  }`}
+                >
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span>Phổ Biến Nhất</span>
+                </button>
+                <button
+                  onClick={() => setSelectedCategory('mobile')}
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                    selectedCategory === 'mobile'
+                      ? 'bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20'
+                      : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                  }`}
+                >
+                  <Smartphone className="w-3 h-3 text-emerald-400" />
+                  <span>Di Động & QR</span>
+                </button>
+                <button
+                  onClick={() => setSelectedCategory('institutional')}
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                    selectedCategory === 'institutional'
+                      ? 'bg-cyan-500 text-black font-bold shadow-md shadow-cyan-500/20'
+                      : 'bg-white/5 text-slate-300 hover:bg-white/10'
+                  }`}
+                >
+                  <ShieldCheck className="w-3 h-3 text-indigo-400" />
+                  <span>Tổ Chức / MPC</span>
+                </button>
+              </div>
+
+              {/* SMART CONNECTION ASSISTANT MODAL / CARD */}
+              {selectedAssistantWallet && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#0F1626] to-[#0A0E1A] border-2 border-cyan-500/40 shadow-2xl shadow-cyan-950/60 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                  <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-black/60 border border-cyan-500/30 p-2 shrink-0 flex items-center justify-center">
+                        <img
+                          src={selectedAssistantWallet.iconUrl}
+                          alt={selectedAssistantWallet.name}
+                          className="w-full h-full object-contain"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-bold text-white">
+                            Trợ Lý Kết Nối: {selectedAssistantWallet.name}
+                          </h3>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono font-bold">
+                            SMART CONNECT
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          Chọn cách bạn muốn kết nối với ứng dụng giao dịch phi tập trung HYPR DEX:
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setSelectedAssistantWallet(null)}
+                      className="p-1.5 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                      title="Quay lại danh sách"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Smart Actions Grid */}
+                  <div className="space-y-2.5">
+                    {/* Option 1: Mobile Deep Link */}
+                    {selectedAssistantWallet.deepLinkUrl && (
+                      <a
+                        href={selectedAssistantWallet.deepLinkUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-3.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs shadow-lg shadow-blue-900/30 transition-all flex items-center justify-between group cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-1.5 rounded-lg bg-white/20">
+                            <Zap className="w-4 h-4 text-white" />
+                          </div>
+                          <div>
+                            <div className="text-white font-bold">Mở Trực Tiếp Trên App {selectedAssistantWallet.name}</div>
+                            <div className="text-[10px] text-cyan-100 font-normal">Tự động kích hoạt ứng dụng trên di động và nạp URL an toàn</div>
+                          </div>
+                        </div>
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                      </a>
+                    )}
+
+                    {/* Option 2: WalletConnect QR */}
+                    <button
+                      onClick={() => {
+                        setSelectedAssistantWallet(null);
+                        setActiveTab('qrcode');
+                      }}
+                      className="w-full p-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-cyan-500/30 text-white text-xs font-semibold transition-all flex items-center justify-between cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2.5 text-left">
+                        <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-300">
+                          <QrCode className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-white">Quét Mã QR WalletConnect v2</div>
+                          <div className="text-[10px] text-slate-400 font-normal">Dùng camera trong ví {selectedAssistantWallet.name} quét kết nối ngay</div>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-cyan-300 group-hover:translate-x-0.5 transition-all" />
+                    </button>
+
+                    {/* Option 3: Download & Install */}
+                    {selectedAssistantWallet.installUrl && selectedAssistantWallet.installUrl !== '#' && (
+                      <a
+                        href={selectedAssistantWallet.installUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-slate-200 text-xs font-semibold transition-all flex items-center justify-between group cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 text-left">
+                          <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                            <Download className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <div className="font-bold text-white">Cài Đặt {selectedAssistantWallet.name} Chính Thức</div>
+                            <div className="text-[10px] text-slate-400 font-normal">Tải tiện ích Chrome/Brave hoặc ứng dụng iOS/Android chính thức</div>
+                          </div>
+                        </div>
+                        <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
+                      </a>
+                    )}
+
+                    {/* Option 4: Sandbox Instant Trial */}
+                    <button
+                      onClick={() => {
+                        setSelectedAssistantWallet(null);
+                        connectWallet('sandbox');
+                        soundManager.playSuccess();
+                        addToast({
+                          title: 'Sandbox Activated',
+                          message: 'Đã kích hoạt ví mô phỏng an toàn.',
+                          type: 'success',
+                        });
+                        closeConnectModal();
+                      }}
+                      className="w-full p-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 text-xs font-semibold transition-all flex items-center justify-between cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Trải nghiệm ngay lập tức với ví Sandbox (Không cần cài đặt ví thật)</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 font-bold">1-CHẠM</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Connecting Step Loading Indicator */}
               {connectingId && (
