@@ -576,6 +576,41 @@ export const Header: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Primary Top Header Web3 Wallet Connect Button */}
+          {!isConnected ? (
+            <button
+              onClick={openConnectModal}
+              id="top-header-connect-wallet-btn"
+              className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-cyan-900/40 cursor-pointer active:scale-95 border border-cyan-400/30 shrink-0"
+              title="Mở cổng kết nối ví Web3 (Trust Wallet, MetaMask, OKX, Binance...)"
+            >
+              <Wallet className="w-4 h-4" />
+              <span className="hidden sm:inline">Kết Nối Ví</span>
+              <span className="sm:hidden">Ví Web3</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5 bg-[#0D111A] border border-cyan-500/30 rounded-xl p-1 shadow-sm shrink-0">
+              <button
+                onClick={openAccountModal}
+                className="flex items-center gap-2 px-2.5 py-1 text-xs font-mono font-bold text-slate-200 hover:text-white transition-colors cursor-pointer"
+                title="Quản trị ví & số dư"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>{shortenAddress(address, 4)}</span>
+                {walletType === 'trust' && (
+                  <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-cyan-300 text-[10px] font-sans font-bold">Trust</span>
+                )}
+              </button>
+              <button
+                onClick={openConnectModal}
+                className="px-2 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer font-sans"
+                title="Đổi sang ví khác (Trust Wallet, MetaMask, OKX...)"
+              >
+                Đổi Ví
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

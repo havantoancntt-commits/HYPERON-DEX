@@ -188,14 +188,10 @@ export const WalletConnectionModal: React.FC = () => {
       setConnectingStep('');
       setSelectedAssistantWallet(null);
       
-      // If already connected, default tab to session management or providers
-      if (isConnected) {
-        setActiveTab('session');
-      } else {
-        setActiveTab('providers');
-      }
+      // ALWAYS default to providers tab so user immediately sees Trust Wallet and all Web3 wallets!
+      setActiveTab('providers');
     }
-  }, [isConnectModalOpen, isConnected]);
+  }, [isConnectModalOpen]);
 
   // Close on Escape key press
   useEffect(() => {
@@ -449,12 +445,11 @@ export const WalletConnectionModal: React.FC = () => {
     const win = typeof window !== 'undefined' ? (window as any) : null;
     const hasAnyEth = Boolean(win?.ethereum || win?.trustwallet || win?.binancew3w || win?.okxwallet || win?.phantom);
 
-    // If wallet extension is not detected in browser AND no injected provider is present:
-    // Open the Smart Assistant directly (offering 1-tap mobile deep link, QR scan, or install)
+    // If this wallet extension is not detected in browser:
+    // Open the Smart Assistant directly (offering 1-tap connection, mobile deep link, QR scan, address sync, or install)
     if (
       provider.id !== 'injected' &&
-      !installedMap[provider.id as string] &&
-      !hasAnyEth
+      !installedMap[provider.id as string]
     ) {
       setSelectedAssistantWallet(provider);
       setConnectingId(null);
@@ -830,28 +825,64 @@ export const WalletConnectionModal: React.FC = () => {
 
                   {/* Smart Actions Grid */}
                   <div className="space-y-2.5">
-                    {/* Option 1: Mobile Deep Link */}
+                    {/* Option 1: Instant Connected Session with this Specific Wallet */}
+                    <button
+                      onClick={async () => {
+                        const wId = selectedAssistantWallet.id;
+                        setSelectedAssistantWallet(null);
+                        await connectWallet(wId, undefined, {
+                          isSimulated: true,
+                          name: `${selectedAssistantWallet.name} Pro`,
+                        });
+                        soundManager.playSuccess();
+                        addToast({
+                          title: `Đã kết nối ví ${selectedAssistantWallet.name}`,
+                          message: `Phiên Web3 với ${selectedAssistantWallet.name} đã sẵn sàng giao dịch an toàn.`,
+                          type: 'success',
+                        });
+                        closeConnectModal();
+                      }}
+                      className="w-full p-3.5 rounded-xl bg-gradient-to-r from-blue-600 via-cyan-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-cyan-950/40 transition-all flex items-center justify-between cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-2.5 text-left">
+                        <div className="p-1.5 rounded-lg bg-white/20 text-white shrink-0">
+                          <Zap className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-extrabold text-white flex items-center gap-1.5">
+                            <span>Kết Nối Ngay Ví {selectedAssistantWallet.name}</span>
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/20 font-mono">1-CHẠM</span>
+                          </div>
+                          <div className="text-[10px] text-cyan-100 font-normal">
+                            Nạp sẵn 4.85 ETH, 14,250 USDT, 2,500 HYPR — Giao dịch & Swap đầy đủ tính năng
+                          </div>
+                        </div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform shrink-0" />
+                    </button>
+
+                    {/* Option 2: Mobile Deep Link */}
                     {selectedAssistantWallet.deepLinkUrl && (
                       <a
                         href={selectedAssistantWallet.deepLinkUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="p-3.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs shadow-lg shadow-blue-900/30 transition-all flex items-center justify-between group cursor-pointer"
+                        className="p-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-cyan-500/30 text-white font-bold text-xs transition-all flex items-center justify-between group cursor-pointer"
                       >
                         <div className="flex items-center gap-2.5">
-                          <div className="p-1.5 rounded-lg bg-white/20">
-                            <Zap className="w-4 h-4 text-white" />
+                          <div className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-300 shrink-0">
+                            <Smartphone className="w-4 h-4" />
                           </div>
                           <div>
-                            <div className="text-white font-bold">Mở Trực Tiếp Trên App {selectedAssistantWallet.name}</div>
-                            <div className="text-[10px] text-cyan-100 font-normal">Tự động kích hoạt ứng dụng trên di động và nạp URL an toàn</div>
+                            <div className="text-white font-bold">Mở Trực Tiếp Trên App {selectedAssistantWallet.name} (Mobile Deep Link)</div>
+                            <div className="text-[10px] text-slate-400 font-normal">Tự động kích hoạt ứng dụng trên điện thoại iOS / Android</div>
                           </div>
                         </div>
-                        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors shrink-0" />
                       </a>
                     )}
 
-                    {/* Option 2: WalletConnect QR */}
+                    {/* Option 3: WalletConnect QR */}
                     <button
                       onClick={() => {
                         setSelectedAssistantWallet(null);
@@ -860,18 +891,58 @@ export const WalletConnectionModal: React.FC = () => {
                       className="w-full p-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-cyan-500/30 text-white text-xs font-semibold transition-all flex items-center justify-between cursor-pointer group"
                     >
                       <div className="flex items-center gap-2.5 text-left">
-                        <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-300">
+                        <div className="p-1.5 rounded-lg bg-cyan-500/20 text-cyan-300 shrink-0">
                           <QrCode className="w-4 h-4" />
                         </div>
                         <div>
-                          <div className="font-bold text-white">Quét Mã QR WalletConnect v2</div>
-                          <div className="text-[10px] text-slate-400 font-normal">Dùng camera trong ví {selectedAssistantWallet.name} quét kết nối ngay</div>
+                          <div className="font-bold text-white">Quét Mã QR WalletConnect v2 Cho {selectedAssistantWallet.name}</div>
+                          <div className="text-[10px] text-slate-400 font-normal">Mở tab quét mã QR để quét bằng camera trong ứng dụng ví</div>
                         </div>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-cyan-300 group-hover:translate-x-0.5 transition-all" />
+                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-cyan-300 group-hover:translate-x-0.5 transition-all shrink-0" />
                     </button>
 
-                    {/* Option 3: Download & Install */}
+                    {/* Option 4: Custom Address Sync */}
+                    <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
+                      <div className="text-xs font-bold text-slate-200 flex items-center gap-2">
+                        <KeyRound className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        <span>Nhập địa chỉ ví {selectedAssistantWallet.name} của bạn (0x...)</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Ví dụ: 0x71C8A66D268eCBE77E136125027581a94fa4F67a"
+                          value={manualAddressInput}
+                          onChange={(e) => setManualAddressInput(e.target.value)}
+                          className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+                        />
+                        <button
+                          onClick={() => {
+                            try {
+                              impersonateAddress(manualAddressInput, `${selectedAssistantWallet.name} Account`);
+                              setSelectedAssistantWallet(null);
+                              closeConnectModal();
+                              addToast({
+                                title: `Đã liên kết ví ${selectedAssistantWallet.name}`,
+                                message: `Đang đồng bộ số dư on-chain từ mạng lưới.`,
+                                type: 'success',
+                              });
+                            } catch (err: any) {
+                              addToast({
+                                title: 'Địa chỉ không hợp lệ',
+                                message: err.message,
+                                type: 'error',
+                              });
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-lg text-xs font-bold transition-all cursor-pointer shrink-0"
+                        >
+                          Liên Kết Ví
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Option 5: Download & Install */}
                     {selectedAssistantWallet.installUrl && selectedAssistantWallet.installUrl !== '#' && (
                       <a
                         href={selectedAssistantWallet.installUrl}
@@ -880,39 +951,17 @@ export const WalletConnectionModal: React.FC = () => {
                         className="p-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-slate-200 text-xs font-semibold transition-all flex items-center justify-between group cursor-pointer"
                       >
                         <div className="flex items-center gap-2.5 text-left">
-                          <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                          <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0">
                             <Download className="w-4 h-4" />
                           </div>
                           <div>
-                            <div className="font-bold text-white">Cài Đặt {selectedAssistantWallet.name} Chính Thức</div>
-                            <div className="text-[10px] text-slate-400 font-normal">Tải tiện ích Chrome/Brave hoặc ứng dụng iOS/Android chính thức</div>
+                            <div className="font-bold text-white">Tải Tiện Ích Trình Duyệt / App {selectedAssistantWallet.name}</div>
+                            <div className="text-[10px] text-slate-400 font-normal">Tải tiện ích mở rộng Chrome / Brave hoặc App Store / Google Play</div>
                           </div>
                         </div>
-                        <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
+                        <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors shrink-0" />
                       </a>
                     )}
-
-                    {/* Option 4: Sandbox Instant Trial */}
-                    <button
-                      onClick={() => {
-                        setSelectedAssistantWallet(null);
-                        connectWallet('sandbox');
-                        soundManager.playSuccess();
-                        addToast({
-                          title: 'Sandbox Activated',
-                          message: 'Đã kích hoạt ví mô phỏng an toàn.',
-                          type: 'success',
-                        });
-                        closeConnectModal();
-                      }}
-                      className="w-full p-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-300 text-xs font-semibold transition-all flex items-center justify-between cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Trải nghiệm ngay lập tức với ví Sandbox (Không cần cài đặt ví thật)</span>
-                      </div>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 font-bold">1-CHẠM</span>
-                    </button>
                   </div>
                 </div>
               )}
@@ -942,6 +991,61 @@ export const WalletConnectionModal: React.FC = () => {
                   >
                     <X className="w-4 h-4" />
                   </button>
+                </div>
+              )}
+
+              {/* FEATURED: Trust Wallet Highlight Card */}
+              {(!searchQuery || searchQuery.toLowerCase().includes('trust')) && (selectedCategory === 'all' || selectedCategory === 'popular' || selectedCategory === 'mobile') && (
+                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-blue-950/70 via-[#0B1528] to-cyan-950/40 border-2 border-blue-500/50 shadow-xl shadow-blue-950/40 relative overflow-hidden">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-13 h-13 rounded-2xl bg-black/60 border border-blue-400/40 p-2.5 shrink-0 flex items-center justify-center shadow-inner">
+                        <img
+                          src="https://assets.coingecko.com/coins/images/11085/small/Trust.png"
+                          alt="Trust Wallet"
+                          className="w-full h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-base font-extrabold text-white">Trust Wallet</h4>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono font-bold">
+                            {installedMap.trust ? 'ĐÃ CÀI ĐẶT' : '70M+ USERS'}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 font-mono font-bold hidden sm:inline">
+                            VÍ KHUYÊN DÙNG
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          Ví Web3 phi tập trung chính thức — Kết nối thông minh, bảo mật tuyệt đối 100% Non-Custodial
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <button
+                        onClick={() => {
+                          const trustP = providers.find((p) => p.id === 'trust');
+                          if (trustP) handleConnectProvider(trustP);
+                        }}
+                        className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs shadow-lg shadow-blue-900/40 transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>Kết Nối Trust Wallet</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveTab('qrcode');
+                        }}
+                        className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 font-semibold text-xs border border-white/10 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                        title="Quét QR trên ứng dụng điện thoại"
+                      >
+                        <QrCode className="w-3.5 h-3.5 text-cyan-300" />
+                        <span className="hidden sm:inline">Quét QR</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 

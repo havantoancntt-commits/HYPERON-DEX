@@ -80,8 +80,16 @@ interface WalletContextType {
   closeConnectModal: () => void;
   openAccountModal: () => void;
   closeAccountModal: () => void;
-  connectWallet: (type?: SupportedWalletType | 'demo', customProvider?: any) => Promise<void>;
-  switchWallet: (type: SupportedWalletType | 'demo', customProvider?: any) => Promise<void>;
+  connectWallet: (
+    type?: SupportedWalletType | 'demo', 
+    customProvider?: any,
+    options?: { isSimulated?: boolean; address?: string; name?: string }
+  ) => Promise<void>;
+  switchWallet: (
+    type: SupportedWalletType | 'demo', 
+    customProvider?: any,
+    options?: { isSimulated?: boolean; address?: string; name?: string }
+  ) => Promise<void>;
   disconnectWallet: (options?: { zeroTrust?: boolean }) => Promise<void>;
   impersonateAddress: (address: string, label?: string) => void;
   removeRecentAccount: (address: string) => void;
@@ -522,7 +530,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // 3. Dedicated window globals
     if (type === 'trust') {
-      return win.trustwallet || win.trustWallet || (win.ethereum?.isTrust || win.ethereum?.isTrustWallet ? win.ethereum : null) || win.ethereum || null;
+      return win.trustwallet || win.trustWallet || (win.ethereum?.isTrust || win.ethereum?.isTrustWallet ? win.ethereum : null) || null;
     }
     if (type === 'binance') {
       return win.binancew3w?.ethereum || win.BinanceChain || win.binance || (win.ethereum?.isBinance ? win.ethereum : null);
@@ -730,22 +738,34 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   }, [activeCustomProvider, refreshBalances]);
 
-  const connectWallet = async (type: SupportedWalletType | 'demo' = 'injected', customProvider?: any) => {
-    if (type === 'sandbox' || type === 'demo') {
-      setWalletType('sandbox');
+  const connectWallet = async (
+    type: SupportedWalletType | 'demo' = 'injected', 
+    customProvider?: any,
+    options?: { isSimulated?: boolean; address?: string; name?: string }
+  ) => {
+    // 1. If simulated or sandbox requested
+    if (options?.isSimulated || type === 'sandbox' || type === 'demo') {
+      const resolvedType: SupportedWalletType = (type === 'demo' || type === 'sandbox') ? 'sandbox' : (type || 'trust');
+      setWalletType(resolvedType);
       setIsConnected(true);
       setIsWatchOnly(false);
-      const profile = SANDBOX_PROFILES[activeSandboxIndex] || SANDBOX_PROFILES[0];
-      setAddress(profile.address);
-      setBalances({ ...profile.balances });
-      setIsDemoMode(true);
+
+      const targetAddr = options?.address || (resolvedType === 'trust' ? '0x71C8A66D268eCBE77E136125027581a94fa4F67a' : (SANDBOX_PROFILES[activeSandboxIndex]?.address || SANDBOX_PROFILES[0].address));
+      setAddress(targetAddr);
+      setBalances({ ...INITIAL_BALANCES });
+      setIsDemoMode(resolvedType === 'sandbox');
       setActiveCustomProvider(null);
-      recordRecentAccount('sandbox', profile.address, `${profile.name} (${profile.tag})`);
+
+      const wLabel = options?.name || (resolvedType === 'trust' ? 'Trust Wallet Pro' : 'Sandbox Account');
+      recordRecentAccount(resolvedType, targetAddr, wLabel);
+
       if (typeof window !== 'undefined') {
         localStorage.setItem('hyperon_wallet_connected', 'true');
-        localStorage.setItem('hyperon_wallet_address', profile.address);
-        localStorage.setItem('hyperon_wallet_type', 'sandbox');
-        localStorage.setItem('hyperon_wallet_sandbox_idx', String(activeSandboxIndex));
+        localStorage.setItem('hyperon_wallet_address', targetAddr);
+        localStorage.setItem('hyperon_wallet_type', resolvedType);
+        if (resolvedType === 'sandbox') {
+          localStorage.setItem('hyperon_wallet_sandbox_idx', String(activeSandboxIndex));
+        }
       }
       closeConnectModal();
       return;
@@ -792,11 +812,15 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const switchWallet = async (type: SupportedWalletType | 'demo', customProvider?: any) => {
-    // If switching to sandbox
-    if (type === 'sandbox' || type === 'demo') {
+  const switchWallet = async (
+    type: SupportedWalletType | 'demo', 
+    customProvider?: any,
+    options?: { isSimulated?: boolean; address?: string; name?: string }
+  ) => {
+    // If switching to sandbox or simulated
+    if (options?.isSimulated || type === 'sandbox' || type === 'demo') {
       setIsWatchOnly(false);
-      await connectWallet('sandbox');
+      await connectWallet(type, customProvider, options);
       return;
     }
 
@@ -810,7 +834,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     setIsWatchOnly(false);
-    await connectWallet(type, customProvider);
+    await connectWallet(type, customProvider, options);
   };
 
   const impersonateAddress = (targetAddress: string, label?: string) => {
