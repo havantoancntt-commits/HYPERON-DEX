@@ -323,14 +323,37 @@ export const HyprCoinView: React.FC = () => {
         <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
           {/* Left: Coin Profile Branding */}
           <div className="flex items-start sm:items-center gap-5 sm:gap-7">
-            <div className="relative shrink-0 group">
-              <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-2xl bg-gradient-to-tr from-cyan-500/20 via-blue-600/30 to-purple-600/20 p-0.5 border border-cyan-400/40 shadow-xl shadow-cyan-500/10 flex items-center justify-center">
+            {/* Coin Logo Button - Interactive Admin Access */}
+            <button
+              type="button"
+              onClick={() => {
+                soundManager.playTick();
+                setIsAdminAuthModalOpen(true);
+              }}
+              className="relative shrink-0 group cursor-pointer text-left focus:outline-none rounded-2xl active:scale-95 transition-transform"
+              title="Chạm vào đây để mở bảng Xác thực Quyền Admin & Quản trị On-Chain"
+            >
+              <div className={`w-20 h-20 sm:w-28 sm:h-28 rounded-2xl bg-gradient-to-tr p-0.5 border shadow-xl flex items-center justify-center transition-all ${
+                isAdmin
+                  ? 'from-amber-500/30 via-orange-600/40 to-rose-600/30 border-amber-400/70 shadow-amber-500/20'
+                  : 'from-cyan-500/20 via-blue-600/30 to-purple-600/20 border-cyan-400/40 shadow-cyan-500/10 group-hover:border-cyan-400'
+              }`}>
                 <Hyperon3DLogo className="w-16 h-16 sm:w-24 sm:h-24 filter drop-shadow-[0_0_12px_rgba(6,182,212,0.4)] group-hover:scale-105 transition-transform" />
               </div>
-              <span className="absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-extrabold text-[9px] uppercase tracking-wider font-mono shadow-md">
-                NATIVE COIN
+              <span className={`absolute -bottom-2 -right-2 px-2 py-0.5 rounded-full font-extrabold text-[9px] uppercase tracking-wider font-mono shadow-md flex items-center gap-1 ${
+                isAdmin
+                  ? 'bg-gradient-to-r from-amber-400 to-orange-500 text-black border border-amber-300'
+                  : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-black'
+              }`}>
+                {isAdmin ? (
+                  <>
+                    <KeyRound className="w-2.5 h-2.5" /> ADMIN
+                  </>
+                ) : (
+                  'NATIVE COIN'
+                )}
               </span>
-            </div>
+            </button>
 
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2.5">
@@ -343,6 +366,24 @@ export const HyprCoinView: React.FC = () => {
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
                   <ShieldCheck className="w-3.5 h-3.5" /> 100% CERTIK AUDITED
                 </span>
+
+                {/* Direct Admin Access Button right at the top header */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundManager.playTick();
+                    setIsAdminAuthModalOpen(true);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg font-mono text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+                    isAdmin
+                      ? 'bg-amber-500/20 border border-amber-400/60 text-amber-300 hover:bg-amber-500/30 shadow-sm'
+                      : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-slate-300 hover:text-amber-300'
+                  }`}
+                  title="Nhấp vào để mở bảng Quản trị & Xác thực Admin"
+                >
+                  <KeyRound className={`w-3.5 h-3.5 ${isAdmin ? 'text-amber-400' : 'text-slate-400'}`} />
+                  {isAdmin ? 'ADMIN ACTIVE' : 'ADMIN ACCESS'}
+                </button>
               </div>
 
               <p className="text-sm text-slate-300 max-w-xl leading-relaxed">
