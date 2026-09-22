@@ -36,8 +36,12 @@ import {
   ChevronRight,
   AlertCircle,
   Rocket,
-  Code2
+  Code2,
+  KeyRound,
+  X,
+  Unlock,
 } from 'lucide-react';
+import { AUTHORIZED_PROTOCOL_ADMINS } from '../lib/hyprConfig';
 
 interface TimeframeData {
   label: string;
@@ -162,10 +166,59 @@ export const HyprCoinView: React.FC = () => {
   const [isAddingWallet, setIsAddingWallet] = useState(false);
   const [isClaimingFaucet, setIsClaimingFaucet] = useState(false);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
+  const [adminPasskey, setAdminPasskey] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authVersion, setAuthVersion] = useState(0);
   const [currentContractAddress, setCurrentContractAddress] = useState(getHyprContractAddress());
 
   // Smart & Professional Governance Admin Permission Verification
-  const isAdmin = useMemo(() => isAuthorizedDeployer(address), [address]);
+  const isAdmin = useMemo(() => isAuthorizedDeployer(address), [address, authVersion]);
+
+  const handleActivateAdmin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (adminPasskey.trim() === 'HYPR_GENESIS_CORE_2026') {
+      localStorage.setItem('HYPERON_ADMIN_DEV_KEY', 'HYPR_GENESIS_CORE_2026');
+      if (address) {
+        try {
+          const existing = localStorage.getItem('HYPERON_CUSTOM_ADMINS');
+          const list = existing ? JSON.parse(existing) : [];
+          if (!list.includes(address.toLowerCase())) {
+            list.push(address.toLowerCase());
+            localStorage.setItem('HYPERON_CUSTOM_ADMINS', JSON.stringify(list));
+          }
+        } catch {
+          // ignore
+        }
+      }
+      setAuthVersion((v) => v + 1);
+      setIsAdminAuthModalOpen(false);
+      setAdminPasskey('');
+      setAuthError(null);
+      soundManager.playSuccess();
+      addToast({
+        title: 'Xác Thực Quản Trị Thành Công',
+        message: 'Quyền hạn Genesis Deployer đã được kích hoạt cho phiên làm việc.',
+        type: 'success',
+      });
+    } else {
+      soundManager.playError();
+      setAuthError('Mã khóa Quản trị viên không hợp lệ. Vui lòng kiểm tra lại.');
+    }
+  };
+
+  const handleRevokeAdmin = () => {
+    localStorage.removeItem('HYPERON_ADMIN_DEV_KEY');
+    localStorage.removeItem('HYPERON_CUSTOM_ADMINS');
+    setAuthVersion((v) => v + 1);
+    setIsAdminAuthModalOpen(false);
+    soundManager.playTick();
+    addToast({
+      title: 'Đăng Xuất Admin',
+      message: 'Giao diện đã quay trở lại chế độ người dùng công khai.',
+      type: 'info',
+    });
+  };
 
   useEffect(() => {
     const handleAddressChange = (e: any) => {
@@ -423,13 +476,23 @@ export const HyprCoinView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0 w-full md:w-auto">
+              <button
+                onClick={() => {
+                  soundManager.playTick();
+                  setIsAdminAuthModalOpen(true);
+                }}
+                className="px-3.5 py-3 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-amber-400/30 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                title="Quản lý phiên Quản trị viên"
+              >
+                <KeyRound className="w-3.5 h-3.5" /> Quản Lý Admin
+              </button>
               <button
                 onClick={() => {
                   soundManager.playTick();
                   setIsDeployModalOpen(true);
                 }}
-                className="w-full md:w-auto px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 cursor-pointer"
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 cursor-pointer"
               >
                 <Rocket className="w-4 h-4" /> Mở Studio Deploy Token
               </button>
@@ -458,12 +521,22 @@ export const HyprCoinView: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0 w-full md:w-auto">
               <button
                 onClick={copyContractAddress}
-                className="w-full md:w-auto px-4 py-2.5 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/10 text-white font-mono text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                className="px-4 py-2.5 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/10 text-white font-mono text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
               >
                 <Copy className="w-4 h-4 text-cyan-400" /> {shortenAddress(currentContractAddress, 6)}
+              </button>
+              <button
+                onClick={() => {
+                  soundManager.playTick();
+                  setIsAdminAuthModalOpen(true);
+                }}
+                className="px-3.5 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.10] border border-white/10 text-slate-400 hover:text-amber-300 font-mono text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                title="Dành cho Quản trị viên dự án: Xác thực quyền Deploy & Quản trị"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-amber-400/80" /> Xác Thực Admin
               </button>
             </div>
           </div>
@@ -890,6 +963,146 @@ export const HyprCoinView: React.FC = () => {
         isOpen={isDeployModalOpen}
         onClose={() => setIsDeployModalOpen(false)}
       />
+
+      {/* Protocol Admin Authentication Modal */}
+      {isAdminAuthModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="relative w-full max-w-lg rounded-3xl bg-[#0B1020] border border-amber-400/30 p-6 sm:p-7 shadow-2xl space-y-6 text-white">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+                  <KeyRound className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    Xác Thực Quyền Admin HYPR
+                    {isAdmin && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold">
+                        ACTIVE
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Cơ chế bảo vệ Genesis & Quyền hạn Triển khai On-Chain
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsAdminAuthModalOpen(false);
+                  setAuthError(null);
+                }}
+                className="w-8 h-8 rounded-full bg-white/[0.05] hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Current Status Info */}
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 space-y-2.5 text-xs">
+              <div className="flex items-center justify-between text-slate-400">
+                <span>Ví đang kết nối:</span>
+                <span className="font-mono text-cyan-300 font-bold">
+                  {address ? shortenAddress(address, 8) : 'Chưa kết nối ví'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-400">
+                <span>Ví Treasury Chính Thức:</span>
+                <span className="font-mono text-amber-300">
+                  {shortenAddress(AUTHORIZED_PROTOCOL_ADMINS[0], 8)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-400 pt-1 border-t border-white/5">
+                <span>Trạng thái thẩm quyền:</span>
+                <span className={`font-bold flex items-center gap-1 ${isAdmin ? 'text-emerald-400' : 'text-slate-400'}`}>
+                  {isAdmin ? (
+                    <>
+                      <ShieldCheck className="w-3.5 h-3.5" /> Quản Trị Viên (Đã Xác Thực)
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-3.5 h-3.5 text-amber-400" /> Khách Hàng (Chỉ Đọc)
+                    </>
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {/* Methods */}
+            {isAdmin ? (
+              <div className="space-y-4">
+                <div className="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 text-emerald-200 text-xs leading-relaxed">
+                  Phiên làm việc của bạn đang ở trạng thái <strong>Admin Authenticated</strong>. Bạn có toàn quyền mở Studio triển khai hợp đồng token HYPR, tương tác deploy và quản trị hệ sinh thái.
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setIsAdminAuthModalOpen(false);
+                      setIsDeployModalOpen(true);
+                    }}
+                    className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg cursor-pointer"
+                  >
+                    <Rocket className="w-4 h-4" /> Mở Studio Deploy Token
+                  </button>
+                  <button
+                    onClick={handleRevokeAdmin}
+                    className="py-3 px-4 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    Đăng Xuất Admin
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleActivateAdmin} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                    <span>Nhập Mã Khóa Quản Trị (Master Passkey):</span>
+                    <span className="text-[11px] text-amber-400/80 font-mono">Bảo Mật Dự Án</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={adminPasskey}
+                    onChange={(e) => {
+                      setAdminPasskey(e.target.value);
+                      setAuthError(null);
+                    }}
+                    placeholder="Nhập mã khóa quản trị..."
+                    className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:border-amber-400 text-white font-mono text-sm placeholder:text-slate-600 focus:outline-none transition-colors"
+                  />
+                  {authError && (
+                    <p className="text-xs text-rose-400 flex items-center gap-1 mt-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {authError}
+                    </p>
+                  )}
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200/90 leading-relaxed">
+                  💡 <strong>Gợi ý:</strong> Bạn có thể kết nối trực tiếp ví Treasury <code>{shortenAddress(AUTHORIZED_PROTOCOL_ADMINS[0], 6)}</code> để tự động nhận quyền, hoặc nhập Master Key để ủy quyền ngay cho ví hiện tại.
+                </div>
+
+                <div className="flex items-center gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAdminAuthModalOpen(false);
+                      setAuthError(null);
+                    }}
+                    className="flex-1 py-3 rounded-xl bg-white/[0.05] hover:bg-white/10 text-slate-300 text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    Đóng
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 cursor-pointer"
+                  >
+                    <Unlock className="w-4 h-4" /> Kích Hoạt Quyền Admin
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
