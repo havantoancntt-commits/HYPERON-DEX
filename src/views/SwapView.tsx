@@ -81,7 +81,10 @@ export const sanitizeAmountInput = (value: string, maxDecimals: number = 18): st
 export const SwapView: React.FC = () => {
   const {
     balances,
+    tokenBalances,
     isConnected,
+    isWrongChain,
+    switchChain,
     connectWallet,
     openConnectModal,
     openAccountModal,
@@ -108,6 +111,22 @@ export const SwapView: React.FC = () => {
   const [quote, setQuote] = useState<SwapQuote | null>(null);
   const [isFetchingQuote, setIsFetchingQuote] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
+
+  // Invalidate quote and active simulation on chain/account change
+  useEffect(() => {
+    const handleReset = () => {
+      setQuote(null);
+      setQuoteError(null);
+      setActiveQuote(null);
+      setActiveSimulation(null);
+    };
+    window.addEventListener('hyperon:chain_changed', handleReset);
+    window.addEventListener('hyperon:account_changed', handleReset);
+    return () => {
+      window.removeEventListener('hyperon:chain_changed', handleReset);
+      window.removeEventListener('hyperon:account_changed', handleReset);
+    };
+  }, [setActiveQuote, setActiveSimulation]);
   const [showFromSelect, setShowFromSelect] = useState<boolean>(false);
   const [showToSelect, setShowToSelect] = useState<boolean>(false);
   const [searchTokenQuery, setSearchTokenQuery] = useState<string>('');
@@ -164,6 +183,12 @@ export const SwapView: React.FC = () => {
 
   // Fetch real quote from server Smart Router (debounced with AbortController)
   const fetchQuote = useCallback(async (amountStr: string, fTok: Token, tTok: Token, currentSlippage: number) => {
+    if (isWrongChain) {
+      setQuote(null);
+      setQuoteError('Mạng blockchain hiện tại không được hỗ trợ. Vui lòng chuyển mạng.');
+      return;
+    }
+
     if (fTok.isImpersonator || tTok.isImpersonator) {
       setQuote(null);
       setQuoteError(`🚨 CẢNH BÁO: Phát hiện Token giả mạo (${fTok.isImpersonator ? fTok.symbol : tTok.symbol}). Hệ thống đã chặn giao dịch để bảo vệ tài sản!`);
@@ -335,7 +360,7 @@ export const SwapView: React.FC = () => {
         body: JSON.stringify({
           quote,
           userAddress: address,
-          chainId: chainId || 'ethereum',
+          chainId,
         }),
         signal,
       });
@@ -401,7 +426,7 @@ export const SwapView: React.FC = () => {
       setRemoteTokenError(null);
 
       try {
-        const res = await fetch(`/api/tokens/resolve?chainId=${chainId || 'ethereum'}&query=${encodeURIComponent(q)}`, {
+        const res = await fetch(`/api/tokens/resolve?chainId=${chainId}&query=${encodeURIComponent(q)}`, {
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
@@ -618,6 +643,25 @@ export const SwapView: React.FC = () => {
               />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* WRONG CHAIN FAIL-CLOSED BANNER */}
+      {isWrongChain && (
+        <div className="p-4 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+            <div>
+              <div className="font-bold text-rose-200">Mạng Blockchain Không Được Hỗ Trợ</div>
+              <div className="text-[11px] text-rose-300/80">Ví của bạn đang kết nối mạng ngoài phạm vi HYPERON-DEX. Mọi giao dịch bị khóa (Fail-Closed).</div>
+            </div>
+          </div>
+          <button
+            onClick={() => switchChain('ethereum')}
+            className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shrink-0 cursor-pointer transition-colors shadow"
+          >
+            Chuyển Ethereum
+          </button>
         </div>
       )}
 
@@ -893,7 +937,23 @@ export const SwapView: React.FC = () => {
 
         {/* SOLID, NON-FLICKERING ACTION BUTTON */}
         <div className="pt-2">
-          {isUnverifiedToken ? (
+          {!isConnected ? (
+            <button
+              onClick={openConnectModal}
+              className="w-full py-4 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:via-blue-500 hover:to-indigo-500 text-white font-black text-sm uppercase tracking-wide rounded-2xl shadow-xl shadow-cyan-900/30 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+            >
+              <Wallet className="w-4 h-4" />
+              <span>Kết Nối Ví Web3</span>
+            </button>
+          ) : isWrongChain ? (
+            <button
+              onClick={() => switchChain('ethereum')}
+              className="w-full py-4 bg-rose-500 hover:bg-rose-400 text-white font-black text-sm uppercase tracking-wide rounded-2xl shadow-xl shadow-rose-950/30 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+            >
+              <AlertTriangle className="w-4 h-4 text-white" />
+              <span>Chuyển Sang Mạng Hỗ Trợ</span>
+            </button>
+          ) : isUnverifiedToken ? (
             <button
               disabled
               className="w-full py-4 bg-rose-500/10 border border-rose-500/30 text-rose-400 font-bold text-sm rounded-2xl cursor-not-allowed flex items-center justify-center gap-2"

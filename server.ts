@@ -45,6 +45,7 @@ import { antiScraperMiddleware } from './server/middleware/antiScraper';
 import { hyperonCrossChainEngine } from './server/services/crossChainEngine';
 import { TransactionBuilder } from './src/lib/execution/TransactionBuilder';
 import { treasuryService } from './server/services/treasuryService';
+import { validateChainId } from './src/lib/chainConfig';
 
 const app = express();
 const PORT = 3000;
@@ -483,7 +484,8 @@ app.get('/api/prices/history', async (req: Request, res: Response) => {
 // -------------------------------------------------------------
 app.get('/api/tokens', (req: Request, res: Response) => {
   try {
-    const chainId = (req.query.chainId as string) || 'ethereum';
+    const rawChain = (req.query.chainId as string) || 'ethereum';
+    const chainId = validateChainId(rawChain);
     const dynamicTokens = VERIFIED_TOKENS.map((token) => {
       const live = priceCache[token.symbol];
       return live && live.priceUsd !== null
@@ -508,7 +510,8 @@ app.get('/api/tokens', (req: Request, res: Response) => {
 
 app.get('/api/tokens/resolve', async (req: Request, res: Response) => {
   try {
-    const chainId = (req.query.chainId as string) || 'ethereum';
+    const rawChain = (req.query.chainId as string) || 'ethereum';
+    const chainId = validateChainId(rawChain);
     const rawQuery = (req.query.query as string || req.query.address as string || req.query.symbol as string || '').trim();
 
     if (!rawQuery) {
@@ -657,6 +660,8 @@ app.post(['/api/quotes', '/api/quote'], async (req: Request, res: Response) => {
     const effectiveToAddress =
       toTokenAddress || (toToken && toToken.startsWith('0x') ? toToken : undefined);
 
+    const validatedChain = validateChainId(chainId);
+
     const quote = await calculateSmartRouteQuote({
       fromTokenSymbol: effectiveFromSymbol,
       fromTokenAddress: effectiveFromAddress,
@@ -664,7 +669,7 @@ app.post(['/api/quotes', '/api/quote'], async (req: Request, res: Response) => {
       toTokenAddress: effectiveToAddress,
       amount,
       slippage: typeof slippage === 'string' ? parseFloat(slippage) : slippage,
-      chainId,
+      chainId: validatedChain,
       allowMultiHop,
     });
     // Return both { quote } wrapper and root quote fields for full client compatibility
@@ -769,8 +774,8 @@ app.post(['/api/swaps/simulate', '/api/simulate-swap'], async (req: Request, res
       );
     }
 
-    const targetChain = parsed.data.chainId || parsed.data.quote.chainId || parsed.data.quote.fromToken?.chainId;
-    if (!targetChain) {
+    const rawTargetChain = parsed.data.chainId || parsed.data.quote.chainId || parsed.data.quote.fromToken?.chainId;
+    if (!rawTargetChain) {
       return res.status(400).json(
         createDexError(
           DEX_ERROR_CODES.INVALID_CHAIN,
@@ -779,6 +784,7 @@ app.post(['/api/swaps/simulate', '/api/simulate-swap'], async (req: Request, res
         )
       );
     }
+    const targetChain = validateChainId(rawTargetChain);
 
     const { quote, userAddress } = parsed.data;
     if (!userAddress) {
@@ -1537,7 +1543,8 @@ app.get('/api/staking/vaults', (req: Request, res: Response) => {
 // -------------------------------------------------------------
 app.get('/api/onchain/whales', async (req: Request, res: Response) => {
   try {
-    const chainId = (req.query.chainId as any) || 'ethereum';
+    const rawChain = (req.query.chainId as string) || 'ethereum';
+    const chainId = validateChainId(rawChain);
     const limit = parseInt(req.query.limit as string) || 20;
     const minUsd = parseInt(req.query.minUsd as string) || 100000;
 

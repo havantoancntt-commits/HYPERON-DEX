@@ -5,6 +5,19 @@ import { ChainId, TransactionHistoryItem } from '../types';
 import { SUPPORTED_CHAINS, VERIFIED_TOKENS } from '../lib/constants';
 import { ReceiptVerifier } from '../lib/execution/ReceiptVerifier';
 import { ERC20_ABI } from '../lib/execution/TransactionBuilder';
+import { validateChainId, getChainConfig, isSupportedChain } from '../lib/chainConfig';
+import { BalanceEngine, TokenBalanceDetail } from '../lib/balanceEngine';
+import { ApprovalEngine } from '../lib/approvalEngine';
+import { TransactionSyncEngine } from '../lib/transactionSync';
+
+export type WalletLifecycleState =
+  | 'DISCONNECTED'
+  | 'CONNECTING'
+  | 'CONNECTED'
+  | 'RECONNECTING'
+  | 'CHAIN_SWITCHING'
+  | 'WRONG_CHAIN'
+  | 'ERROR';
 
 export type SupportedWalletType =
   | 'metamask'
@@ -57,10 +70,13 @@ export interface RecentWalletAccount {
 
 interface WalletContextType {
   isConnected: boolean;
+  lifecycleState: WalletLifecycleState;
+  isWrongChain: boolean;
   address: string;
   chainId: ChainId;
   walletType: SupportedWalletType;
   balances: Record<string, number>;
+  tokenBalances: Record<string, TokenBalanceDetail>;
   isDemoMode: boolean;
   isWatchOnly: boolean;
   transactions: TransactionHistoryItem[];
@@ -239,6 +255,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [balances, setBalances] = useState<Record<string, number>>(() => ({
     ...ZERO_BALANCES,
   }));
+  const [lifecycleState, setLifecycleState] = useState<WalletLifecycleState>(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('hyperon_wallet_connected') === 'true') {
+      return 'CONNECTED';
+    }
+    return 'DISCONNECTED';
+  });
+  const [isWrongChain, setIsWrongChain] = useState<boolean>(false);
+  const [tokenBalances, setTokenBalances] = useState<Record<string, TokenBalanceDetail>>({});
 
   const [discoveredProviders, setDiscoveredProviders] = useState<EIP6963ProviderDetail[]>([]);
   const [activeCustomProvider, setActiveCustomProvider] = useState<any>(null);
@@ -521,76 +545,67 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return win.ethereum || null;
   }, [discoveredProviders]);
 
-  // Query live on-chain balance via RPC when a wallet or address is connected
+  // Query live on-chain balance via RPC using Precision BalanceEngine
   const refreshBalances = useCallback(async () => {
     if (!address || !address.startsWith('0x') || address.length !== 42) {
       setBalances({ ...ZERO_BALANCES });
+      setTokenBalances({});
       return;
     }
 
     try {
-      const targetChain = CHAIN_MAP[chainId] || mainnet;
+      const targetChain = CHAIN_MAP[chainId];
+      if (!targetChain) {
+        setIsWrongChain(true);
+        setLifecycleState('WRONG_CHAIN');
+        return;
+      }
+
       const client = createPublicClient({
         chain: targetChain,
         transport: http(),
       });
 
-      const updatedBalances: Record<string, number> = { ...ZERO_BALANCES };
+      const chainTokens = VERIFIED_TOKENS.filter((t) => t.chainId === chainId).map((t) => ({
+        address: t.address,
+        symbol: t.symbol,
+        decimals: t.decimals || 18,
+        isNative: t.isNative,
+      }));
 
-      // 1. Fetch live native balance
-      try {
-        const nativeBalance = await client.getBalance({ address: address as Address });
-        const nativeVal = parseFloat(formatEther(nativeBalance));
-        if (!isNaN(nativeVal)) {
-          if (chainId === 'bsc') {
-            updatedBalances.BNB = nativeVal;
-          } else if (chainId === 'polygon') {
-            updatedBalances.POL = nativeVal;
-            updatedBalances.MATIC = nativeVal;
-          } else {
-            updatedBalances.ETH = nativeVal;
-          }
-        }
-      } catch (err) {
-        console.warn('Native balance query error:', err);
-      }
-
-      // 2. Fetch live ERC-20 token balances for verified tokens on this chain
-      const chainTokens = VERIFIED_TOKENS.filter(
-        (t) => t.chainId === chainId && !t.isNative && t.address?.startsWith('0x') && t.address.length === 42
+      const portfolio = await BalanceEngine.fetchPortfolioBalances(
+        client,
+        address as Address,
+        chainId,
+        chainTokens
       );
 
-      const balanceQueries = chainTokens.slice(0, 15).map(async (tok) => {
-        try {
-          const rawBal = await client.readContract({
-            address: tok.address as Address,
-            abi: ERC20_ABI,
-            functionName: 'balanceOf',
-            args: [address as Address],
-          } as any);
-          const formatted = parseFloat(formatUnits(rawBal as bigint, tok.decimals || 18));
-          return { symbol: tok.symbol, balance: formatted };
-        } catch {
-          return null;
-        }
-      });
+      setTokenBalances(portfolio);
 
-      const results = await Promise.allSettled(balanceQueries);
-      results.forEach((r) => {
-        if (r.status === 'fulfilled' && r.value) {
-          updatedBalances[r.value.symbol] = r.value.balance;
-        }
-      });
-
-      setBalances(updatedBalances);
+      const numericMap: Record<string, number> = { ...ZERO_BALANCES };
+      for (const [sym, detail] of Object.entries(portfolio)) {
+        numericMap[sym] = detail.numericBalance;
+      }
+      setBalances(numericMap);
     } catch (err) {
-      console.warn('Live on-chain balance sync:', err);
+      console.warn('[WalletContext] Live on-chain balance sync:', err);
     }
   }, [address, chainId]);
 
   useEffect(() => {
     refreshBalances();
   }, [refreshBalances]);
+
+  // Automatic reconciliation of pending transactions on mount / address change
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const provider = activeCustomProvider || (window as any).ethereum;
+    if (provider && provider.request) {
+      TransactionSyncEngine.reconcileAllPending(provider, address, (updated) => {
+        setTransactions(updated);
+      });
+    }
+  }, [activeCustomProvider, address]);
 
   // Subscribe to EIP-1193 Web3 provider events
   useEffect(() => {
@@ -600,22 +615,33 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts && accounts.length > 0) {
-        setAddress(accounts[0]);
+        const newAddress = accounts[0];
+        setAddress(newAddress);
         setIsConnected(true);
+        setLifecycleState('CONNECTED');
         setIsSiweAuthenticated(false);
         setSiweSession(null);
+        setTokenApprovals({});
+        window.dispatchEvent(
+          new CustomEvent('hyperon:account_changed', { detail: { newAddress } })
+        );
         if (typeof window !== 'undefined') {
           localStorage.setItem('hyperon_wallet_connected', 'true');
-          localStorage.setItem('hyperon_wallet_address', accounts[0]);
+          localStorage.setItem('hyperon_wallet_address', newAddress);
         }
         refreshBalances();
       } else {
         // User locked or disconnected their wallet
         setIsConnected(false);
+        setLifecycleState('DISCONNECTED');
         setWalletType(null);
         setAddress('');
         setIsSiweAuthenticated(false);
         setSiweSession(null);
+        setTokenApprovals({});
+        window.dispatchEvent(
+          new CustomEvent('hyperon:account_changed', { detail: { newAddress: '' } })
+        );
         if (typeof window !== 'undefined') {
           localStorage.removeItem('hyperon_wallet_connected');
           localStorage.removeItem('hyperon_wallet_address');
@@ -625,19 +651,40 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     const handleChainChanged = (chainHex: string) => {
-      const detectedChainId = HEX_CHAIN_TO_ID[chainHex.toLowerCase()];
+      const hexLower = (chainHex || '').toLowerCase();
+      const detectedChainId = HEX_CHAIN_TO_ID[hexLower];
       if (detectedChainId) {
         setChainId(detectedChainId);
+        setIsWrongChain(false);
+        setLifecycleState('CONNECTED');
+        setTokenApprovals({});
+        window.dispatchEvent(
+          new CustomEvent('hyperon:chain_changed', {
+            detail: { newChainId: detectedChainId, isUnsupported: false },
+          })
+        );
         refreshBalances();
+      } else {
+        // Unsupported chain -> WRONG_CHAIN -> FAIL CLOSED!
+        setIsWrongChain(true);
+        setLifecycleState('WRONG_CHAIN');
+        setTokenApprovals({});
+        window.dispatchEvent(
+          new CustomEvent('hyperon:chain_changed', {
+            detail: { newChainId: null, isUnsupported: true, rawChainHex: chainHex },
+          })
+        );
       }
     };
 
     const handleDisconnect = () => {
       setIsConnected(false);
+      setLifecycleState('DISCONNECTED');
       setWalletType(null);
       setAddress('');
       setIsSiweAuthenticated(false);
       setSiweSession(null);
+      setTokenApprovals({});
       if (typeof window !== 'undefined') {
         localStorage.removeItem('hyperon_wallet_connected');
         localStorage.removeItem('hyperon_wallet_address');
@@ -853,11 +900,19 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const switchChain = async (newChainId: ChainId) => {
-    setChainId(newChainId);
+    const validated = validateChainId(newChainId);
+    setLifecycleState('CHAIN_SWITCHING');
+    setChainId(validated);
+    setIsWrongChain(false);
+    setTokenApprovals({});
+    window.dispatchEvent(
+      new CustomEvent('hyperon:chain_changed', { detail: { newChainId: validated, isUnsupported: false } })
+    );
+
     const provider = activeCustomProvider || getInjectedProvider(walletType) || (typeof window !== 'undefined' ? (window as any).ethereum : null);
     if (provider && provider.request && walletType !== 'sandbox') {
-      const chainConfig = SUPPORTED_CHAINS[newChainId];
-      const chainHex = `0x${(newChainId === 'ethereum' ? 1 : newChainId === 'base' ? 8453 : newChainId === 'arbitrum' ? 42161 : newChainId === 'optimism' ? 10 : newChainId === 'bsc' ? 56 : 137).toString(16)}`;
+      const chainConfig = getChainConfig(validated);
+      const chainHex = chainConfig.hexChainId;
       try {
         await provider.request({
           method: 'wallet_switchEthereumChain',
@@ -884,6 +939,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       }
     }
+    setLifecycleState('CONNECTED');
     await refreshBalances();
   };
 
@@ -969,11 +1025,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const requestFaucetFunds = (tokenSymbol: string, amount: number) => {
-    setBalances((prev) => ({
-      ...prev,
-      [tokenSymbol]: (prev[tokenSymbol] || 0) + amount,
-    }));
+  const requestFaucetFunds = (_tokenSymbol: string, _amount: number) => {
+    // Invariant: Zero synthetic balances. Balances must reflect on-chain RPC state only.
+    refreshBalances();
   };
 
   const resetBalances = () => {
@@ -1060,6 +1114,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     setTransactions((prev) => [newTx, ...prev]);
+    TransactionSyncEngine.recordTransaction(newTx);
 
     // Background receipt tracker: polling on-chain receipt from node
     (async () => {
@@ -1091,25 +1146,41 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                   });
                   if (!verification.verified) {
                     isFullyVerified = false;
-                    console.warn('ReceiptVerifier criteria check:', verification.reason);
+                    console.warn('[ReceiptVerifier] Criteria check:', verification.reason);
                   }
                 } catch (vErr) {
-                  console.warn('Receipt verification check error:', vErr);
+                  console.warn('[ReceiptVerifier] Check error:', vErr);
                 }
               }
 
               const minedBlock = receipt.blockNumber ? parseInt(receipt.blockNumber, 16) : currentBlock;
+              const finalStatus = isFullyVerified ? 'confirmed' : 'failed';
+
               setTransactions((prev) =>
                 prev.map((item) =>
                   item.txHash === txHash
                     ? {
                         ...item,
-                        status: isFullyVerified ? 'confirmed' : 'failed',
+                        status: finalStatus,
                         blockNumber: minedBlock > 0 ? minedBlock : item.blockNumber,
                       }
                     : item
                 )
               );
+
+              const updatedTxRecord: TransactionHistoryItem = {
+                ...newTx,
+                status: finalStatus,
+                blockNumber: minedBlock > 0 ? minedBlock : newTx.blockNumber,
+              };
+              TransactionSyncEngine.recordTransaction(updatedTxRecord);
+
+              window.dispatchEvent(
+                new CustomEvent('hyperon:transaction_confirmed', {
+                  detail: { txHash, status: finalStatus, blockNumber: minedBlock },
+                })
+              );
+
               if (isFullyVerified) {
                 await refreshBalances();
               }
@@ -1130,7 +1201,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         if (!tokenAddress || !ownerAddress || !spenderAddress) return 0n;
         if (!tokenAddress.startsWith('0x') || !ownerAddress.startsWith('0x') || !spenderAddress.startsWith('0x')) return 0n;
-        const targetChain = CHAIN_MAP[chainId] || mainnet;
+        const targetChain = CHAIN_MAP[chainId];
+        if (!targetChain) return 0n;
         const client = createPublicClient({
           chain: targetChain,
           transport: http(),
@@ -1159,38 +1231,40 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (!provider) {
         throw new Error('Không tìm thấy ví Web3 đã kết nối để gửi giao dịch phê duyệt.');
       }
+      if (!address) {
+        throw new Error('Chưa có địa chỉ ví kết nối.');
+      }
+      const targetChain = CHAIN_MAP[chainId];
+      if (!targetChain) {
+        throw new Error(`INVALID_CHAIN: Chuỗi ${chainId} không được hỗ trợ.`);
+      }
+      const client = createPublicClient({
+        chain: targetChain,
+        transport: http(),
+      });
+
       const maxUint256 = 115792089237316195423570985008687907853269984665640564039457584007913129639935n;
       const amountToApprove = amountRaw || maxUint256;
-      const calldata = encodeFunctionData({
-        abi: ERC20_ABI,
-        functionName: 'approve',
-        args: [spenderAddress as Address, amountToApprove],
-      });
 
-      const hash = await provider.request({
-        method: 'eth_sendTransaction',
-        params: [
-          {
-            from: address,
-            to: tokenAddress,
-            data: calldata,
-            value: '0x0',
-          },
-        ],
+      const result = await ApprovalEngine.executeApproval({
+        client,
+        provider,
+        tokenAddress: tokenAddress as Address,
+        owner: address as Address,
+        spender: spenderAddress as Address,
+        amountIn: amountToApprove,
+        exactAmount: amountRaw !== undefined,
+        chainId,
       });
-
-      if (!hash) {
-        throw new Error('Giao dịch phê duyệt không trả về mã hash.');
-      }
 
       setTokenApprovals((prev) => ({
         ...prev,
         [tokenAddress.toLowerCase()]: true,
       }));
 
-      return hash;
+      return result.approvalTxHash;
     },
-    [address, activeCustomProvider, walletType, getInjectedProvider]
+    [address, chainId, activeCustomProvider, walletType, getInjectedProvider]
   );
 
   const approveToken = async (tokenSymbol: string) => {
@@ -1239,10 +1313,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     <WalletContext.Provider
       value={{
         isConnected,
+        lifecycleState,
+        isWrongChain,
         address,
         chainId,
         walletType,
         balances,
+        tokenBalances,
         isDemoMode,
         isWatchOnly,
         transactions,

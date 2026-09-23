@@ -122,7 +122,7 @@ export const SimulationModal: React.FC = () => {
       const gasSpentUsd = activeSimulation.gasCostUsd > 0 ? activeSimulation.gasCostUsd : 0.50;
 
       const tx = await executeTransaction({
-        chainId: (chainId as any) || 'ethereum',
+        chainId: chainId,
         type: 'SWAP',
         fromToken: fromToken.symbol,
         toToken: activeQuote.toToken.symbol,
@@ -138,7 +138,6 @@ export const SimulationModal: React.FC = () => {
       });
 
       setExecutionTxHash(tx.txHash);
-      setExecutionStep('CONFIRMING');
 
       if (tx.status === 'confirmed') {
         setExecutionStep('SUCCESS');
@@ -148,17 +147,44 @@ export const SimulationModal: React.FC = () => {
           message: `Khối #${tx.blockNumber || 'mới nhất'} đã xác nhận. Mã TX: ${tx.txHash.substring(0, 10)}...`,
           type: 'success',
         });
-        // Auto refresh balances
         refreshBalances();
       } else {
-        setExecutionStep('SUCCESS');
-        setIsCompleted(true);
+        // Pending state: NEVER show success until on-chain receipt verification confirms it!
+        setExecutionStep('CONFIRMING');
+        setIsCompleted(false);
         addToast({
           title: 'Giao Dịch Đã Phát Lên Mạng',
-          message: `Đang chờ thợ đào khai thác vào khối. Mã TX: ${tx.txHash.substring(0, 10)}...`,
+          message: `Đang chờ khối xác nhận on-chain... Mã TX: ${tx.txHash.substring(0, 10)}...`,
           type: 'info',
         });
-        refreshBalances();
+
+        // Listen for live on-chain confirmation event from ReceiptVerifier
+        const confirmationHandler = (event: any) => {
+          const detail = event?.detail;
+          if (detail && detail.txHash === tx.txHash) {
+            window.removeEventListener('hyperon:transaction_confirmed', confirmationHandler);
+            if (detail.status === 'confirmed') {
+              setExecutionStep('SUCCESS');
+              setIsCompleted(true);
+              addToast({
+                title: 'Hoán Đổi Thành Công Trên Chuỗi',
+                message: `Khối #${detail.blockNumber || 'mới nhất'} đã xác nhận hợp lệ.`,
+                type: 'success',
+              });
+              refreshBalances();
+            } else {
+              setExecutionStep('ERROR');
+              setErrorText('Giao dịch đã bị hoàn tác (revert) trên blockchain.');
+              addToast({
+                title: 'Giao Dịch Thất Bại Trên Chuỗi',
+                message: 'Giao dịch bị hoàn tác hoặc không thỏa điều kiện bảo vệ trượt giá.',
+                type: 'error',
+              });
+            }
+          }
+        };
+
+        window.addEventListener('hyperon:transaction_confirmed', confirmationHandler);
       }
     } catch (err: any) {
       console.error('[SimulationModal] Execution error:', err);
