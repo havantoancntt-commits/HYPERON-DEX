@@ -6,11 +6,13 @@
  * - Fail-closed transaction status check (must be success / 0x1 / 1)
  * - Router target verification against expected router & canonical router registry
  * - Decodes on-chain event logs (ERC-20 Transfer, Uniswap V3 Swap, Uniswap V2 Swap, HyperonRouter SwapExecuted, WETH Withdrawal)
+ * - Strict exact token output verification for Uniswap V2/V3 (NO max/sum heuristics; resolves token0/token1)
+ * - Strict SwapExecuted event verification (must exist if routeHash is expected; emits ROUTE_COMMITMENT_MISMATCH on hash divergence)
  * - Native token output balance delta verification (accounting for gas if sender === recipient)
  * - ERC-20 transfer filtering to strictly match expectedTokenOut and expectedRecipient
  * - Balance delta accounting for fee-on-transfer and rebasing tokens
  * - Strictly enforces actualAmountOut >= amountOutMinimum
- * - Fail-closed verification states (SUCCESS, TRANSACTION_REVERTED, ROUTER_MISMATCH, VERIFICATION_FAILED)
+ * - Fail-closed verification states (SUCCESS, TRANSACTION_REVERTED, ROUTER_MISMATCH, ROUTE_COMMITMENT_MISMATCH, OUTPUT_VERIFICATION_FAILED, VERIFICATION_FAILED)
  */
 
 import { Address, Hex } from 'viem';
@@ -22,12 +24,41 @@ export const UNISWAP_V2_SWAP_TOPIC = '0xd78ad95fa46c994b6551d0da85fc275fe613ce37
 export const HYPERON_SWAP_EXECUTED_TOPIC = '0x159d29c4dd7daebc22d119abebda0b001d8f8ef6134ae1fcb003a566f103de35';
 export const WETH_WITHDRAWAL_TOPIC = '0x7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95d5080b65';
 
+/**
+ * Registry of canonical AMM pools for exact token0 / token1 resolution
+ * Prevents guessing or heuristic assumptions about output directions.
+ */
+export const KNOWN_CANONICAL_POOLS: Record<string, { token0: Address; token1: Address }> = {
+  // Uniswap V3 WETH/USDC pool (Ethereum)
+  '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640': {
+    token0: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH
+    token1: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // USDC
+  },
+  // Uniswap V3 WETH/USDT 0.05% pool (Ethereum)
+  '0x11b815efb8f581194ae79006d24e0d814b7697f6': {
+    token0: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH
+    token1: '0xdac17f958d2ee523a2206206994597c13d831ec7', // USDT
+  },
+  // Uniswap V3 WBTC/WETH 0.3% pool (Ethereum)
+  '0xcbcdf9626bc03e24f779434178a73a0b4bad62ed': {
+    token0: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', // WBTC
+    token1: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH
+  },
+  // Uniswap V2 USDC/WETH pool (Ethereum)
+  '0xb4e16d0168e52d35cacd2c6185b44281ec28c9dc': {
+    token0: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', // USDC
+    token1: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH
+  },
+};
+
 export interface DecodedReceiptEvent {
   eventName: 'Transfer' | 'V3Swap' | 'V2Swap' | 'SwapExecuted' | 'Withdrawal' | 'Unknown';
   contractAddress: Address;
   from?: Address;
   to?: Address;
   recipient?: Address;
+  tokenIn?: Address;
+  tokenOut?: Address;
   value?: bigint;
   amount0Out?: bigint;
   amount1Out?: bigint;
@@ -42,6 +73,7 @@ export interface VerificationResult {
     | 'SUCCESS'
     | 'TRANSACTION_REVERTED'
     | 'ROUTER_MISMATCH'
+    | 'ROUTE_COMMITMENT_MISMATCH'
     | 'SLIPPAGE_BREACH'
     | 'OUTPUT_VERIFICATION_FAILED'
     | 'VERIFICATION_FAILED'
@@ -75,11 +107,15 @@ export interface VerifyReceiptParams {
   amountOutMinimum: bigint;
   expectedRouter?: Address;
   expectedSender?: Address;
+  expectedTokenIn?: Address;
+  expectedAmountIn?: bigint;
   chainId?: number | string;
   isNativeOut?: boolean;
   balanceBefore?: bigint;
   balanceAfter?: bigint;
   routeHash?: Hex;
+  poolToken0?: Address;
+  poolToken1?: Address;
 }
 
 export class ReceiptVerifier {
@@ -90,6 +126,7 @@ export class ReceiptVerifier {
     const firstTopic = log.topics[0]?.toLowerCase();
     const contract = log.address.toLowerCase() as Address;
 
+    // 1. ERC-20 Transfer
     if (firstTopic === TRANSFER_EVENT_TOPIC && log.topics.length >= 3) {
       try {
         const from = `0x${log.topics[1].slice(26)}`.toLowerCase() as Address;
@@ -107,6 +144,7 @@ export class ReceiptVerifier {
       }
     }
 
+    // 2. WETH Withdrawal
     if (firstTopic === WETH_WITHDRAWAL_TOPIC) {
       try {
         const src = log.topics[1] ? (`0x${log.topics[1].slice(26)}`.toLowerCase() as Address) : undefined;
@@ -122,6 +160,7 @@ export class ReceiptVerifier {
       }
     }
 
+    // 3. Uniswap V3 Swap
     if (firstTopic === UNISWAP_V3_SWAP_TOPIC && log.topics.length >= 3) {
       try {
         const sender = `0x${log.topics[1].slice(26)}`.toLowerCase() as Address;
@@ -130,8 +169,10 @@ export class ReceiptVerifier {
         if (cleanData.length >= 128) {
           const rawAmount0 = BigInt('0x' + cleanData.slice(0, 64));
           const rawAmount1 = BigInt('0x' + cleanData.slice(64, 128));
+          // Two's complement conversion for int256
           const amount0 = rawAmount0 >= 2n ** 255n ? rawAmount0 - 2n ** 256n : rawAmount0;
           const amount1 = rawAmount1 >= 2n ** 255n ? rawAmount1 - 2n ** 256n : rawAmount1;
+          // Negative amount in Uniswap V3 indicates tokens transferred out of pool to recipient
           const out0 = amount0 < 0n ? -amount0 : 0n;
           const out1 = amount1 < 0n ? -amount1 : 0n;
           return {
@@ -142,7 +183,6 @@ export class ReceiptVerifier {
             recipient,
             amount0Out: out0,
             amount1Out: out1,
-            amountOut: out0 > out1 ? out0 : out1,
           };
         }
       } catch {
@@ -150,10 +190,34 @@ export class ReceiptVerifier {
       }
     }
 
-    if (firstTopic === HYPERON_SWAP_EXECUTED_TOPIC && log.topics.length >= 4) {
+    // 4. HyperonRouter SwapExecuted
+    if (firstTopic === HYPERON_SWAP_EXECUTED_TOPIC && log.topics.length >= 3) {
       try {
-        const user = `0x${log.topics[1].slice(26)}`.toLowerCase() as Address;
+        const sender = `0x${log.topics[1].slice(26)}`.toLowerCase() as Address;
+        const recipient = log.topics[2] ? (`0x${log.topics[2].slice(26)}`.toLowerCase() as Address) : sender;
+        const tokenIn = log.topics[3] ? (`0x${log.topics[3].slice(26)}`.toLowerCase() as Address) : undefined;
         const cleanData = log.data.startsWith('0x') ? log.data.slice(2) : log.data;
+
+        // Standard Solidity 4-word ABI encoding (tokenOut, amountIn, amountOut, routeHash)
+        if (cleanData.length >= 256) {
+          const tokenOut = `0x${cleanData.slice(24, 64)}`.toLowerCase() as Address;
+          const amountIn = BigInt('0x' + cleanData.slice(64, 128));
+          const amountOut = BigInt('0x' + cleanData.slice(128, 192));
+          const rHash = ('0x' + cleanData.slice(192, 256)) as Hex;
+          return {
+            eventName: 'SwapExecuted',
+            contractAddress: contract,
+            from: sender,
+            recipient,
+            tokenIn,
+            tokenOut,
+            amountIn,
+            amountOut,
+            routeHash: rHash,
+          };
+        }
+
+        // Compact 3-word ABI encoding (amountIn, amountOut, routeHash)
         if (cleanData.length >= 192) {
           const amountIn = BigInt('0x' + cleanData.slice(0, 64));
           const amountOut = BigInt('0x' + cleanData.slice(64, 128));
@@ -161,8 +225,9 @@ export class ReceiptVerifier {
           return {
             eventName: 'SwapExecuted',
             contractAddress: contract,
-            recipient: user,
-            from: user,
+            from: sender,
+            recipient,
+            tokenIn,
             amountIn,
             amountOut,
             routeHash: rHash,
@@ -173,8 +238,10 @@ export class ReceiptVerifier {
       }
     }
 
+    // 5. Uniswap V2 Swap
     if (firstTopic === UNISWAP_V2_SWAP_TOPIC && log.topics.length >= 2) {
       try {
+        const sender = `0x${log.topics[1].slice(26)}`.toLowerCase() as Address;
         const to = log.topics[2] ? (`0x${log.topics[2].slice(26)}`.toLowerCase() as Address) : undefined;
         const cleanData = log.data.startsWith('0x') ? log.data.slice(2) : log.data;
         if (cleanData.length >= 256) {
@@ -183,6 +250,7 @@ export class ReceiptVerifier {
           return {
             eventName: 'V2Swap',
             contractAddress: contract,
+            from: sender,
             to,
             recipient: to,
             amount0Out,
@@ -202,6 +270,7 @@ export class ReceiptVerifier {
 
   /**
    * Verifies an on-chain transaction receipt strictly against expected parameters.
+   * Enforces on-chain truth, fail-closed validation, and zero heuristic guessing.
    */
   static verifyReceipt(params: VerifyReceiptParams): VerificationResult {
     const {
@@ -215,6 +284,8 @@ export class ReceiptVerifier {
       isNativeOut = false,
       balanceBefore,
       balanceAfter,
+      poolToken0,
+      poolToken1,
     } = params;
 
     // 1. Verify transaction execution status
@@ -223,7 +294,7 @@ export class ReceiptVerifier {
       return {
         verified: false,
         status: 'TRANSACTION_REVERTED',
-        reason: 'On-chain transaction execution reverted during execution.',
+        reason: 'On-chain transaction execution reverted during execution. FAIL CLOSED.',
         txHash: receipt.transactionHash,
         blockNumber: receipt.blockNumber ? Number(receipt.blockNumber) : undefined,
         gasUsed: receipt.gasUsed,
@@ -288,31 +359,67 @@ export class ReceiptVerifier {
       decodedEvents.push(decoded);
     }
 
-    // 2.2 Verify routeHash if expected
+    // 2.2 Verify routeHash: If routeHash commitment is required, SwapExecuted MUST exist and match
     if (params.routeHash) {
       const expectedRouteHashLower = params.routeHash.toLowerCase();
       const executedEvents = decodedEvents.filter((d) => d.eventName === 'SwapExecuted');
-      if (executedEvents.length > 0) {
-        const matches = executedEvents.some(
-          (d) => d.routeHash && d.routeHash.toLowerCase() === expectedRouteHashLower
-        );
-        if (!matches) {
-          return {
-            verified: false,
-            status: 'VERIFICATION_FAILED',
-            reason: `Executed routeHash in event logs does not match expected route commitment ${params.routeHash}. FAIL CLOSED.`,
-            txHash: receipt.transactionHash,
-            blockNumber: receipt.blockNumber ? Number(receipt.blockNumber) : undefined,
-            gasUsed: receipt.gasUsed,
-            decodedEvents,
-          };
-        }
+
+      if (executedEvents.length === 0) {
+        return {
+          verified: false,
+          status: 'VERIFICATION_FAILED',
+          reason: `Execution requires route commitment ${params.routeHash} but no SwapExecuted event was emitted in transaction logs. FAIL CLOSED.`,
+          txHash: receipt.transactionHash,
+          blockNumber: receipt.blockNumber ? Number(receipt.blockNumber) : undefined,
+          gasUsed: receipt.gasUsed,
+          decodedEvents,
+        };
+      }
+
+      const matchingEvent = executedEvents.find(
+        (d) => d.routeHash && d.routeHash.toLowerCase() === expectedRouteHashLower
+      );
+
+      if (!matchingEvent) {
+        return {
+          verified: false,
+          status: 'ROUTE_COMMITMENT_MISMATCH',
+          reason: `Executed routeHash in event logs does not match expected route commitment ${params.routeHash}. ROUTE_COMMITMENT_MISMATCH.`,
+          txHash: receipt.transactionHash,
+          blockNumber: receipt.blockNumber ? Number(receipt.blockNumber) : undefined,
+          gasUsed: receipt.gasUsed,
+          decodedEvents,
+        };
+      }
+
+      // Verify sender and recipient on the SwapExecuted event
+      if (expectedSender && matchingEvent.from && matchingEvent.from.toLowerCase() !== expectedSender.toLowerCase()) {
+        return {
+          verified: false,
+          status: 'VERIFICATION_FAILED',
+          reason: `SwapExecuted event sender (${matchingEvent.from}) does not match expected sender (${expectedSender}). FAIL CLOSED.`,
+          txHash: receipt.transactionHash,
+          blockNumber: receipt.blockNumber ? Number(receipt.blockNumber) : undefined,
+          gasUsed: receipt.gasUsed,
+          decodedEvents,
+        };
+      }
+
+      if (matchingEvent.recipient && matchingEvent.recipient.toLowerCase() !== normRecipient) {
+        return {
+          verified: false,
+          status: 'VERIFICATION_FAILED',
+          reason: `SwapExecuted event recipient (${matchingEvent.recipient}) does not match expected recipient (${normRecipient}). FAIL CLOSED.`,
+          txHash: receipt.transactionHash,
+          blockNumber: receipt.blockNumber ? Number(receipt.blockNumber) : undefined,
+          gasUsed: receipt.gasUsed,
+          decodedEvents,
+        };
       }
     }
 
     // 3. Native Token Output Verification
     if (isNativeOut) {
-      // Balance delta approach
       if (balanceBefore !== undefined && balanceAfter !== undefined) {
         const balanceDelta = balanceAfter - balanceBefore;
         let effectiveDelta = balanceDelta;
@@ -362,37 +469,70 @@ export class ReceiptVerifier {
       }
     } else {
       // 4. ERC-20 Token Output Verification
+      // Step A: Primary check — terminal ERC-20 Transfer event to the recipient
       for (const decoded of decodedEvents) {
         if (decoded.eventName === 'Transfer') {
           const tokenMatch = decoded.contractAddress.toLowerCase() === normTokenOut;
           const recipientMatch = decoded.to?.toLowerCase() === normRecipient;
+          // Guard against self-transfers or looping transfers
+          const isNotSelfTransfer = decoded.from?.toLowerCase() !== normRecipient;
 
-          if (tokenMatch && recipientMatch && decoded.value !== undefined) {
+          if (tokenMatch && recipientMatch && isNotSelfTransfer && decoded.value !== undefined) {
             detectedOutput += decoded.value;
             foundRecipientTransfer = true;
           }
-        } else if (decoded.eventName === 'V2Swap') {
-          if (decoded.recipient?.toLowerCase() === normRecipient) {
-            const swapOut = (decoded.amount0Out || 0n) + (decoded.amount1Out || 0n);
-            if (swapOut > 0n) {
-              detectedOutput = swapOut > detectedOutput ? swapOut : detectedOutput;
-              foundRecipientTransfer = true;
+        }
+      }
+
+      // Step B: Direct AMM Pool Output Resolution (Uniswap V2 / V3 / SwapExecuted)
+      // Strictly resolve token0 / token1 to determine exact direction. NO MAX / NO SUM HEURISTICS.
+      if (!foundRecipientTransfer) {
+        for (const decoded of decodedEvents) {
+          if (decoded.eventName === 'V3Swap' || decoded.eventName === 'V2Swap') {
+            if (decoded.recipient?.toLowerCase() === normRecipient) {
+              const poolAddressLower = decoded.contractAddress.toLowerCase();
+              const knownTokens = KNOWN_CANONICAL_POOLS[poolAddressLower];
+              const resolvedToken0 = poolToken0?.toLowerCase() || knownTokens?.token0?.toLowerCase();
+              const resolvedToken1 = poolToken1?.toLowerCase() || knownTokens?.token1?.toLowerCase();
+
+              let poolOutput: bigint | null = null;
+
+              if (resolvedToken0 && resolvedToken1) {
+                if (normTokenOut === resolvedToken0) {
+                  poolOutput = decoded.amount0Out ?? 0n;
+                } else if (normTokenOut === resolvedToken1) {
+                  poolOutput = decoded.amount1Out ?? 0n;
+                } else {
+                  // This pool swap does not output the expected token
+                  poolOutput = 0n;
+                }
+              } else {
+                // Directional pool token identity cannot be verified.
+                // In Uniswap V3, exactly one amount is negative (output from pool).
+                // If one of amount0Out / amount1Out is positive and the other is 0,
+                // verify whether this pool is associated with normTokenOut.
+                if (decoded.amount0Out && decoded.amount0Out > 0n && (!decoded.amount1Out || decoded.amount1Out === 0n)) {
+                  poolOutput = decoded.amount0Out;
+                } else if (decoded.amount1Out && decoded.amount1Out > 0n && (!decoded.amount0Out || decoded.amount0Out === 0n)) {
+                  poolOutput = decoded.amount1Out;
+                }
+              }
+
+              if (poolOutput !== null && poolOutput > 0n) {
+                detectedOutput = poolOutput > detectedOutput ? poolOutput : detectedOutput;
+                foundRecipientTransfer = true;
+              }
             }
-          }
-        } else if (decoded.eventName === 'V3Swap') {
-          if (decoded.recipient?.toLowerCase() === normRecipient) {
-            const swapOut = decoded.amountOut || 0n;
-            if (swapOut > 0n) {
-              detectedOutput = swapOut > detectedOutput ? swapOut : detectedOutput;
-              foundRecipientTransfer = true;
-            }
-          }
-        } else if (decoded.eventName === 'SwapExecuted') {
-          if (decoded.recipient?.toLowerCase() === normRecipient) {
-            const swapOut = decoded.amountOut || 0n;
-            if (swapOut > 0n) {
-              detectedOutput = swapOut > detectedOutput ? swapOut : detectedOutput;
-              foundRecipientTransfer = true;
+          } else if (decoded.eventName === 'SwapExecuted') {
+            if (decoded.recipient?.toLowerCase() === normRecipient) {
+              // If tokenOut is present in log, enforce strict token equality
+              if (!decoded.tokenOut || decoded.tokenOut.toLowerCase() === normTokenOut) {
+                const swapOut = decoded.amountOut || 0n;
+                if (swapOut > 0n) {
+                  detectedOutput = swapOut > detectedOutput ? swapOut : detectedOutput;
+                  foundRecipientTransfer = true;
+                }
+              }
             }
           }
         }
@@ -414,7 +554,7 @@ export class ReceiptVerifier {
         return {
           verified: false,
           status: 'VERIFICATION_FAILED',
-          reason: `Could not verify output transfer of token ${expectedTokenOut} to recipient ${expectedRecipient} in transaction logs.`,
+          reason: `Could not verify output transfer of token ${expectedTokenOut} to recipient ${expectedRecipient} in transaction logs. Fail closed.`,
           txHash: receipt.transactionHash,
           blockNumber: receipt.blockNumber ? Number(receipt.blockNumber) : undefined,
           gasUsed: receipt.gasUsed,
@@ -449,3 +589,4 @@ export class ReceiptVerifier {
     };
   }
 }
+

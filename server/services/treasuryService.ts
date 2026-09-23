@@ -21,8 +21,8 @@ export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = 
     networkType: 'EVM',
     address: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
     explorerUrl: 'https://etherscan.io/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
-    totalCollectedUsd24h: 38450.20,
-    totalCollectedLifetimeUsd: 1420500.00,
+    totalCollectedUsd24h: 0.0,
+    totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',
   },
   solana: {
@@ -31,8 +31,8 @@ export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = 
     networkType: 'Solana',
     address: '5zz8MHDqLTV3yBX3Qs2KnmjvMzh6qvbzMC4b6zfXAtt4',
     explorerUrl: 'https://solscan.io/account/5zz8MHDqLTV3yBX3Qs2KnmjvMzh6qvbzMC4b6zfXAtt4',
-    totalCollectedUsd24h: 24190.50,
-    totalCollectedLifetimeUsd: 890400.00,
+    totalCollectedUsd24h: 0.0,
+    totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',
   },
   bsc: {
@@ -41,8 +41,8 @@ export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = 
     networkType: 'EVM',
     address: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
     explorerUrl: 'https://bscscan.com/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
-    totalCollectedUsd24h: 18400.00,
-    totalCollectedLifetimeUsd: 645100.00,
+    totalCollectedUsd24h: 0.0,
+    totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',
   },
   tron: {
@@ -51,8 +51,8 @@ export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = 
     networkType: 'Tron',
     address: 'TLzquLdPwYGf8q71V6E4mPAAnPYgvxQNBj',
     explorerUrl: 'https://tronscan.org/#/address/TLzquLdPwYGf8q71V6E4mPAAnPYgvxQNBj',
-    totalCollectedUsd24h: 21350.00,
-    totalCollectedLifetimeUsd: 780900.00,
+    totalCollectedUsd24h: 0.0,
+    totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',
   },
   arbitrum: {
@@ -61,8 +61,8 @@ export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = 
     networkType: 'EVM',
     address: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
     explorerUrl: 'https://arbiscan.io/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
-    totalCollectedUsd24h: 16820.00,
-    totalCollectedLifetimeUsd: 540200.00,
+    totalCollectedUsd24h: 0.0,
+    totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',
   },
   base: {
@@ -71,8 +71,8 @@ export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = 
     networkType: 'EVM',
     address: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
     explorerUrl: 'https://basescan.org/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
-    totalCollectedUsd24h: 19940.00,
-    totalCollectedLifetimeUsd: 620800.00,
+    totalCollectedUsd24h: 0.0,
+    totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',
   },
 };
@@ -111,11 +111,26 @@ export class TreasuryService {
 
   public updateRecipient(chainId: string, newAddress: string): boolean {
     const key = (chainId || '').toLowerCase().trim();
-    if (this.recipients[key]) {
-      this.recipients[key].address = newAddress.trim();
-      return true;
+    const record = this.recipients[key];
+    if (!record) return false;
+
+    const trimmed = (newAddress || '').trim();
+    if (record.networkType === 'EVM') {
+      if (!/^0x[a-fA-F0-9]{40}$/.test(trimmed) || trimmed === '0x0000000000000000000000000000000000000000') {
+        throw new Error('INVALID_TREASURY_ADDRESS: Address must be a valid non-zero EVM address');
+      }
+    } else if (record.networkType === 'Solana') {
+      if (!/^[1-9A-HJ-NP-za-km-z]{32,44}$/.test(trimmed)) {
+        throw new Error('INVALID_TREASURY_ADDRESS: Address must be a valid Solana Base58 address');
+      }
+    } else if (record.networkType === 'Tron') {
+      if (!/^T[1-9A-HJ-NP-za-km-z]{33}$/.test(trimmed)) {
+        throw new Error('INVALID_TREASURY_ADDRESS: Address must be a valid TRON address starting with T');
+      }
     }
-    return false;
+
+    record.address = trimmed;
+    return true;
   }
 }
 
