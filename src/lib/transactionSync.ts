@@ -19,10 +19,13 @@ import { getChainConfig } from './chainConfig';
 export interface SyncedTxStatus {
   txHash: string;
   chainId: ChainId;
-  status: 'pending' | 'confirmed' | 'failed' | 'reverted' | 'reorged' | 'dropped' | 'replaced';
+  status: 'pending' | 'confirmed' | 'failed' | 'reverted' | 'reorged' | 'dropped' | 'replaced' | 'verification_failed';
   blockNumber?: number;
   blockHash?: string;
   confirmations: number;
+  submittedNonce?: number;
+  actualAmountOutRaw?: string;
+  reorgDetected?: boolean;
   verificationResult?: VerificationResult;
   errorMessage?: string;
 }
@@ -84,6 +87,10 @@ export class TransactionSyncEngine {
 
   /**
    * Reconciles a single transaction against live blockchain state.
+   * Strictly enforces:
+   * - Nonce tracking (never conclude dropped without submittedNonce)
+   * - Reorg protection (verify block hash matches canonical chain)
+   * - Fail-closed ReceiptVerifier (if verifier throws or fails -> VERIFICATION_FAILED)
    */
   static async reconcileTransaction(
     provider: any,
@@ -102,6 +109,36 @@ export class TransactionSyncEngine {
         currentBlock = tx.blockNumber || 0;
       }
 
+      // 1.1 Reorg Verification on Confirmed Transactions
+      if (tx.status === 'confirmed' && tx.blockNumber && tx.blockHash) {
+        try {
+          const blockHexParam = `0x${tx.blockNumber.toString(16)}`;
+          const currentCanonicalBlock = await provider.request({
+            method: 'eth_getBlockByNumber',
+            params: [blockHexParam, false],
+          });
+          if (
+            currentCanonicalBlock &&
+            currentCanonicalBlock.hash &&
+            currentCanonicalBlock.hash.toLowerCase() !== tx.blockHash.toLowerCase()
+          ) {
+            // Block hash changed -> Blockchain reorganization!
+            return {
+              txHash,
+              chainId,
+              status: 'reorged',
+              blockNumber: tx.blockNumber,
+              blockHash: tx.blockHash,
+              confirmations: 0,
+              reorgDetected: true,
+              errorMessage: `Reorg detected: Block #${tx.blockNumber} hash shifted from ${tx.blockHash} to ${currentCanonicalBlock.hash}. Transaction must be re-validated.`,
+            };
+          }
+        } catch {
+          // Keep current state on RPC transient failure
+        }
+      }
+
       // 2. Fetch transaction receipt
       const receipt = await provider.request({
         method: 'eth_getTransactionReceipt',
@@ -117,7 +154,7 @@ export class TransactionSyncEngine {
           return {
             txHash,
             chainId,
-            status: 'failed',
+            status: 'reverted',
             blockNumber: receiptBlock,
             blockHash: receipt.blockHash,
             confirmations,
@@ -125,33 +162,53 @@ export class TransactionSyncEngine {
           };
         }
 
-        // Verify receipt logs and output amounts via ReceiptVerifier
-        let verificationResult: VerificationResult | undefined;
+        // Verify receipt logs and output amounts via ReceiptVerifier (Fail Closed)
+        let verificationResult: VerificationResult;
         try {
           verificationResult = ReceiptVerifier.verifyReceipt({
             receipt,
-            expectedRecipient: (walletAddress || receipt.from || '') as Address,
+            expectedRecipient: (walletAddress || tx.walletAddress || receipt.from || '') as Address,
             expectedTokenOut: (tx.toTokenAddress || '0x0000000000000000000000000000000000000000') as Address,
             amountOutMinimum: tx.minimumReceivedRaw ? BigInt(tx.minimumReceivedRaw) : 0n,
             expectedRouter: tx.targetAddress as Address | undefined,
-            expectedSender: (walletAddress || receipt.from || '') as Address,
+            expectedSender: (walletAddress || tx.walletAddress || receipt.from || '') as Address,
             chainId,
+            routeHash: tx.routeHash as `0x${string}` | undefined,
           });
-        } catch {
-          // Fallback to receipt status
+        } catch (vErr: any) {
+          return {
+            txHash,
+            chainId,
+            status: 'verification_failed',
+            blockNumber: receiptBlock,
+            blockHash: receipt.blockHash,
+            confirmations,
+            errorMessage: `ReceiptVerifier exception: ${vErr?.message || String(vErr)}. FAIL CLOSED.`,
+          };
         }
 
-        const isVerified = verificationResult ? verificationResult.verified : true;
+        if (!verificationResult.verified) {
+          return {
+            txHash,
+            chainId,
+            status: 'verification_failed',
+            blockNumber: receiptBlock,
+            blockHash: receipt.blockHash,
+            confirmations,
+            verificationResult,
+            errorMessage: verificationResult.reason || 'On-chain output verification failed. FAIL CLOSED.',
+          };
+        }
 
         return {
           txHash,
           chainId,
-          status: isVerified ? 'confirmed' : 'failed',
+          status: 'confirmed',
           blockNumber: receiptBlock,
           blockHash: receipt.blockHash,
           confirmations,
+          actualAmountOutRaw: verificationResult.actualAmountOut?.toString(),
           verificationResult,
-          errorMessage: !isVerified ? verificationResult?.reason || 'Output verification failed' : undefined,
         };
       }
 
@@ -161,27 +218,55 @@ export class TransactionSyncEngine {
         params: [txHash],
       });
 
-      const ageMs = Date.now() - (tx.timestamp || Date.now());
+      let detectedNonce = tx.submittedNonce;
+      if (txInfo && txInfo.nonce) {
+        detectedNonce = parseInt(txInfo.nonce, 16);
+      }
 
+      // If missing from mempool and receipt null
       if (!txInfo) {
-        // If older than 90 seconds and not in mempool, check if user nonce has progressed
-        if (ageMs > 90000 && walletAddress) {
+        const queryAddress = walletAddress || tx.walletAddress;
+        // Nonce logic: ONLY evaluate dropped/replaced if submittedNonce is known!
+        if (queryAddress && detectedNonce !== undefined) {
           try {
-            const nonceHex = await provider.request({
+            const latestNonceHex = await provider.request({
               method: 'eth_getTransactionCount',
-              params: [walletAddress, 'latest'],
+              params: [queryAddress, 'latest'],
             });
-            const currentNonce = parseInt(nonceHex, 16);
-            // If current nonce has moved past, transaction was dropped or replaced
-            return {
-              txHash,
-              chainId,
-              status: 'dropped',
-              confirmations: 0,
-              errorMessage: 'Transaction dropped from mempool or superseded.',
-            };
+            const latestNonce = parseInt(latestNonceHex, 16);
+
+            if (latestNonce > detectedNonce) {
+              // Account nonce has passed submittedNonce without this tx receipt
+              const all = this.loadAllTransactions();
+              const replacement = all.find(
+                (t) =>
+                  t.txHash.toLowerCase() !== tx.txHash.toLowerCase() &&
+                  t.submittedNonce === detectedNonce &&
+                  t.walletAddress?.toLowerCase() === queryAddress.toLowerCase()
+              );
+
+              if (replacement) {
+                return {
+                  txHash,
+                  chainId,
+                  status: 'replaced',
+                  submittedNonce: detectedNonce,
+                  confirmations: 0,
+                  errorMessage: `Transaction was superseded by replacement ${replacement.txHash} with nonce ${detectedNonce}.`,
+                };
+              }
+
+              return {
+                txHash,
+                chainId,
+                status: 'dropped',
+                submittedNonce: detectedNonce,
+                confirmations: 0,
+                errorMessage: `Transaction dropped from mempool (on-chain nonce advanced to ${latestNonce}).`,
+              };
+            }
           } catch {
-            // Keep pending
+            // Keep pending on RPC error
           }
         }
       }
@@ -190,6 +275,7 @@ export class TransactionSyncEngine {
         txHash,
         chainId,
         status: 'pending',
+        submittedNonce: detectedNonce,
         confirmations: 0,
       };
     } catch (err: any) {
@@ -229,8 +315,14 @@ export class TransactionSyncEngine {
         if (idx !== -1) {
           updatedAll[idx] = {
             ...updatedAll[idx],
-            status: reconciled.status === 'confirmed' ? 'confirmed' : reconciled.status === 'pending' ? 'pending' : 'failed',
+            status: reconciled.status,
             blockNumber: reconciled.blockNumber || updatedAll[idx].blockNumber,
+            blockHash: reconciled.blockHash || updatedAll[idx].blockHash,
+            submittedNonce: reconciled.submittedNonce ?? updatedAll[idx].submittedNonce,
+            actualAmountOutRaw: reconciled.actualAmountOutRaw || updatedAll[idx].actualAmountOutRaw,
+            confirmations: reconciled.confirmations,
+            reorgDetected: reconciled.reorgDetected,
+            lastCheckedAt: Date.now(),
           };
         }
       }

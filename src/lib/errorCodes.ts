@@ -54,6 +54,9 @@ export const DEX_ERROR_CODES = {
   UNKNOWN_TRANSACTION_STATE: 'UNKNOWN_TRANSACTION_STATE',
   SECURITY_VIOLATION: 'SECURITY_VIOLATION',
   UNSUPPORTED_SPLIT_EXECUTION: 'UNSUPPORTED_SPLIT_EXECUTION',
+  APPROVAL_FAILED: 'APPROVAL_FAILED',
+  TRANSACTION_TIMEOUT: 'TRANSACTION_TIMEOUT',
+  WALLET_REJECTED: 'WALLET_REJECTED',
 } as const;
 
 export type DexErrorCode = (typeof DEX_ERROR_CODES)[keyof typeof DEX_ERROR_CODES];
@@ -145,4 +148,7 @@ export const ERROR_MESSAGES: Record<DexErrorCode, string> = {
   UNKNOWN_TRANSACTION_STATE: 'Transaction state cannot be confirmed within timeout bounds.',
   SECURITY_VIOLATION: 'Execution blocked due to payload tampering or security violation.',
   UNSUPPORTED_SPLIT_EXECUTION: 'Multi-split routes cannot be executed atomically in a single router transaction.',
+  APPROVAL_FAILED: 'Token approval failed or was reverted on-chain.',
+  TRANSACTION_TIMEOUT: 'Transaction timed out waiting for on-chain receipt confirmation.',
+  WALLET_REJECTED: 'User rejected the transaction request in wallet.',
 };

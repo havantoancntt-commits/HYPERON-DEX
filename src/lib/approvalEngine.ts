@@ -40,13 +40,13 @@ export class ApprovalEngine {
    * Reads on-chain allowance directly from the token contract.
    */
   static async readAllowance(
-    client: PublicClient,
+    client: any,
     tokenAddress: Address,
     owner: Address,
     spender: Address
   ): Promise<bigint> {
     try {
-      const allowance = (await client.readContract({
+      const allowance = (await (client as any).readContract({
         address: tokenAddress,
         abi: ERC20_ABI,
         functionName: 'allowance',

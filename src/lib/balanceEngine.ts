@@ -110,7 +110,7 @@ export class BalanceEngine {
     // Read on-chain metadata if not provided
     if (decimals === undefined || decimals === null) {
       try {
-        const dec = await client.readContract({
+        const dec = await (client as any).readContract({
           address: tokenAddress,
           abi: [
             {
@@ -131,7 +131,7 @@ export class BalanceEngine {
 
     if (!symbol) {
       try {
-        const sym = await client.readContract({
+        const sym = await (client as any).readContract({
           address: tokenAddress,
           abi: [
             {
@@ -150,7 +150,7 @@ export class BalanceEngine {
       }
     }
 
-    const rawBal = (await client.readContract({
+    const rawBal = (await (client as any).readContract({
       address: tokenAddress,
       abi: ERC20_ABI,
       functionName: 'balanceOf',

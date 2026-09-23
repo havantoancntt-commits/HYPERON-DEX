@@ -170,49 +170,51 @@ export const validateBlockchainAddress = (
 };
 
 /**
- * Retrieves the current configured fee recipients, merging localStorage updates with defaults.
+ * Retrieves the canonical verified fee recipients.
+ * LocalStorage cannot override canonical protocol security parameters for transactions.
  */
 export const getTreasuryRecipients = (): Record<string, FeeRecipientConfig> => {
-  if (typeof window === 'undefined') {
-    return DEFAULT_PROTOCOL_FEE_RECIPIENTS;
-  }
-
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_PROTOCOL_FEE_RECIPIENTS;
-    const parsed = JSON.parse(raw);
-    return {
-      ...DEFAULT_PROTOCOL_FEE_RECIPIENTS,
-      ...parsed,
-    };
-  } catch (err) {
-    console.warn('Failed to parse treasury fee recipients from storage, using defaults:', err);
-    return DEFAULT_PROTOCOL_FEE_RECIPIENTS;
-  }
+  return DEFAULT_PROTOCOL_FEE_RECIPIENTS;
 };
 
 /**
- * Returns the exact fee recipient address for a given chain or network name.
+ * Returns the exact verified fee recipient address for a given chain or network name.
+ * Fail Closed: Throws if network is unsupported. NEVER fall back to another chain silently!
  */
 export const getFeeRecipientForChain = (chainOrNetwork: string): string => {
-  const normalized = (chainOrNetwork || 'ethereum').toLowerCase().trim();
-  const all = getTreasuryRecipients();
+  if (!chainOrNetwork) {
+    throw new Error('INVALID_CHAIN: Chuỗi mạng không được để trống.');
+  }
+  const normalized = chainOrNetwork.toLowerCase().trim();
+  const all = DEFAULT_PROTOCOL_FEE_RECIPIENTS;
 
   if (all[normalized]) {
     return all[normalized].address;
   }
 
-  // Common aliases mapping
-  if (normalized.includes('sol')) return all['solana']?.address || DEFAULT_PROTOCOL_FEE_RECIPIENTS.solana.address;
-  if (normalized.includes('tron') || normalized.includes('trx')) return all['tron']?.address || DEFAULT_PROTOCOL_FEE_RECIPIENTS.tron.address;
-  if (normalized.includes('bsc') || normalized.includes('binance')) return all['bsc']?.address || DEFAULT_PROTOCOL_FEE_RECIPIENTS.bsc.address;
-  if (normalized.includes('arb')) return all['arbitrum']?.address || DEFAULT_PROTOCOL_FEE_RECIPIENTS.arbitrum.address;
-  if (normalized.includes('base')) return all['base']?.address || DEFAULT_PROTOCOL_FEE_RECIPIENTS.base.address;
-  if (normalized.includes('op') || normalized.includes('optimism')) return all['optimism']?.address || DEFAULT_PROTOCOL_FEE_RECIPIENTS.optimism.address;
-  if (normalized.includes('poly') || normalized.includes('matic')) return all['polygon']?.address || DEFAULT_PROTOCOL_FEE_RECIPIENTS.polygon.address;
+  // Exact aliases mapping
+  if (normalized === 'sol' || normalized === 'solana') return all.solana.address;
+  if (normalized === 'tron' || normalized === 'trx') return all.tron.address;
+  if (normalized === 'bsc' || normalized === 'binance' || normalized === '56') return all.bsc.address;
+  if (normalized === 'arb' || normalized === 'arbitrum' || normalized === '42161') return all.arbitrum.address;
+  if (normalized === 'base' || normalized === '8453') return all.base.address;
+  if (normalized === 'op' || normalized === 'optimism' || normalized === '10') return all.optimism.address;
+  if (normalized === 'poly' || normalized === 'polygon' || normalized === 'matic' || normalized === '137') return all.polygon.address;
+  if (normalized === 'eth' || normalized === 'ethereum' || normalized === '1') return all.ethereum.address;
 
-  // Default EVM fallback
-  return DEFAULT_PROTOCOL_FEE_RECIPIENTS.ethereum.address;
+  throw new Error(`INVALID_CHAIN: Không tìm thấy địa chỉ treasury hợp lệ cho mạng '${chainOrNetwork}'. Giao dịch bị chặn để bảo vệ tài sản.`);
+};
+
+/**
+ * Validates that a fee transaction candidate address strictly matches the canonical treasury.
+ */
+export const verifyTreasuryAddress = (chainOrNetwork: string, candidateAddress: string): boolean => {
+  try {
+    const verified = getFeeRecipientForChain(chainOrNetwork);
+    return verified.toLowerCase() === candidateAddress.trim().toLowerCase();
+  } catch {
+    return false;
+  }
 };
 
 /**

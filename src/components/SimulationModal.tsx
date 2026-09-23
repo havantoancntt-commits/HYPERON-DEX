@@ -82,34 +82,41 @@ export const SimulationModal: React.FC = () => {
       const fromToken = activeQuote.fromToken;
       const routerAddress = (activeSimulation.routerAddress || activeSimulation.toAddress) as `0x${string}`;
 
-      // Check ERC-20 allowance if not native token
-      if (!fromToken.isNative && fromToken.address && fromToken.address.startsWith('0x') && routerAddress) {
+      if (!routerAddress || !routerAddress.startsWith('0x') || routerAddress.length !== 42) {
+        throw new Error('INVALID_ROUTER: Địa chỉ router hoán đổi không hợp lệ.');
+      }
+      if (!activeSimulation.calldata || !activeSimulation.calldata.startsWith('0x')) {
+        throw new Error('INVALID_CALLDATA: Calldata hoán đổi không hợp lệ từ engine.');
+      }
+
+      // Check ERC-20 allowance if not native token (Fail Closed)
+      if (!fromToken.isNative && fromToken.address && fromToken.address.startsWith('0x')) {
         setExecutionStep('CHECKING_ALLOWANCE');
         const tokenDecimals = fromToken.decimals || 18;
         const requiredAmountWei = parseUnits(activeQuote.fromAmount.toString(), tokenDecimals);
 
-        try {
-          const currentAllowance = await checkAllowance(fromToken.address as `0x${string}`, address as `0x${string}`, routerAddress);
-          if (currentAllowance < requiredAmountWei) {
-            setExecutionStep('APPROVING');
-            addToast({
-              title: 'Cần Phê Duyệt Token (Approve)',
-              message: `Vui lòng xác nhận phê duyệt chi tiêu ${fromToken.symbol} trong cửa sổ ví của bạn.`,
-              type: 'info',
-            });
+        const currentAllowance = await checkAllowance(fromToken.address as `0x${string}`, address as `0x${string}`, routerAddress);
+        if (currentAllowance < requiredAmountWei) {
+          setExecutionStep('APPROVING');
+          addToast({
+            title: 'Cần Phê Duyệt Token (Approve)',
+            message: `Vui lòng xác nhận phê duyệt chi tiêu ${fromToken.symbol} trong cửa sổ ví của bạn.`,
+            type: 'info',
+          });
 
-            const approveTx = await approveTokenOnChain(fromToken.address as `0x${string}`, routerAddress);
-            setExecutionStep('APPROVAL_PENDING');
-            addToast({
-              title: 'Đã Gửi Lệnh Phê Duyệt',
-              message: `Mã duyệt token: ${approveTx.substring(0, 10)}... Đang tiếp tục hoán đổi.`,
-              type: 'info',
-            });
-            // Small pause for state propagation
-            await new Promise((resolve) => setTimeout(resolve, 1500));
+          const approveTx = await approveTokenOnChain(fromToken.address as `0x${string}`, routerAddress, requiredAmountWei);
+          setExecutionStep('APPROVAL_PENDING');
+          addToast({
+            title: 'Đã Gửi Lệnh Phê Duyệt',
+            message: `Mã duyệt token: ${approveTx.substring(0, 10)}... Đang xác thực on-chain.`,
+            type: 'info',
+          });
+
+          // Re-read on-chain allowance to verify approval succeeded (Fail Closed)
+          const verifiedAllowance = await checkAllowance(fromToken.address as `0x${string}`, address as `0x${string}`, routerAddress);
+          if (verifiedAllowance < requiredAmountWei) {
+            throw new Error(`Xác thực phê duyệt thất bại: Hạn mức trên chuỗi (${verifiedAllowance.toString()}) vẫn nhỏ hơn lượng cần hoán đổi (${requiredAmountWei.toString()}).`);
           }
-        } catch (allowanceErr: any) {
-          console.warn('[SimulationModal] Allowance check or approval handled with fallback:', allowanceErr);
         }
       }
 

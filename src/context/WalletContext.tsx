@@ -180,52 +180,13 @@ export const SANDBOX_PROFILES: SandboxAccount[] = [];
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeSandboxIndex, setActiveSandboxIndex] = useState<number>(0);
 
-  const [isConnected, setIsConnected] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const type = localStorage.getItem('hyperon_wallet_type');
-      if (type === 'sandbox' || type === 'demo') {
-        localStorage.removeItem('hyperon_wallet_connected');
-        localStorage.removeItem('hyperon_wallet_address');
-        localStorage.removeItem('hyperon_wallet_type');
-        localStorage.removeItem('hyperon_wallet_sandbox_idx');
-        return false;
-      }
-      return localStorage.getItem('hyperon_wallet_connected') === 'true';
-    }
-    return false;
-  });
-
-  const [address, setAddress] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const type = localStorage.getItem('hyperon_wallet_type');
-      if (type === 'sandbox' || type === 'demo') return '';
-      if (localStorage.getItem('hyperon_wallet_connected') === 'true') {
-        return localStorage.getItem('hyperon_wallet_address') || '';
-      }
-    }
-    return '';
-  });
-
+  // FAIL CLOSED: Never assume wallet is connected on startup from localStorage without provider verification
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [address, setAddress] = useState<string>('');
   const [chainId, setChainId] = useState<ChainId>('ethereum');
-  const [walletType, setWalletType] = useState<SupportedWalletType>(() => {
-    if (typeof window !== 'undefined') {
-      const type = localStorage.getItem('hyperon_wallet_type');
-      if (type === 'sandbox' || type === 'demo') return null;
-      if (localStorage.getItem('hyperon_wallet_connected') === 'true') {
-        return (localStorage.getItem('hyperon_wallet_type') as SupportedWalletType) || null;
-      }
-    }
-    return null;
-  });
-
+  const [walletType, setWalletType] = useState<SupportedWalletType>(null);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
-
-  const [isWatchOnly, setIsWatchOnly] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('hyperon_wallet_type') === 'watch_only';
-    }
-    return false;
-  });
+  const [isWatchOnly, setIsWatchOnly] = useState<boolean>(false);
 
   const [recentAccounts, setRecentAccounts] = useState<RecentWalletAccount[]>(() => {
     if (typeof window !== 'undefined') {
@@ -255,12 +216,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [balances, setBalances] = useState<Record<string, number>>(() => ({
     ...ZERO_BALANCES,
   }));
-  const [lifecycleState, setLifecycleState] = useState<WalletLifecycleState>(() => {
-    if (typeof window !== 'undefined' && localStorage.getItem('hyperon_wallet_connected') === 'true') {
-      return 'CONNECTED';
-    }
-    return 'DISCONNECTED';
-  });
+  const [lifecycleState, setLifecycleState] = useState<WalletLifecycleState>('DISCONNECTED');
   const [isWrongChain, setIsWrongChain] = useState<boolean>(false);
   const [tokenBalances, setTokenBalances] = useState<Record<string, TokenBalanceDetail>>({});
 
@@ -564,7 +520,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const client = createPublicClient({
         chain: targetChain,
         transport: http(),
-      });
+      }) as any;
 
       const chainTokens = VERIFIED_TOKENS.filter((t) => t.chainId === chainId).map((t) => ({
         address: t.address,
@@ -697,17 +653,66 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       provider.on?.('chainChanged', handleChainChanged);
       provider.on?.('disconnect', handleDisconnect);
 
-      // Verify connected accounts if previously saved
-      if (localStorage.getItem('hyperon_wallet_connected') === 'true' && localStorage.getItem('hyperon_wallet_type') !== 'sandbox') {
-        provider
-          .request({ method: 'eth_accounts' })
-          .then((accounts: string[]) => {
-            if (accounts && accounts.length > 0) {
-              setAddress(accounts[0]);
+      // Verify connected accounts directly from real provider (Fail Closed)
+      const savedType = typeof window !== 'undefined' ? localStorage.getItem('hyperon_wallet_type') : null;
+      if (savedType && savedType !== 'sandbox' && savedType !== 'demo') {
+        Promise.all([
+          provider.request({ method: 'eth_accounts' }),
+          provider.request({ method: 'eth_chainId' }).catch(() => null),
+        ])
+          .then(([accounts, chainHex]: [string[], string | null]) => {
+            if (accounts && accounts.length > 0 && accounts[0].startsWith('0x')) {
+              const liveAddr = accounts[0];
+              setAddress(liveAddr);
               setIsConnected(true);
+              setWalletType(savedType as SupportedWalletType);
+
+              if (chainHex) {
+                const detectedChain = HEX_CHAIN_TO_ID[chainHex.toLowerCase()];
+                if (detectedChain) {
+                  setChainId(detectedChain);
+                  setIsWrongChain(false);
+                  setLifecycleState('CONNECTED');
+                } else {
+                  setIsWrongChain(true);
+                  setLifecycleState('WRONG_CHAIN');
+                }
+              } else {
+                setLifecycleState('CONNECTED');
+              }
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('hyperon_wallet_connected', 'true');
+                localStorage.setItem('hyperon_wallet_address', liveAddr);
+              }
+              refreshBalances();
+            } else {
+              // Provider returned no accounts -> user locked wallet or disconnected
+              setIsConnected(false);
+              setLifecycleState('DISCONNECTED');
+              setAddress('');
+              setWalletType(null);
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('hyperon_wallet_connected');
+                localStorage.removeItem('hyperon_wallet_address');
+                localStorage.removeItem('hyperon_wallet_type');
+              }
             }
           })
-          .catch(() => {});
+          .catch(() => {
+            setIsConnected(false);
+            setLifecycleState('DISCONNECTED');
+            setAddress('');
+            setWalletType(null);
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('hyperon_wallet_connected');
+              localStorage.removeItem('hyperon_wallet_address');
+              localStorage.removeItem('hyperon_wallet_type');
+            }
+          });
+      } else {
+        setIsConnected(false);
+        setLifecycleState('DISCONNECTED');
+        setAddress('');
       }
     } catch {
       // Ignore provider initialization errors
@@ -928,7 +933,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                   chainId: chainHex,
                   chainName: chainConfig.name,
                   nativeCurrency: chainConfig.nativeCurrency,
-                  rpcUrls: [chainConfig.rpcUrl],
+                  rpcUrls: chainConfig.rpcUrls,
                   blockExplorerUrls: [chainConfig.explorerUrl],
                 },
               ],
@@ -1087,10 +1092,20 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     let currentBlock = 0;
+    let submittedNonce: number | undefined;
     try {
       if (provider && provider.request) {
-        const blockHex = await provider.request({ method: 'eth_blockNumber' });
-        currentBlock = parseInt(blockHex, 16);
+        const [blockHex, txObj, countHex] = await Promise.all([
+          provider.request({ method: 'eth_blockNumber' }).catch(() => null),
+          provider.request({ method: 'eth_getTransactionByHash', params: [txHash] }).catch(() => null),
+          provider.request({ method: 'eth_getTransactionCount', params: [address, 'latest'] }).catch(() => null),
+        ]);
+        if (blockHex) currentBlock = parseInt(blockHex, 16);
+        if (txObj?.nonce) {
+          submittedNonce = parseInt(txObj.nonce, 16);
+        } else if (countHex) {
+          submittedNonce = Math.max(0, parseInt(countHex, 16) - 1);
+        }
       }
       if (!currentBlock) {
         const healthRes = await fetch('/api/health');
@@ -1111,6 +1126,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       status: 'pending',
       correlationId,
       blockNumber: currentBlock || 0,
+      submittedNonce,
+      walletAddress: address,
     };
 
     setTransactions((prev) => [newTx, ...prev]);
@@ -1132,6 +1149,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             if (receipt) {
               const isStatusSuccess = receipt.status === '0x1' || receipt.status === 1;
               let isFullyVerified = isStatusSuccess;
+              let actualAmountOutRaw: string | undefined;
 
               if (isStatusSuccess && txData.targetAddress) {
                 try {
@@ -1147,13 +1165,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                   if (!verification.verified) {
                     isFullyVerified = false;
                     console.warn('[ReceiptVerifier] Criteria check:', verification.reason);
+                  } else {
+                    actualAmountOutRaw = verification.actualAmountOut?.toString();
                   }
                 } catch (vErr) {
+                  isFullyVerified = false;
                   console.warn('[ReceiptVerifier] Check error:', vErr);
                 }
               }
 
               const minedBlock = receipt.blockNumber ? parseInt(receipt.blockNumber, 16) : currentBlock;
+              const minedBlockHash = receipt.blockHash;
               const finalStatus = isFullyVerified ? 'confirmed' : 'failed';
 
               setTransactions((prev) =>
@@ -1163,6 +1185,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                         ...item,
                         status: finalStatus,
                         blockNumber: minedBlock > 0 ? minedBlock : item.blockNumber,
+                        blockHash: minedBlockHash || item.blockHash,
+                        actualAmountOutRaw: actualAmountOutRaw || item.actualAmountOutRaw,
                       }
                     : item
                 )
@@ -1172,6 +1196,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 ...newTx,
                 status: finalStatus,
                 blockNumber: minedBlock > 0 ? minedBlock : newTx.blockNumber,
+                blockHash: minedBlockHash,
+                actualAmountOutRaw,
               };
               TransactionSyncEngine.recordTransaction(updatedTxRecord);
 
@@ -1241,7 +1267,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const client = createPublicClient({
         chain: targetChain,
         transport: http(),
-      });
+      }) as any;
 
       const maxUint256 = 115792089237316195423570985008687907853269984665640564039457584007913129639935n;
       const amountToApprove = amountRaw || maxUint256;

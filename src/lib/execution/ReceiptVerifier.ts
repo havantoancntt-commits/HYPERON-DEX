@@ -122,6 +122,57 @@ export class ReceiptVerifier {
       }
     }
 
+    if (firstTopic === UNISWAP_V3_SWAP_TOPIC && log.topics.length >= 3) {
+      try {
+        const sender = `0x${log.topics[1].slice(26)}`.toLowerCase() as Address;
+        const recipient = `0x${log.topics[2].slice(26)}`.toLowerCase() as Address;
+        const cleanData = log.data.startsWith('0x') ? log.data.slice(2) : log.data;
+        if (cleanData.length >= 128) {
+          const rawAmount0 = BigInt('0x' + cleanData.slice(0, 64));
+          const rawAmount1 = BigInt('0x' + cleanData.slice(64, 128));
+          const amount0 = rawAmount0 >= 2n ** 255n ? rawAmount0 - 2n ** 256n : rawAmount0;
+          const amount1 = rawAmount1 >= 2n ** 255n ? rawAmount1 - 2n ** 256n : rawAmount1;
+          const out0 = amount0 < 0n ? -amount0 : 0n;
+          const out1 = amount1 < 0n ? -amount1 : 0n;
+          return {
+            eventName: 'V3Swap',
+            contractAddress: contract,
+            from: sender,
+            to: recipient,
+            recipient,
+            amount0Out: out0,
+            amount1Out: out1,
+            amountOut: out0 > out1 ? out0 : out1,
+          };
+        }
+      } catch {
+        // Fall through
+      }
+    }
+
+    if (firstTopic === HYPERON_SWAP_EXECUTED_TOPIC && log.topics.length >= 4) {
+      try {
+        const user = `0x${log.topics[1].slice(26)}`.toLowerCase() as Address;
+        const cleanData = log.data.startsWith('0x') ? log.data.slice(2) : log.data;
+        if (cleanData.length >= 192) {
+          const amountIn = BigInt('0x' + cleanData.slice(0, 64));
+          const amountOut = BigInt('0x' + cleanData.slice(64, 128));
+          const rHash = ('0x' + cleanData.slice(128, 192)) as Hex;
+          return {
+            eventName: 'SwapExecuted',
+            contractAddress: contract,
+            recipient: user,
+            from: user,
+            amountIn,
+            amountOut,
+            routeHash: rHash,
+          };
+        }
+      } catch {
+        // Fall through
+      }
+    }
+
     if (firstTopic === UNISWAP_V2_SWAP_TOPIC && log.topics.length >= 2) {
       try {
         const to = log.topics[2] ? (`0x${log.topics[2].slice(26)}`.toLowerCase() as Address) : undefined;
@@ -209,6 +260,21 @@ export class ReceiptVerifier {
       }
     }
 
+    // 2.1 Verify sender account if specified
+    if (expectedSender && receipt.from) {
+      if (receipt.from.toLowerCase() !== expectedSender.toLowerCase()) {
+        return {
+          verified: false,
+          status: 'VERIFICATION_FAILED',
+          reason: `Transaction sender (${receipt.from}) does not match expected account (${expectedSender}). FAIL CLOSED.`,
+          txHash: receipt.transactionHash,
+          blockNumber: receipt.blockNumber ? Number(receipt.blockNumber) : undefined,
+          gasUsed: receipt.gasUsed,
+          decodedEvents: [],
+        };
+      }
+    }
+
     const normRecipient = expectedRecipient.toLowerCase() as Address;
     const normTokenOut = expectedTokenOut.toLowerCase() as Address;
 
@@ -220,6 +286,28 @@ export class ReceiptVerifier {
     for (const log of receipt.logs || []) {
       const decoded = this.decodeLog(log);
       decodedEvents.push(decoded);
+    }
+
+    // 2.2 Verify routeHash if expected
+    if (params.routeHash) {
+      const expectedRouteHashLower = params.routeHash.toLowerCase();
+      const executedEvents = decodedEvents.filter((d) => d.eventName === 'SwapExecuted');
+      if (executedEvents.length > 0) {
+        const matches = executedEvents.some(
+          (d) => d.routeHash && d.routeHash.toLowerCase() === expectedRouteHashLower
+        );
+        if (!matches) {
+          return {
+            verified: false,
+            status: 'VERIFICATION_FAILED',
+            reason: `Executed routeHash in event logs does not match expected route commitment ${params.routeHash}. FAIL CLOSED.`,
+            txHash: receipt.transactionHash,
+            blockNumber: receipt.blockNumber ? Number(receipt.blockNumber) : undefined,
+            gasUsed: receipt.gasUsed,
+            decodedEvents,
+          };
+        }
+      }
     }
 
     // 3. Native Token Output Verification
@@ -286,6 +374,22 @@ export class ReceiptVerifier {
         } else if (decoded.eventName === 'V2Swap') {
           if (decoded.recipient?.toLowerCase() === normRecipient) {
             const swapOut = (decoded.amount0Out || 0n) + (decoded.amount1Out || 0n);
+            if (swapOut > 0n) {
+              detectedOutput = swapOut > detectedOutput ? swapOut : detectedOutput;
+              foundRecipientTransfer = true;
+            }
+          }
+        } else if (decoded.eventName === 'V3Swap') {
+          if (decoded.recipient?.toLowerCase() === normRecipient) {
+            const swapOut = decoded.amountOut || 0n;
+            if (swapOut > 0n) {
+              detectedOutput = swapOut > detectedOutput ? swapOut : detectedOutput;
+              foundRecipientTransfer = true;
+            }
+          }
+        } else if (decoded.eventName === 'SwapExecuted') {
+          if (decoded.recipient?.toLowerCase() === normRecipient) {
+            const swapOut = decoded.amountOut || 0n;
             if (swapOut > 0n) {
               detectedOutput = swapOut > detectedOutput ? swapOut : detectedOutput;
               foundRecipientTransfer = true;

@@ -93,16 +93,20 @@ export class TreasuryService {
   }
 
   public getFeeRecipient(chainId: string): string {
-    const key = (chainId || 'ethereum').toLowerCase().trim();
+    if (!chainId) {
+      throw new Error('INVALID_CHAIN: chainId cannot be empty. FAIL CLOSED.');
+    }
+    const key = chainId.toLowerCase().trim();
     if (this.recipients[key]) {
       return this.recipients[key].address;
     }
-    if (key.includes('sol')) return this.recipients.solana.address;
-    if (key.includes('tron') || key.includes('trx')) return this.recipients.tron.address;
-    if (key.includes('bsc') || key.includes('binance')) return this.recipients.bsc.address;
-    if (key.includes('arb')) return this.recipients.arbitrum.address;
-    if (key.includes('base')) return this.recipients.base.address;
-    return this.recipients.ethereum.address;
+    if (key === 'sol' || key === 'solana') return this.recipients.solana.address;
+    if (key === 'tron' || key === 'trx') return this.recipients.tron.address;
+    if (key === 'bsc' || key === 'binance' || key === '56') return this.recipients.bsc.address;
+    if (key === 'arb' || key === 'arbitrum' || key === '42161') return this.recipients.arbitrum.address;
+    if (key === 'base' || key === '8453') return this.recipients.base.address;
+    if (key === 'eth' || key === 'ethereum' || key === '1') return this.recipients.ethereum.address;
+    throw new Error(`INVALID_CHAIN: Treasury recipient not configured for chain '${chainId}'. FAIL CLOSED.`);
   }
 
   public updateRecipient(chainId: string, newAddress: string): boolean {

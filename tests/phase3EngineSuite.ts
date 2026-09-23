@@ -149,6 +149,8 @@ async function runTests() {
       timestamp: Date.now(),
       status: 'pending' as const,
       blockNumber: 19500000,
+      gasSpentGwei: 20,
+      gasSpentUsd: 1.5,
       correlationId: 'corr-1',
     };
 

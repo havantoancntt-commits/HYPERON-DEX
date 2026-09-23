@@ -566,7 +566,7 @@ export interface TransactionHistoryItem {
   txHash: string;
   chainId: ChainId;
   type: 'SWAP' | 'LIMIT_ORDER' | 'ADD_LIQUIDITY' | 'REMOVE_LIQUIDITY' | 'STAKE' | 'UNSTAKE' | 'CLAIM_REWARDS' | 'APPROVE' | 'BRIDGE' | 'SUPPLY' | 'BORROW' | 'REPAY' | 'WITHDRAW_LENDING' | 'FLASH_LOAN' | 'RESTAKE' | 'TRANSFER';
-  status: 'confirmed' | 'pending' | 'failed';
+  status: 'confirmed' | 'pending' | 'failed' | 'reverted' | 'reorged' | 'dropped' | 'replaced' | 'verification_failed';
   fromToken?: string;
   toToken?: string;
   fromAmount?: number;
@@ -575,12 +575,20 @@ export interface TransactionHistoryItem {
   gasSpentUsd: number;
   timestamp: number;
   blockNumber: number;
+  blockHash?: string;
+  submittedNonce?: number;
+  walletAddress?: string;
+  confirmations?: number;
   correlationId: string;
   targetAddress?: string;
   calldata?: string;
   valueHex?: string;
   toTokenAddress?: string;
   minimumReceivedRaw?: string;
+  actualAmountOutRaw?: string;
+  routeHash?: string;
+  lastCheckedAt?: number;
+  reorgDetected?: boolean;
 }
 
 export interface AIAgentIntent {
