@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
 import { soundManager } from '../lib/sound';
@@ -387,8 +388,10 @@ export const GenesisDeployerModal: React.FC<GenesisDeployerModalProps> = ({ isOp
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
+  if (!isOpen || typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
       <div className="relative w-full max-w-4xl rounded-3xl bg-[#090D18] border border-cyan-500/30 shadow-2xl overflow-hidden my-auto">
         {/* Glow Header */}
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600" />
@@ -924,6 +927,7 @@ export const GenesisDeployerModal: React.FC<GenesisDeployerModalProps> = ({ isOp
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

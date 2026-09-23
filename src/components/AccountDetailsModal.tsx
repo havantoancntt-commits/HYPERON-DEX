@@ -42,6 +42,7 @@ const WATCH_PRESETS = [
 ];
 
 const POPULAR_EXTENSIONS = [
+  { id: 'trust', name: 'Trust Wallet', symbol: 'TW', tag: 'Mobile & Extension Native' },
   { id: 'metamask', name: 'MetaMask', symbol: 'MM', tag: 'EIP-1193 / Extension' },
   { id: 'rabby', name: 'Rabby Wallet', symbol: 'RB', tag: 'DeFi Security Native' },
   { id: 'coinbase', name: 'Coinbase Wallet', symbol: 'CB', tag: 'Smart Wallet & Extension' },
@@ -69,11 +70,6 @@ export const AccountDetailsModal: React.FC = () => {
     impersonateAddress,
     recentAccounts,
     removeRecentAccount,
-    requestFaucetFunds,
-    resetBalances,
-    sandboxAccounts,
-    activeSandboxIndex,
-    switchSandboxAccount,
     discoveredProviders,
     tokenApprovals,
     revokeApproval,
@@ -83,9 +79,8 @@ export const AccountDetailsModal: React.FC = () => {
 
   const [copied, setCopied] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [faucetLoading, setFaucetLoading] = useState(false);
   const [showQr, setShowQr] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'switch' | 'security' | 'faucet'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'switch' | 'security'>('overview');
   const [impersonateInput, setImpersonateInput] = useState('');
   const [impersonateError, setImpersonateError] = useState<string | null>(null);
   const [showDisconnectModal, setShowDisconnectModal] = useState(false);
@@ -124,19 +119,6 @@ export const AccountDetailsModal: React.FC = () => {
     }
   };
 
-  const handleClaimFaucet = (tokenSymbol: string, amount: number) => {
-    setFaucetLoading(true);
-    setTimeout(() => {
-      requestFaucetFunds(tokenSymbol, amount);
-      setFaucetLoading(false);
-      addToast({
-        title: 'Faucet Funds Credited',
-        message: `+${amount.toLocaleString()} ${tokenSymbol} added to your active balance!`,
-        type: 'success',
-      });
-    }, 400);
-  };
-
   const handleToggleApproval = async (token: string, currentVal: boolean) => {
     if (currentVal) {
       await revokeApproval(token);
@@ -173,15 +155,6 @@ export const AccountDetailsModal: React.FC = () => {
     } finally {
       setSwitchingTarget(null);
     }
-  };
-
-  const handleSwitchSandbox = (idx: number) => {
-    switchSandboxAccount(idx);
-    addToast({
-      title: 'Sandbox Account Switched',
-      message: `Active profile: ${sandboxAccounts[idx]?.name || 'Institutional Sandbox'}`,
-      type: 'info',
-    });
   };
 
   const handleImpersonate = (addrToUse?: string, label?: string) => {
@@ -342,16 +315,6 @@ export const AccountDetailsModal: React.FC = () => {
             }`}
           >
             <Shield className="w-3.5 h-3.5" /> Security & Approvals
-          </button>
-          <button
-            onClick={() => setActiveTab('faucet')}
-            className={`flex items-center gap-2 pb-3 px-3 text-xs font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'faucet'
-                ? 'border-cyan-400 text-cyan-400 font-bold'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Droplets className="w-3.5 h-3.5" /> Capital Faucet
           </button>
         </div>
 
@@ -528,58 +491,6 @@ export const AccountDetailsModal: React.FC = () => {
                 </div>
               </div>
 
-              {/* Quick Switch: Institutional Sandbox Profiles */}
-              <div className="p-4 rounded-2xl bg-[#0F1422] border border-white/[0.08] space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-bold text-white">
-                    <Sliders className="w-4 h-4 text-indigo-400" />
-                    <span>Switch Institutional Sandbox Profile</span>
-                  </div>
-                  <span className="text-[10px] text-amber-400 font-mono font-bold">SIMULATION</span>
-                </div>
-
-                <div className="space-y-2">
-                  {sandboxAccounts.map((profile, idx) => {
-                    const isCurrent = walletType === 'sandbox' && activeSandboxIndex === idx && !isWatchOnly;
-                    return (
-                      <div
-                        key={profile.address}
-                        className={`p-3 rounded-xl border transition-all flex items-center justify-between ${
-                          isCurrent
-                            ? 'bg-indigo-500/15 border-indigo-500/40'
-                            : 'bg-black/40 border-white/5 hover:border-white/15'
-                        }`}
-                      >
-                        <div>
-                          <div className="text-xs font-bold text-white flex items-center gap-2">
-                            <span>{profile.name}</span>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-slate-300 font-mono">
-                              {profile.tag}
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                            {shortenAddress(profile.address, 6)} • {profile.balances.ETH} ETH • ${profile.balances.USDC.toLocaleString()} USDC
-                          </div>
-                        </div>
-
-                        {isCurrent ? (
-                          <span className="text-[10px] font-bold text-indigo-300 flex items-center gap-1 bg-indigo-500/20 px-2 py-0.5 rounded-full border border-indigo-500/30">
-                            <CheckCircle2 className="w-3 h-3" /> Active
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => handleSwitchSandbox(idx)}
-                            className="px-3 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 text-[11px] font-semibold border border-indigo-500/30 transition-colors cursor-pointer"
-                          >
-                            Switch Profile
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
               {/* Watch-Only / Impersonate Any Address */}
               <div className="p-4 rounded-2xl bg-[#0F1422] border border-white/[0.08] space-y-3">
                 <div className="flex items-center justify-between">
@@ -664,13 +575,7 @@ export const AccountDetailsModal: React.FC = () => {
                               <span className="text-[10px] text-emerald-400 font-bold">Active</span>
                             ) : (
                               <button
-                                onClick={() => {
-                                  if (acc.type === 'sandbox') {
-                                    handleSwitchSandbox(0);
-                                  } else {
-                                    handleSwitchToProvider(acc.type);
-                                  }
-                                }}
+                                onClick={() => handleSwitchToProvider(acc.type)}
                                 className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white text-[10px] font-bold cursor-pointer"
                               >
                                 Connect
@@ -795,76 +700,6 @@ export const AccountDetailsModal: React.FC = () => {
                 >
                   <ShieldX className="w-4 h-4" />
                   <span>Execute Zero-Trust Emergency Purge</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: Testnet Faucet */}
-          {activeTab === 'faucet' && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/40 to-indigo-950/40 border border-blue-500/25 space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold text-white">
-                  <span className="flex items-center gap-2 text-cyan-300">
-                    <Droplets className="w-4 h-4 text-cyan-400" /> Instant Test Capital Faucet
-                  </span>
-                  <span className="text-[10px] text-emerald-400 font-mono font-bold">UNLIMITED FREE</span>
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Request immediate test funds directly into your active session to test swaps, add liquidity to AMM pools, or execute cross-chain bridging:
-                </p>
-
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <button
-                    onClick={() => handleClaimFaucet('ETH', 1.0)}
-                    disabled={faucetLoading}
-                    className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-bold border border-white/10 transition-colors cursor-pointer flex items-center justify-between"
-                  >
-                    <span>+1.0 Native ETH</span>
-                    <span className="text-[10px] text-slate-400">Gas & Swap</span>
-                  </button>
-                  <button
-                    onClick={() => handleClaimFaucet('USDC', 2500)}
-                    disabled={faucetLoading}
-                    className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-bold border border-white/10 transition-colors cursor-pointer flex items-center justify-between"
-                  >
-                    <span>+2,500 USDC</span>
-                    <span className="text-[10px] text-emerald-400">Stablecoin</span>
-                  </button>
-                  <button
-                    onClick={() => handleClaimFaucet('HYPR', 1000)}
-                    disabled={faucetLoading}
-                    className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-cyan-300 text-xs font-bold border border-cyan-500/30 transition-colors cursor-pointer flex items-center justify-between"
-                  >
-                    <span>+1,000 HYPR</span>
-                    <span className="text-[10px] text-cyan-400">Governance</span>
-                  </button>
-                  <button
-                    onClick={() => handleClaimFaucet('WBTC', 0.1)}
-                    disabled={faucetLoading}
-                    className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-amber-300 text-xs font-bold border border-amber-500/30 transition-colors cursor-pointer flex items-center justify-between"
-                  >
-                    <span>+0.10 WBTC</span>
-                    <span className="text-[10px] text-amber-400">Wrapped BTC</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-black/30 border border-white/5 text-[11px] text-slate-400 flex items-center justify-between">
-                <span>Reset all token allocations to default state</span>
-                <button
-                  onClick={() => {
-                    resetBalances();
-                    addToast({
-                      title: 'Balances Restored',
-                      message: 'Default portfolio allocations restored.',
-                      type: 'info',
-                    });
-                  }}
-                  className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors cursor-pointer flex items-center gap-1.5"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>Reset Balances</span>
                 </button>
               </div>
             </div>

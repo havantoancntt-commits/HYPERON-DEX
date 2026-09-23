@@ -55,14 +55,9 @@ export const Header: React.FC = () => {
     connectWallet, 
     disconnectWallet, 
     switchWallet,
-    isDemoMode,
     isWatchOnly,
     recentAccounts,
-    sandboxAccounts,
-    activeSandboxIndex,
-    switchSandboxAccount,
     tokenApprovals,
-    toggleDemoMode,
     mevProtected,
     setMevProtected,
     openConnectModal,
@@ -205,12 +200,6 @@ export const Header: React.FC = () => {
               {mevProtected ? 'MEV SHIELD: ON' : 'MEV SHIELD: OFF'}
             </span>
           </button>
-
-          {isDemoMode && (
-            <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono text-[10px] font-bold tracking-wider">
-              SANDBOX SIMULATION
-            </span>
-          )}
         </div>
       </div>
 

@@ -134,108 +134,75 @@ const HEX_CHAIN_TO_ID: Record<string, ChainId> = {
   '0x89': 'polygon',
 };
 
-export const SANDBOX_PROFILES: SandboxAccount[] = [
-  {
-    address: '0x71C28B932F99B52EDb3C0257B4393608F79E9E42',
-    name: 'Whale Institutional Account',
-    tag: 'Primary Vault',
-    balances: {
-      ETH: 4.85,
-      USDC: 14250.0,
-      USDT: 5600.0,
-      WBTC: 0.38,
-      UNI: 240.0,
-      HYPR: 2500.0,
-      AETH: 2500.0,
-      LINK: 120.0,
-      AAVE: 15.0,
-      ARB: 850.0,
-      OP: 420.0,
-      BNB: 3.5,
-      POL: 1200.0,
-    },
-  },
-  {
-    address: '0x3bF98b2512F9882Fe79870A92b8F6fFf4d92415A',
-    name: 'Arbitrage Strategy Fund',
-    tag: 'High-Frequency Trader',
-    balances: {
-      ETH: 12.50,
-      USDC: 50000.0,
-      USDT: 35000.0,
-      WBTC: 1.25,
-      UNI: 1200.0,
-      HYPR: 10000.0,
-      AETH: 5000.0,
-      LINK: 500.0,
-      AAVE: 85.0,
-      ARB: 4500.0,
-      OP: 2500.0,
-      BNB: 15.0,
-      POL: 8000.0,
-    },
-  },
-  {
-    address: '0xA82136eF73b64E1A9D490E00cEb22Ec944520786',
-    name: 'Fresh Testnet Deployer',
-    tag: 'Clean Slate Wallet',
-    balances: {
-      ETH: 0.50,
-      USDC: 250.0,
-      USDT: 100.0,
-      WBTC: 0.0,
-      UNI: 0.0,
-      HYPR: 100.0,
-      AETH: 0.0,
-      LINK: 10.0,
-      AAVE: 0.0,
-      ARB: 50.0,
-      OP: 25.0,
-      BNB: 0.1,
-      POL: 50.0,
-    },
-  },
-];
+export const ZERO_BALANCES: Record<string, number> = {
+  ETH: 0,
+  USDC: 0,
+  USDT: 0,
+  WBTC: 0,
+  UNI: 0,
+  HYPR: 0,
+  AETH: 0,
+  LINK: 0,
+  AAVE: 0,
+  ARB: 0,
+  OP: 0,
+  BNB: 0,
+  POL: 0,
+  MATIC: 0,
+  SOL: 0,
+  PEPE: 0,
+  SHIB: 0,
+  DAI: 0,
+  AVAX: 0,
+  SUI: 0,
+  NEAR: 0,
+};
 
-const INITIAL_BALANCES: Record<string, number> = { ...SANDBOX_PROFILES[0].balances };
+// Deprecated mock profiles kept as empty array for interface backward-compatibility
+export const SANDBOX_PROFILES: SandboxAccount[] = [];
 
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeSandboxIndex, setActiveSandboxIndex] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('hyperon_wallet_sandbox_idx');
-      return saved ? parseInt(saved, 10) || 0 : 0;
-    }
-    return 0;
-  });
+  const [activeSandboxIndex, setActiveSandboxIndex] = useState<number>(0);
 
   const [isConnected, setIsConnected] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
+      const type = localStorage.getItem('hyperon_wallet_type');
+      if (type === 'sandbox' || type === 'demo') {
+        localStorage.removeItem('hyperon_wallet_connected');
+        localStorage.removeItem('hyperon_wallet_address');
+        localStorage.removeItem('hyperon_wallet_type');
+        localStorage.removeItem('hyperon_wallet_sandbox_idx');
+        return false;
+      }
       return localStorage.getItem('hyperon_wallet_connected') === 'true';
     }
     return false;
   });
 
   const [address, setAddress] = useState<string>(() => {
-    if (typeof window !== 'undefined' && localStorage.getItem('hyperon_wallet_connected') === 'true') {
-      return localStorage.getItem('hyperon_wallet_address') || SANDBOX_PROFILES[0].address;
+    if (typeof window !== 'undefined') {
+      const type = localStorage.getItem('hyperon_wallet_type');
+      if (type === 'sandbox' || type === 'demo') return '';
+      if (localStorage.getItem('hyperon_wallet_connected') === 'true') {
+        return localStorage.getItem('hyperon_wallet_address') || '';
+      }
     }
     return '';
   });
 
   const [chainId, setChainId] = useState<ChainId>('ethereum');
   const [walletType, setWalletType] = useState<SupportedWalletType>(() => {
-    if (typeof window !== 'undefined' && localStorage.getItem('hyperon_wallet_connected') === 'true') {
-      return (localStorage.getItem('hyperon_wallet_type') as SupportedWalletType) || 'sandbox';
+    if (typeof window !== 'undefined') {
+      const type = localStorage.getItem('hyperon_wallet_type');
+      if (type === 'sandbox' || type === 'demo') return null;
+      if (localStorage.getItem('hyperon_wallet_connected') === 'true') {
+        return (localStorage.getItem('hyperon_wallet_type') as SupportedWalletType) || null;
+      }
     }
     return null;
   });
 
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('hyperon_wallet_type') === 'sandbox';
-    }
-    return false;
-  });
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
 
   const [isWatchOnly, setIsWatchOnly] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -248,25 +215,17 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (typeof window !== 'undefined') {
       try {
         const saved = localStorage.getItem('hyperon_recent_accounts');
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            return parsed.filter((acc) => acc.type !== 'sandbox' && acc.address?.startsWith('0x'));
+          }
+        }
       } catch {
         // Fallback
       }
     }
-    return [
-      {
-        type: 'sandbox',
-        address: '0x853d955aCEf9923D26924490B60824b4231E7938',
-        name: 'Institutional Whale (5.85 ETH)',
-        lastConnected: Date.now() - 3600000 * 5,
-      },
-      {
-        type: 'sandbox',
-        address: '0x43a8B966A068b556D6c167d4Fec7fa833190E7A6',
-        name: 'Arbitrage HFT Strategy',
-        lastConnected: Date.now() - 3600000 * 24,
-      },
-    ];
+    return [];
   });
 
   const [slippage, setSlippage] = useState<number>(0.5);
@@ -277,45 +236,37 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isSiweAuthenticated, setIsSiweAuthenticated] = useState<boolean>(false);
   const [siweSession, setSiweSession] = useState<{ address: string; nonce: string; verifiedAt: number } | null>(null);
 
-  const [balances, setBalances] = useState<Record<string, number>>(() => {
-    if (typeof window !== 'undefined' && localStorage.getItem('hyperon_wallet_type') === 'sandbox') {
-      const idx = parseInt(localStorage.getItem('hyperon_wallet_sandbox_idx') || '0', 10);
-      return { ...(SANDBOX_PROFILES[idx] || SANDBOX_PROFILES[0]).balances };
-    }
-    return { ...INITIAL_BALANCES };
-  });
+  const [balances, setBalances] = useState<Record<string, number>>(() => ({
+    ...ZERO_BALANCES,
+  }));
 
   const [discoveredProviders, setDiscoveredProviders] = useState<EIP6963ProviderDetail[]>([]);
   const [activeCustomProvider, setActiveCustomProvider] = useState<any>(null);
 
   const [tokenApprovals, setTokenApprovals] = useState<Record<string, boolean>>({
-    USDC: true,
-    USDT: true,
-    UNI: true,
-    HYPR: true,
-    AETH: true,
+    USDC: false,
+    USDT: false,
+    UNI: false,
+    HYPR: false,
+    AETH: false,
     WBTC: false,
     LINK: false,
   });
 
-  const [transactions, setTransactions] = useState<TransactionHistoryItem[]>([
-    {
-      id: 'tx-init-1',
-      txHash: '0x8f7d92c81a5e0b3c4d7f12e9b0a8c4f2e6a3d9b1c7e5a0f8b4c2e6d9a1b3c5e7',
-      chainId: 'ethereum',
-      type: 'SWAP',
-      status: 'confirmed',
-      fromToken: 'ETH',
-      toToken: 'HYPR',
-      fromAmount: 1.5,
-      toAmount: 1062.5,
-      gasSpentGwei: 18,
-      gasSpentUsd: 3.85,
-      timestamp: Date.now() - 3600000 * 2,
-      blockNumber: 21948200,
-      correlationId: 'CORR-9921-HYPR',
-    },
-  ]);
+  const [transactions, setTransactions] = useState<TransactionHistoryItem[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('hyperon_tx_history');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch {
+        // Fallback
+      }
+    }
+    return [];
+  });
 
   const openConnectModal = useCallback(() => setIsConnectModalOpen(true), []);
   const closeConnectModal = useCallback(() => setIsConnectModalOpen(false), []);
@@ -414,24 +365,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
-  // Switch sandbox profile
-  const switchSandboxAccount = (index: number) => {
-    if (index < 0 || index >= SANDBOX_PROFILES.length) return;
-    const profile = SANDBOX_PROFILES[index];
-    setActiveSandboxIndex(index);
-    setAddress(profile.address);
-    setBalances(profile.balances);
-    setWalletType('sandbox');
-    setIsDemoMode(true);
-    setIsWatchOnly(false);
-    setIsConnected(true);
-    recordRecentAccount('sandbox', profile.address, `${profile.name} (${profile.tag})`);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('hyperon_wallet_connected', 'true');
-      localStorage.setItem('hyperon_wallet_address', profile.address);
-      localStorage.setItem('hyperon_wallet_type', 'sandbox');
-      localStorage.setItem('hyperon_wallet_sandbox_idx', String(index));
-    }
+  // Switch sandbox profile (Deprecated in production)
+  const switchSandboxAccount = (_index: number) => {
+    // Production mode operates strictly on real Web3 connections and on-chain addresses
   };
 
   // Helper to safely get the provider for a wallet type
@@ -585,10 +521,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return win.ethereum || null;
   }, [discoveredProviders]);
 
-  // Query live on-chain balance when an injected wallet is connected
+  // Query live on-chain balance via RPC when a wallet or address is connected
   const refreshBalances = useCallback(async () => {
-    if (!address || !address.startsWith('0x') || address.length !== 42) return;
-    if (walletType === 'sandbox') return;
+    if (!address || !address.startsWith('0x') || address.length !== 42) {
+      setBalances({ ...ZERO_BALANCES });
+      return;
+    }
 
     try {
       const targetChain = CHAIN_MAP[chainId] || mainnet;
@@ -597,20 +535,24 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         transport: http(),
       });
 
-      const updatedBalances: Record<string, number> = {};
+      const updatedBalances: Record<string, number> = { ...ZERO_BALANCES };
 
       // 1. Fetch live native balance
-      const nativeBalance = await client.getBalance({ address: address as Address });
-      const nativeVal = parseFloat(formatEther(nativeBalance));
-      if (!isNaN(nativeVal)) {
-        if (chainId === 'bsc') {
-          updatedBalances.BNB = nativeVal;
-        } else if (chainId === 'polygon') {
-          updatedBalances.POL = nativeVal;
-          updatedBalances.MATIC = nativeVal;
-        } else {
-          updatedBalances.ETH = nativeVal;
+      try {
+        const nativeBalance = await client.getBalance({ address: address as Address });
+        const nativeVal = parseFloat(formatEther(nativeBalance));
+        if (!isNaN(nativeVal)) {
+          if (chainId === 'bsc') {
+            updatedBalances.BNB = nativeVal;
+          } else if (chainId === 'polygon') {
+            updatedBalances.POL = nativeVal;
+            updatedBalances.MATIC = nativeVal;
+          } else {
+            updatedBalances.ETH = nativeVal;
+          }
         }
+      } catch (err) {
+        console.warn('Native balance query error:', err);
       }
 
       // 2. Fetch live ERC-20 token balances for verified tokens on this chain
@@ -618,7 +560,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         (t) => t.chainId === chainId && !t.isNative && t.address?.startsWith('0x') && t.address.length === 42
       );
 
-      const balanceQueries = chainTokens.slice(0, 10).map(async (tok) => {
+      const balanceQueries = chainTokens.slice(0, 15).map(async (tok) => {
         try {
           const rawBal = await client.readContract({
             address: tok.address as Address,
@@ -640,14 +582,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       });
 
-      setBalances((prev) => ({
-        ...prev,
-        ...updatedBalances,
-      }));
-    } catch {
-      // In sandbox mode or RPC failover, retain initialized balances
+      setBalances(updatedBalances);
+    } catch (err) {
+      console.warn('Live on-chain balance sync:', err);
     }
-  }, [address, chainId, walletType]);
+  }, [address, chainId]);
 
   useEffect(() => {
     refreshBalances();
@@ -743,39 +682,39 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     customProvider?: any,
     options?: { isSimulated?: boolean; address?: string; name?: string }
   ) => {
-    // 1. If simulated or sandbox requested
-    if (options?.isSimulated || type === 'sandbox' || type === 'demo') {
-      const resolvedType: SupportedWalletType = (type === 'demo' || type === 'sandbox') ? 'sandbox' : (type || 'trust');
-      setWalletType(resolvedType);
+    // 1. If explicit address provided for on-chain verification & sync
+    if (options?.address) {
+      const cleanAddr = options.address.trim();
+      if (!cleanAddr.startsWith('0x') || cleanAddr.length !== 42) {
+        throw new Error('Địa chỉ ví EVM không hợp lệ (phải bắt đầu bằng 0x và dài 42 ký tự).');
+      }
+      setAddress(cleanAddr);
       setIsConnected(true);
-      setIsWatchOnly(false);
-
-      const targetAddr = options?.address || (resolvedType === 'trust' ? '0x71C8A66D268eCBE77E136125027581a94fa4F67a' : (SANDBOX_PROFILES[activeSandboxIndex]?.address || SANDBOX_PROFILES[0].address));
-      setAddress(targetAddr);
-      setBalances({ ...INITIAL_BALANCES });
-      setIsDemoMode(resolvedType === 'sandbox');
+      setIsWatchOnly(true);
+      const resolvedType: SupportedWalletType = (type as SupportedWalletType) || 'injected';
+      setWalletType(resolvedType);
+      setIsDemoMode(false);
       setActiveCustomProvider(null);
+      setBalances({ ...ZERO_BALANCES });
 
-      const wLabel = options?.name || (resolvedType === 'trust' ? 'Trust Wallet Pro' : 'Sandbox Account');
-      recordRecentAccount(resolvedType, targetAddr, wLabel);
+      const wLabel = options?.name || `Ví On-Chain (${cleanAddr.slice(0, 6)}...${cleanAddr.slice(-4)})`;
+      recordRecentAccount(resolvedType, cleanAddr, wLabel);
 
       if (typeof window !== 'undefined') {
         localStorage.setItem('hyperon_wallet_connected', 'true');
-        localStorage.setItem('hyperon_wallet_address', targetAddr);
+        localStorage.setItem('hyperon_wallet_address', cleanAddr);
         localStorage.setItem('hyperon_wallet_type', resolvedType);
-        if (resolvedType === 'sandbox') {
-          localStorage.setItem('hyperon_wallet_sandbox_idx', String(activeSandboxIndex));
-        }
       }
       closeConnectModal();
+      await refreshBalances();
       return;
     }
 
-    const provider = getInjectedProvider(type, customProvider);
+    // 2. Real Web3 injected provider connection
+    const provider = getInjectedProvider(type as SupportedWalletType, customProvider);
     if (!provider) {
-      // If provider not found, let caller handle error
-      const walletName = type === 'rabby' ? 'Rabby' : type === 'metamask' ? 'MetaMask' : type === 'coinbase' ? 'Coinbase' : type === 'phantom' ? 'Phantom' : type === 'okx' ? 'OKX' : type === 'trust' ? 'Trust Wallet' : type === 'rainbow' ? 'Rainbow' : 'Web3';
-      throw new Error(`Ví ${walletName} chưa được cài đặt trong trình duyệt này. Vui lòng cài đặt tiện ích hoặc quét QR di động.`);
+      const walletName = type === 'rabby' ? 'Rabby' : type === 'metamask' ? 'MetaMask' : type === 'coinbase' ? 'Coinbase' : type === 'phantom' ? 'Phantom' : type === 'okx' ? 'OKX' : type === 'trust' ? 'Trust Wallet' : type === 'binance' ? 'Binance Web3' : type === 'rainbow' ? 'Rainbow' : 'Web3';
+      throw new Error(`Ví ${walletName} chưa được kích hoạt hoặc cài đặt trong trình duyệt này. Vui lòng mở tiện ích ví hoặc quét mã QR di động.`);
     }
 
     try {
@@ -787,7 +726,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setIsConnected(true);
         setIsWatchOnly(false);
         setActiveCustomProvider(provider);
-        const resolvedType: SupportedWalletType = type || 'injected';
+        const resolvedType: SupportedWalletType = (type as SupportedWalletType) || 'injected';
         setWalletType(resolvedType);
         setIsDemoMode(false);
         const wLabel = (type?.toUpperCase() || 'EVM') + ' Wallet';
@@ -817,13 +756,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     customProvider?: any,
     options?: { isSimulated?: boolean; address?: string; name?: string }
   ) => {
-    // If switching to sandbox or simulated
-    if (options?.isSimulated || type === 'sandbox' || type === 'demo') {
-      setIsWatchOnly(false);
-      await connectWallet(type, customProvider, options);
-      return;
-    }
-
     // Unbind listeners from previous provider safely
     if (activeCustomProvider?.removeAllListeners) {
       try {
@@ -849,19 +781,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setIsDemoMode(false);
     setActiveCustomProvider(null);
 
-    // Provide whale portfolio allocation for viewing and routing simulations
-    setBalances({
-      ETH: 5.48,
-      USDC: 24500,
-      HYPR: 18200,
-      WBTC: 0.65,
-      USDT: 10000,
-      UNI: 850,
-      AETH: 4.2,
-      LINK: 550,
-    });
+    // Initialize to genuine zero balances and immediately query real blockchain state
+    setBalances({ ...ZERO_BALANCES });
 
-    const accountLabel = label || `Watch-Only (${cleanAddr.slice(0, 6)}...${cleanAddr.slice(-4)})`;
+    const accountLabel = label || `Ví On-Chain (${cleanAddr.slice(0, 6)}...${cleanAddr.slice(-4)})`;
     recordRecentAccount('injected', cleanAddr, accountLabel);
 
     if (typeof window !== 'undefined') {
@@ -871,12 +794,13 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     closeConnectModal();
     closeAccountModal();
+    refreshBalances();
   };
 
   const disconnectWallet = async (options?: { zeroTrust?: boolean }) => {
     try {
       const provider = activeCustomProvider || (typeof window !== 'undefined' ? (window as any).ethereum : null);
-      if (provider && provider.request && walletType !== 'sandbox') {
+      if (provider && provider.request) {
         try {
           await provider.request({
             method: 'wallet_revokePermissions',
@@ -901,9 +825,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         WBTC: false,
         LINK: false,
       });
-      setBalances({ ...INITIAL_BALANCES });
     }
 
+    setBalances({ ...ZERO_BALANCES });
     setIsConnected(false);
     setIsWatchOnly(false);
     setWalletType(null);
@@ -1053,7 +977,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const resetBalances = () => {
-    setBalances({ ...INITIAL_BALANCES });
+    setBalances({ ...ZERO_BALANCES });
+    refreshBalances();
   };
 
   const toggleDemoMode = () => {
@@ -1070,43 +995,41 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     let txHash = '';
     const provider = activeCustomProvider || getInjectedProvider(walletType) || (typeof window !== 'undefined' ? (window as any).ethereum : null);
-    if (provider && provider.request && walletType !== 'sandbox') {
-      if (!txData.targetAddress || !txData.targetAddress.startsWith('0x') || txData.targetAddress.length !== 42) {
-        throw new Error('INVALID_EXECUTION_TARGET: A verified on-chain router contract address is strictly required.');
+    if (!provider || !provider.request) {
+      throw new Error('Chưa kết nối ví Web3. Vui lòng kết nối ví Trust Wallet, MetaMask hoặc ví EVM tương thích để ký giao dịch thật.');
+    }
+
+    if (!txData.targetAddress || !txData.targetAddress.startsWith('0x') || txData.targetAddress.length !== 42) {
+      throw new Error('INVALID_EXECUTION_TARGET: Địa chỉ hợp đồng router on-chain không hợp lệ.');
+    }
+    if (!txData.calldata || txData.calldata === '0x' || !txData.calldata.startsWith('0x')) {
+      throw new Error('INVALID_EXECUTION_CALLDATA: Cần có calldata ABI hợp lệ để thực thi giao dịch on-chain.');
+    }
+
+    try {
+      const hash = await provider.request({
+        method: 'eth_sendTransaction',
+        params: [
+          {
+            from: address,
+            to: txData.targetAddress,
+            value: txData.valueHex || '0x0',
+            data: txData.calldata,
+          },
+        ],
+      });
+      if (hash) {
+        txHash = hash;
       }
-      if (!txData.calldata || txData.calldata === '0x' || !txData.calldata.startsWith('0x')) {
-        throw new Error('INVALID_EXECUTION_CALLDATA: Strict execution pipeline requires verified non-empty ABI calldata.');
+    } catch (err: any) {
+      if (err?.code === 4001) {
+        throw new Error('Người dùng đã hủy yêu cầu ký giao dịch trên ví.');
       }
-      try {
-        const hash = await provider.request({
-          method: 'eth_sendTransaction',
-          params: [
-            {
-              from: address,
-              to: txData.targetAddress,
-              value: txData.valueHex || '0x0',
-              data: txData.calldata,
-            },
-          ],
-        });
-        if (hash) {
-          txHash = hash;
-        }
-      } catch (err: any) {
-        if (err?.code === 4001) {
-          throw new Error('User rejected the transaction signature request.');
-        }
-        throw new Error(err?.message || 'Transaction submission failed on injected wallet.');
-      }
+      throw new Error(err?.message || 'Giao dịch bị từ chối hoặc thất bại trên ví Web3.');
     }
 
     if (!txHash) {
-      if (walletType !== 'sandbox') {
-        throw new Error('Transaction submission failed: no valid transaction hash returned by wallet provider.');
-      }
-      txHash = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('')}`;
+      throw new Error('Giao dịch chưa được ký hoặc ví Web3 không trả về mã băm (txHash).');
     }
 
     let currentBlock = 0;
@@ -1126,111 +1049,78 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       currentBlock = 0;
     }
 
-    const isSandbox = walletType === 'sandbox';
-
-    const applyBalanceAdjustments = () => {
-      if ((txData.type === 'SWAP' || txData.type === 'BRIDGE') && txData.fromToken && txData.toToken && txData.fromAmount && txData.toAmount) {
-        setBalances((prev) => ({
-          ...prev,
-          [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
-          [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
-        }));
-      } else if ((txData.type === 'SUPPLY' || txData.type === 'STAKE' || txData.type === 'REPAY') && txData.fromToken && txData.fromAmount) {
-        setBalances((prev) => ({
-          ...prev,
-          [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
-        }));
-      } else if ((txData.type === 'BORROW' || txData.type === 'WITHDRAW_LENDING' || txData.type === 'CLAIM_REWARDS') && txData.toToken && txData.toAmount) {
-        setBalances((prev) => ({
-          ...prev,
-          [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
-        }));
-      } else if (txData.type === 'RESTAKE' && txData.fromToken && txData.toToken && txData.fromAmount && txData.toAmount) {
-        setBalances((prev) => ({
-          ...prev,
-          [txData.fromToken!]: Math.max(0, (prev[txData.fromToken!] || 0) - txData.fromAmount!),
-          [txData.toToken!]: (prev[txData.toToken!] || 0) + txData.toAmount!,
-        }));
-      }
-    };
-
     const newTx: TransactionHistoryItem = {
       ...txData,
       id: `tx-${Date.now()}`,
       txHash,
       timestamp: Date.now(),
-      status: isSandbox ? 'confirmed' : 'pending',
-      blockNumber: isSandbox && currentBlock > 0 ? currentBlock : undefined,
+      status: 'pending',
       correlationId,
+      blockNumber: currentBlock || 0,
     };
 
     setTransactions((prev) => [newTx, ...prev]);
 
-    if (isSandbox) {
-      applyBalanceAdjustments();
-    } else {
-      // Background receipt tracker: polling on-chain receipt without freezing the UI
-      (async () => {
-        try {
-          if (provider && provider.request) {
-            let attempts = 0;
-            const maxAttempts = 30;
-            while (attempts < maxAttempts) {
-              await new Promise((resolve) => setTimeout(resolve, 2000));
-              attempts++;
-              const receipt = await provider.request({
-                method: 'eth_getTransactionReceipt',
-                params: [txHash],
-              });
-              if (receipt) {
-                const isStatusSuccess = receipt.status === '0x1' || receipt.status === 1;
-                let isFullyVerified = isStatusSuccess;
+    // Background receipt tracker: polling on-chain receipt from node
+    (async () => {
+      try {
+        if (provider && provider.request) {
+          let attempts = 0;
+          const maxAttempts = 35;
+          while (attempts < maxAttempts) {
+            await new Promise((resolve) => setTimeout(resolve, 2500));
+            attempts++;
+            const receipt = await provider.request({
+              method: 'eth_getTransactionReceipt',
+              params: [txHash],
+            });
+            if (receipt) {
+              const isStatusSuccess = receipt.status === '0x1' || receipt.status === 1;
+              let isFullyVerified = isStatusSuccess;
 
-                if (isStatusSuccess && txData.targetAddress) {
-                  try {
-                    const verification = ReceiptVerifier.verifyReceipt({
-                      receipt,
-                      expectedRecipient: (address || '') as Address,
-                      expectedTokenOut: (txData.toTokenAddress || '0x0000000000000000000000000000000000000000') as Address,
-                      amountOutMinimum: txData.minimumReceivedRaw ? BigInt(txData.minimumReceivedRaw) : 0n,
-                      expectedRouter: txData.targetAddress as Address,
-                      expectedSender: (address || '') as Address,
-                      chainId: txData.chainId,
-                    });
-                    if (!verification.verified) {
-                      isFullyVerified = false;
-                      console.warn('ReceiptVerifier warning: swap receipt failed verification criteria:', verification.reason);
-                    }
-                  } catch (vErr) {
-                    console.warn('Receipt verification exception:', vErr);
+              if (isStatusSuccess && txData.targetAddress) {
+                try {
+                  const verification = ReceiptVerifier.verifyReceipt({
+                    receipt,
+                    expectedRecipient: (address || '') as Address,
+                    expectedTokenOut: (txData.toTokenAddress || '0x0000000000000000000000000000000000000000') as Address,
+                    amountOutMinimum: txData.minimumReceivedRaw ? BigInt(txData.minimumReceivedRaw) : 0n,
+                    expectedRouter: txData.targetAddress as Address,
+                    expectedSender: (address || '') as Address,
+                    chainId: txData.chainId,
+                  });
+                  if (!verification.verified) {
                     isFullyVerified = false;
+                    console.warn('ReceiptVerifier criteria check:', verification.reason);
                   }
+                } catch (vErr) {
+                  console.warn('Receipt verification check error:', vErr);
                 }
-
-                const minedBlock = receipt.blockNumber ? parseInt(receipt.blockNumber, 16) : currentBlock;
-                setTransactions((prev) =>
-                  prev.map((item) =>
-                    item.txHash === txHash
-                      ? {
-                          ...item,
-                          status: isFullyVerified ? 'confirmed' : 'failed',
-                          blockNumber: minedBlock > 0 ? minedBlock : item.blockNumber,
-                        }
-                      : item
-                  )
-                );
-                if (isFullyVerified) {
-                  await refreshBalances();
-                }
-                break;
               }
+
+              const minedBlock = receipt.blockNumber ? parseInt(receipt.blockNumber, 16) : currentBlock;
+              setTransactions((prev) =>
+                prev.map((item) =>
+                  item.txHash === txHash
+                    ? {
+                        ...item,
+                        status: isFullyVerified ? 'confirmed' : 'failed',
+                        blockNumber: minedBlock > 0 ? minedBlock : item.blockNumber,
+                      }
+                    : item
+                )
+              );
+              if (isFullyVerified) {
+                await refreshBalances();
+              }
+              break;
             }
           }
-        } catch (receiptErr) {
-          console.warn('On-chain receipt tracking standing by:', receiptErr);
         }
-      })();
-    }
+      } catch (receiptErr) {
+        console.warn('On-chain receipt tracking error:', receiptErr);
+      }
+    })();
 
     return newTx;
   };

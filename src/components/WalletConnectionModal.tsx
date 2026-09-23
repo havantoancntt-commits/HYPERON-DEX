@@ -370,17 +370,6 @@ export const WalletConnectionModal: React.FC = () => {
       category: 'mobile',
       securityFeature: 'Mã hóa đầu cuối End-to-End Encryption không bao giờ rò rỉ khóa',
     },
-    {
-      id: 'sandbox',
-      name: 'Tài Khoản Sandbox Thử Nghiệm',
-      shortDesc: 'Trải nghiệm ngay lập tức với số dư nạp sẵn ETH, USDT, HYPR - Không rủi ro',
-      badge: '1-CHẠM THỬ NGHIỆM',
-      badgeType: 'warning',
-      iconUrl: 'https://assets.coingecko.com/coins/images/325/small/Tether.png',
-      installUrl: '#',
-      category: 'institutional',
-      securityFeature: 'Môi trường giả lập hoàn toàn an toàn, kiểm thử thanh khoản tự do',
-    },
   ], [installedMap]);
 
   // Filter providers by search query and category
@@ -393,7 +382,7 @@ export const WalletConnectionModal: React.FC = () => {
     } else if (selectedCategory === 'mobile') {
       list = list.filter((p) => p.category === 'mobile' || p.deepLinkUrl || p.id === 'walletconnect' || p.id === 'trust');
     } else if (selectedCategory === 'institutional') {
-      list = list.filter((p) => p.category === 'institutional' || p.id === 'safe' || p.id === 'kraken' || p.id === 'sandbox');
+      list = list.filter((p) => p.category === 'institutional' || p.id === 'safe' || p.id === 'kraken');
     }
 
     if (!searchQuery.trim()) return list;
@@ -420,25 +409,6 @@ export const WalletConnectionModal: React.FC = () => {
     if (provider.id === 'walletconnect') {
       setActiveTab('qrcode');
       setConnectingId(null);
-      return;
-    }
-
-    // If Sandbox, connect directly
-    if (provider.id === 'sandbox') {
-      try {
-        setConnectingStep('Khởi tạo phiên Sandbox thử nghiệm an toàn...');
-        await connectWallet('sandbox');
-        soundManager.playSuccess();
-        addToast({
-          title: 'Kích hoạt Sandbox thành công',
-          message: 'Đã sẵn sàng giao dịch thử nghiệm với thanh khoản đầy đủ.',
-          type: 'success',
-        });
-        closeConnectModal();
-      } finally {
-        setConnectingId(null);
-        setConnectingStep('');
-      }
       return;
     }
 
@@ -574,25 +544,6 @@ export const WalletConnectionModal: React.FC = () => {
       message: 'WalletConnect pairing URI copied to clipboard.',
       type: 'info',
     });
-  };
-
-  // Simulate mobile scan pairing
-  const handleSimulateWcPair = async () => {
-    setIsWcPairing(true);
-    soundManager.playTick();
-    try {
-      await new Promise((r) => setTimeout(r, 1200));
-      await connectWallet('walletconnect');
-      soundManager.playSuccess();
-      addToast({
-        title: 'WalletConnect Paired',
-        message: 'Mobile session paired via secure relay protocol.',
-        type: 'success',
-      });
-      closeConnectModal();
-    } finally {
-      setIsWcPairing(false);
-    }
   };
 
   if (!isConnectModalOpen) return null;
@@ -825,22 +776,16 @@ export const WalletConnectionModal: React.FC = () => {
 
                   {/* Smart Actions Grid */}
                   <div className="space-y-2.5">
-                    {/* Option 1: Instant Connected Session with this Specific Wallet */}
+                    {/* Option 1: Direct Handshake Attempt */}
                     <button
                       onClick={async () => {
-                        const wId = selectedAssistantWallet.id;
+                        const target = selectedAssistantWallet;
                         setSelectedAssistantWallet(null);
-                        await connectWallet(wId, undefined, {
-                          isSimulated: true,
-                          name: `${selectedAssistantWallet.name} Pro`,
-                        });
-                        soundManager.playSuccess();
-                        addToast({
-                          title: `Đã kết nối ví ${selectedAssistantWallet.name}`,
-                          message: `Phiên Web3 với ${selectedAssistantWallet.name} đã sẵn sàng giao dịch an toàn.`,
-                          type: 'success',
-                        });
-                        closeConnectModal();
+                        try {
+                          await handleConnectProvider(target);
+                        } catch (e: any) {
+                          setConnectionError(e?.message || 'Không thể thiết lập kết nối.');
+                        }
                       }}
                       className="w-full p-3.5 rounded-xl bg-gradient-to-r from-blue-600 via-cyan-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold shadow-lg shadow-cyan-950/40 transition-all flex items-center justify-between cursor-pointer group"
                     >
@@ -850,11 +795,11 @@ export const WalletConnectionModal: React.FC = () => {
                         </div>
                         <div>
                           <div className="font-extrabold text-white flex items-center gap-1.5">
-                            <span>Kết Nối Ngay Ví {selectedAssistantWallet.name}</span>
-                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/20 font-mono">1-CHẠM</span>
+                            <span>Thử Kết Nối Trực Tiếp Ví {selectedAssistantWallet.name}</span>
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-white/20 font-mono">EIP-1193</span>
                           </div>
                           <div className="text-[10px] text-cyan-100 font-normal">
-                            Nạp sẵn 4.85 ETH, 14,250 USDT, 2,500 HYPR — Giao dịch & Swap đầy đủ tính năng
+                            Kích hoạt cửa sổ cấp quyền trên tiện ích trình duyệt hoặc ứng dụng đang chạy
                           </div>
                         </div>
                       </div>
@@ -1371,28 +1316,19 @@ export const WalletConnectionModal: React.FC = () => {
                 </div>
               </div>
 
-              {/* Copy URI and Simulate Pair Action Buttons */}
+              {/* Copy URI and Official QR Connection */}
               <div className="max-w-md mx-auto space-y-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-center">
                   <button
                     onClick={handleCopyWcUri}
-                    className="flex-1 py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-900/30"
                   >
-                    {copiedWcUri ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                    <span>{copiedWcUri ? 'Đã sao chép Pairing URI' : 'Sao chép WalletConnect URI'}</span>
-                  </button>
-
-                  <button
-                    onClick={handleSimulateWcPair}
-                    disabled={isWcPairing}
-                    className="py-2.5 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-900/30 disabled:opacity-50"
-                  >
-                    {isWcPairing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                    <span>{isWcPairing ? 'Đang ghép đôi...' : 'Giả Lập Ghép Đôi'}</span>
+                    {copiedWcUri ? <Check className="w-4 h-4 text-emerald-950" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiedWcUri ? 'Đã sao chép Pairing URI' : 'Sao chép WalletConnect Pairing URI'}</span>
                   </button>
                 </div>
                 <div className="text-[10px] text-slate-500 font-mono">
-                  Chuẩn kết nối mã hóa End-to-End Relay Protocol v2
+                  Giao thức kết nối phi tập trung WalletConnect Relay v2 — Bảo mật tuyệt đối 100% Non-Custodial
                 </div>
               </div>
             </div>

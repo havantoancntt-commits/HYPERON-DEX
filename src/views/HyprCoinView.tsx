@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
 import { useI18n } from '../context/I18nContext';
@@ -157,14 +158,13 @@ const MULTICHAIN_DEPLOYMENTS = [
 ];
 
 export const HyprCoinView: React.FC = () => {
-  const { address, balances, isConnected, openConnectModal, requestFaucetFunds, addTokenToWallet } = useWallet();
+  const { address, balances, isConnected, openConnectModal, addTokenToWallet } = useWallet();
   const { getLiveToken, openSwapWithTokens, setActiveView, addToast } = useExchange();
   const { t } = useI18n();
 
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>('24H');
   const [copied, setCopied] = useState(false);
   const [isAddingWallet, setIsAddingWallet] = useState(false);
-  const [isClaimingFaucet, setIsClaimingFaucet] = useState(false);
   const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
   const [adminPasskey, setAdminPasskey] = useState('');
@@ -192,6 +192,7 @@ export const HyprCoinView: React.FC = () => {
         }
       }
       setAuthVersion((v) => v + 1);
+      window.dispatchEvent(new CustomEvent('hyperon-admin-updated'));
       setIsAdminAuthModalOpen(false);
       setAdminPasskey('');
       setAuthError(null);
@@ -211,6 +212,7 @@ export const HyprCoinView: React.FC = () => {
     localStorage.removeItem('HYPERON_ADMIN_DEV_KEY');
     localStorage.removeItem('HYPERON_CUSTOM_ADMINS');
     setAuthVersion((v) => v + 1);
+    window.dispatchEvent(new CustomEvent('hyperon-admin-updated'));
     setIsAdminAuthModalOpen(false);
     soundManager.playTick();
     addToast({
@@ -284,18 +286,6 @@ export const HyprCoinView: React.FC = () => {
     } finally {
       setIsAddingWallet(false);
     }
-  };
-
-  const handleClaimFaucet = () => {
-    setIsClaimingFaucet(true);
-    soundManager.playSuccess();
-    requestFaucetFunds('HYPR', 1000);
-    addToast({
-      title: 'Nhận HYPR Faucet Thành Công!',
-      message: 'Đã cộng +1,000 HYPR vào số dư ví của bạn để trải nghiệm giao dịch.',
-      type: 'success',
-    });
-    setTimeout(() => setIsClaimingFaucet(false), 600);
   };
 
   // SVG Chart Calculation
@@ -476,11 +466,20 @@ export const HyprCoinView: React.FC = () => {
               </button>
 
               <button
-                onClick={handleClaimFaucet}
-                disabled={isClaimingFaucet}
-                className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-cyan-400/30 text-cyan-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                type="button"
+                onClick={() => {
+                  soundManager.playTick();
+                  setIsAdminAuthModalOpen(true);
+                }}
+                className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm ${
+                  isAdmin 
+                    ? 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-400/40 text-amber-300' 
+                    : 'bg-white/[0.08] hover:bg-white/[0.15] border-white/10 text-slate-200 hover:text-white'
+                }`}
+                title="Mở bảng xác thực và bảng điều khiển Quản trị viên (Admin)"
               >
-                <Gift className="w-4 h-4 text-cyan-400" /> Nhận +1,000 Faucet
+                <KeyRound className={`w-4 h-4 ${isAdmin ? 'text-amber-400' : 'text-slate-400'}`} />
+                <span>{isAdmin ? 'Quản Trị Token (Active)' : 'Cổng Admin Token'}</span>
               </button>
 
               <button
@@ -1006,9 +1005,12 @@ export const HyprCoinView: React.FC = () => {
       />
 
       {/* Protocol Admin Authentication Modal */}
-      {isAdminAuthModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="relative w-full max-w-lg rounded-3xl bg-[#0B1020] border border-amber-400/30 p-6 sm:p-7 shadow-2xl space-y-6 text-white">
+      {isAdminAuthModalOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150">
+          <div 
+            className="relative w-full max-w-lg rounded-3xl bg-[#0B1020] border border-amber-400/40 p-6 sm:p-7 shadow-2xl space-y-6 text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
@@ -1142,7 +1144,8 @@ export const HyprCoinView: React.FC = () => {
               </form>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

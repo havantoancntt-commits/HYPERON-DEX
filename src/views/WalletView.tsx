@@ -27,12 +27,12 @@ import {
 } from 'lucide-react';
 
 const POPULAR_PROVIDERS = [
+  { id: 'trust', name: 'Trust Wallet', symbol: 'TW', tag: 'Mobile & EIP-1193' },
   { id: 'metamask', name: 'MetaMask', symbol: 'MM', tag: 'EIP-1193 Extension' },
   { id: 'rabby', name: 'Rabby Wallet', symbol: 'RB', tag: 'DeFi Security Native' },
   { id: 'okx', name: 'OKX Web3', symbol: 'OKX', tag: 'Multi-Chain Pro' },
   { id: 'phantom', name: 'Phantom EVM', symbol: 'PH', tag: 'EVM & Solana' },
   { id: 'rainbow', name: 'Rainbow', symbol: 'RBW', tag: 'Mobile & Web3' },
-  { id: 'sandbox', name: 'Sandbox Demo', symbol: 'SB', tag: 'Institutional Simulated' },
 ];
 
 export const WalletView: React.FC = () => {
@@ -49,12 +49,7 @@ export const WalletView: React.FC = () => {
     openConnectModal,
     openAccountModal,
     walletType,
-    isDemoMode,
     isWatchOnly,
-    toggleDemoMode,
-    sandboxAccounts,
-    activeSandboxIndex,
-    switchSandboxAccount
   } = useWallet();
   const { addToast } = useExchange();
   const { t } = useI18n();
