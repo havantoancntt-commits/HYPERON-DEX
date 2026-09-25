@@ -50,6 +50,12 @@ jobs:
       - name: Uniswap V3 Differential & Fuzzing Suite (1,000+ Vectors)
         run: npx tsx tests/uniswapV3Differential.test.ts
 
+      - name: Uniswap V3 Multi-Tick Crossing & Bit-Exact Verification
+        run: npx tsx tests/uniswapV3Verification.ts
+
+      - name: UltraRouter Graph Pathfinding & FormalMath Suite
+        run: npx tsx tests/UltraRouter.test.ts
+
       - name: Phase 3 Engine Verification & Chain Invariant Suite
         run: npx tsx tests/phase3EngineSuite.ts
 
