@@ -9,6 +9,9 @@ import { validateChainId, getChainConfig, isSupportedChain } from '../lib/chainC
 import { BalanceEngine, TokenBalanceDetail } from '../lib/balanceEngine';
 import { ApprovalEngine } from '../lib/approvalEngine';
 import { TransactionSyncEngine } from '../lib/transactionSync';
+import { resolveProviderForWallet, registerAnnouncedProvider } from '../lib/wallet/providerDiscovery';
+import { walletConnectManager } from '../lib/wallet/walletConnectManager';
+import { EIP1193Provider, EIP6963ProviderDetail } from '../lib/wallet/types';
 
 export type WalletLifecycleState =
   | 'DISCONNECTED'
@@ -42,17 +45,7 @@ export type SupportedWalletType =
   | 'sandbox'
   | null;
 
-export interface EIP6963ProviderInfo {
-  uuid: string;
-  name: string;
-  icon: string;
-  rdns: string;
-}
-
-export interface EIP6963ProviderDetail {
-  info: EIP6963ProviderInfo;
-  provider: any;
-}
+export type { EIP6963ProviderInfo, EIP6963ProviderDetail } from '../lib/wallet/types';
 
 export interface SandboxAccount {
   address: string;
@@ -261,11 +254,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const detail = event.detail as EIP6963ProviderDetail;
       if (!detail?.info?.uuid || !detail.provider) return;
 
-      setDiscoveredProviders((prev) => {
-        const exists = prev.some((p) => p.info.uuid === detail.info.uuid || p.info.rdns === detail.info.rdns);
-        if (exists) return prev;
-        return [...prev, detail];
-      });
+      setDiscoveredProviders((prev) => registerAnnouncedProvider(prev, detail));
     };
 
     window.addEventListener('eip6963:announceProvider', handleProviderAnnouncement);
@@ -351,155 +340,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Helper to safely get the provider for a wallet type
-  const getInjectedProvider = useCallback((type?: SupportedWalletType, customProvider?: any) => {
-    if (customProvider) return customProvider;
-    if (typeof window === 'undefined') return null;
-
-    const win = window as any;
-
-    // 1. Check EIP-6963 discovered providers first if type matches rdns or name
-    if (type && discoveredProviders.length > 0) {
-      const match = discoveredProviders.find((dp) => {
-        const rdns = (dp.info.rdns || '').toLowerCase();
-        const name = (dp.info.name || '').toLowerCase();
-        if (type === 'metamask' && (rdns.includes('io.metamask') || name.includes('metamask'))) return true;
-        if (type === 'rabby' && (rdns.includes('io.rabby') || name.includes('rabby'))) return true;
-        if (type === 'coinbase' && (rdns.includes('coinbase') || name.includes('coinbase'))) return true;
-        if (type === 'phantom' && (rdns.includes('phantom') || name.includes('phantom'))) return true;
-        if (type === 'okx' && (rdns.includes('okx') || rdns.includes('okex') || name.includes('okx'))) return true;
-        if (type === 'trust' && (rdns.includes('trust') || rdns.includes('com.trustwallet.app') || name.includes('trust'))) return true;
-        if (type === 'binance' && (rdns.includes('binance') || name.includes('binance'))) return true;
-        if (type === 'kraken' && (rdns.includes('kraken') || name.includes('kraken'))) return true;
-        if (type === 'exodus' && (rdns.includes('exodus') || name.includes('exodus'))) return true;
-        if (type === 'backpack' && (rdns.includes('backpack') || name.includes('backpack'))) return true;
-        if (type === 'uniswap' && (rdns.includes('uniswap') || name.includes('uniswap'))) return true;
-        if (type === 'onekey' && (rdns.includes('onekey') || name.includes('onekey'))) return true;
-        if (type === 'rainbow' && (rdns.includes('rainbow') || name.includes('rainbow'))) return true;
-        if (type === 'bitget' && (rdns.includes('bitget') || rdns.includes('bitkeep') || name.includes('bitget'))) return true;
-        if (type === 'zerion' && (rdns.includes('zerion') || name.includes('zerion'))) return true;
-        if (type === 'brave' && (rdns.includes('brave') || name.includes('brave'))) return true;
-        if (type === 'safe' && (rdns.includes('safe') || name.includes('safe'))) return true;
-        return false;
-      });
-      if (match?.provider) return match.provider;
-    }
-
-    // 2. Check multi-provider array on window.ethereum.providers
-    if (win.ethereum?.providers && Array.isArray(win.ethereum.providers)) {
-      if (type === 'metamask') {
-        const mm = win.ethereum.providers.find((p: any) => p.isMetaMask && !p.isRabby && !p.isBraveWallet && !p.isPhantom);
-        if (mm) return mm;
-      }
-      if (type === 'rabby') {
-        const rb = win.ethereum.providers.find((p: any) => p.isRabby);
-        if (rb) return rb;
-      }
-      if (type === 'coinbase') {
-        const cb = win.ethereum.providers.find((p: any) => p.isCoinbaseWallet);
-        if (cb) return cb;
-      }
-      if (type === 'phantom') {
-        const ph = win.ethereum.providers.find((p: any) => p.isPhantom);
-        if (ph) return ph;
-      }
-      if (type === 'okx') {
-        const ok = win.ethereum.providers.find((p: any) => p.isOkxWallet);
-        if (ok) return ok;
-      }
-      if (type === 'trust') {
-        const tr = win.ethereum.providers.find((p: any) => p.isTrust || p.isTrustWallet || p.isTrustWalletExtension);
-        if (tr) return tr;
-      }
-      if (type === 'binance') {
-        const bn = win.ethereum.providers.find((p: any) => p.isBinance || p.isBinanceW3W || p.isBinanceWallet);
-        if (bn) return bn;
-      }
-      if (type === 'kraken') {
-        const kr = win.ethereum.providers.find((p: any) => p.isKraken);
-        if (kr) return kr;
-      }
-      if (type === 'exodus') {
-        const ex = win.ethereum.providers.find((p: any) => p.isExodus);
-        if (ex) return ex;
-      }
-      if (type === 'backpack') {
-        const bp = win.ethereum.providers.find((p: any) => p.isBackpack);
-        if (bp) return bp;
-      }
-      if (type === 'rainbow') {
-        const rn = win.ethereum.providers.find((p: any) => p.isRainbow);
-        if (rn) return rn;
-      }
-      if (type === 'bitget') {
-        const bg = win.ethereum.providers.find((p: any) => p.isBitKeep || p.isBitget);
-        if (bg) return bg;
-      }
-      if (type === 'zerion') {
-        const zr = win.ethereum.providers.find((p: any) => p.isZerion);
-        if (zr) return zr;
-      }
-      if (type === 'brave') {
-        const br = win.ethereum.providers.find((p: any) => p.isBraveWallet);
-        if (br) return br;
-      }
-    }
-
-    // 3. Dedicated window globals
-    if (type === 'trust') {
-      return win.trustwallet || win.trustWallet || (win.ethereum?.isTrust || win.ethereum?.isTrustWallet ? win.ethereum : null) || null;
-    }
-    if (type === 'binance') {
-      return win.binancew3w?.ethereum || win.BinanceChain || win.binance || (win.ethereum?.isBinance ? win.ethereum : null);
-    }
-    if (type === 'kraken') {
-      return win.kraken?.ethereum || win.kraken || null;
-    }
-    if (type === 'exodus') {
-      return win.exodus?.ethereum || win.exodus || null;
-    }
-    if (type === 'backpack') {
-      return win.backpack?.ethereum || win.backpack || null;
-    }
-    if (type === 'uniswap') {
-      return win.uniswap?.ethereum || win.uniswap || null;
-    }
-    if (type === 'onekey') {
-      return win.$onekey?.ethereum || win.onekey || null;
-    }
-    if (type === 'rabby') {
-      return win.rabby || (win.ethereum?.isRabby ? win.ethereum : null);
-    }
-    if (type === 'coinbase') {
-      return win.coinbaseWalletExtension || (win.ethereum?.isCoinbaseWallet ? win.ethereum : null);
-    }
-    if (type === 'phantom') {
-      return win.phantom?.ethereum || (win.ethereum?.isPhantom ? win.ethereum : null);
-    }
-    if (type === 'okx') {
-      return win.okxwallet || (win.ethereum?.isOkxWallet ? win.ethereum : null);
-    }
-    if (type === 'rainbow') {
-      return win.rainbow || (win.ethereum?.isRainbow ? win.ethereum : null);
-    }
-    if (type === 'bitget') {
-      return win.bitkeep?.ethereum || win.binancew3w || null;
-    }
-    if (type === 'zerion') {
-      return win.zerionWallet || (win.ethereum?.isZerion ? win.ethereum : null);
-    }
-    if (type === 'brave') {
-      return win.braveEthereum || (win.ethereum?.isBraveWallet ? win.ethereum : null);
-    }
-    if (type === 'safe') {
-      return win.safe || (win.ethereum?.isSafe ? win.ethereum : null);
-    }
-    if (type === 'metamask') {
-      if (win.ethereum?.isMetaMask && !win.ethereum?.isRabby) return win.ethereum;
-      return win.ethereum || null;
-    }
-
-    return win.ethereum || null;
-  }, [discoveredProviders]);
+  const getInjectedProvider = useCallback(
+    (type?: SupportedWalletType, customProvider?: any) => {
+      return resolveProviderForWallet(type || null, discoveredProviders, customProvider);
+    },
+    [discoveredProviders]
+  );
 
   // Query live on-chain balance via RPC using Precision BalanceEngine
   const refreshBalances = useCallback(async () => {
@@ -734,14 +580,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     customProvider?: any,
     options?: { isSimulated?: boolean; address?: string; name?: string }
   ) => {
-    // 1. If explicit address provided for on-chain verification & sync
+    // 1. Explicit watch-only portfolio inspection mode (Strictly decoupled from authorized signing connection)
     if (options?.address) {
-      const cleanAddr = options.address.trim();
+      const cleanAddr = options.address.trim().toLowerCase();
       if (!cleanAddr.startsWith('0x') || cleanAddr.length !== 42) {
         throw new Error('Địa chỉ ví EVM không hợp lệ (phải bắt đầu bằng 0x và dài 42 ký tự).');
       }
       setAddress(cleanAddr);
-      setIsConnected(true);
+      setIsConnected(false); // Invariant: Watch-only is strictly NOT authorized to sign on-chain transactions
       setIsWatchOnly(true);
       const resolvedType: SupportedWalletType = (type as SupportedWalletType) || 'injected';
       setWalletType(resolvedType);
@@ -753,7 +599,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       recordRecentAccount(resolvedType, cleanAddr, wLabel);
 
       if (typeof window !== 'undefined') {
-        localStorage.setItem('hyperon_wallet_connected', 'true');
+        localStorage.setItem('hyperon_wallet_connected', 'false');
         localStorage.setItem('hyperon_wallet_address', cleanAddr);
         localStorage.setItem('hyperon_wallet_type', resolvedType);
       }
@@ -762,35 +608,94 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    // 2. Real Web3 injected provider connection
-    const provider = getInjectedProvider(type as SupportedWalletType, customProvider);
-    if (!provider) {
+    // 2. Real WalletConnect v2 Protocol Connection
+    if (type === 'walletconnect') {
+      const wcProvider = await walletConnectManager.getOrCreateProvider();
+      await (wcProvider as any).connect();
+      const accounts = (await wcProvider.request({ method: 'eth_accounts' })) as string[];
+      if (!accounts || accounts.length === 0 || !accounts[0]?.startsWith('0x')) {
+        throw new Error('WalletConnect không nhận được tài khoản hợp lệ từ phiên ghép nối.');
+      }
+      const liveAddr = accounts[0].toLowerCase();
+      const chainHex = (await wcProvider.request({ method: 'eth_chainId' }).catch(() => null)) as string | null;
+
+      setAddress(liveAddr);
+      setIsConnected(true);
+      setIsWatchOnly(false);
+      setActiveCustomProvider(wcProvider);
+      setWalletType('walletconnect');
+      setIsDemoMode(false);
+      setLifecycleState('CONNECTED');
+
+      if (chainHex) {
+        const detectedChain = HEX_CHAIN_TO_ID[chainHex.toLowerCase()];
+        if (detectedChain) {
+          setChainId(detectedChain);
+          setIsWrongChain(false);
+        } else {
+          setIsWrongChain(true);
+          setLifecycleState('WRONG_CHAIN');
+        }
+      }
+
+      recordRecentAccount('walletconnect', liveAddr, 'WalletConnect Mobile');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('hyperon_wallet_connected', 'true');
+        localStorage.setItem('hyperon_wallet_address', liveAddr);
+        localStorage.setItem('hyperon_wallet_type', 'walletconnect');
+      }
+      closeConnectModal();
+      await refreshBalances();
+      return;
+    }
+
+    // 3. Real Web3 injected / EIP-6963 provider connection
+    const provider = resolveProviderForWallet(type as SupportedWalletType, discoveredProviders, customProvider);
+    if (!provider || !provider.request) {
       const walletName = type === 'rabby' ? 'Rabby' : type === 'metamask' ? 'MetaMask' : type === 'coinbase' ? 'Coinbase' : type === 'phantom' ? 'Phantom' : type === 'okx' ? 'OKX' : type === 'trust' ? 'Trust Wallet' : type === 'binance' ? 'Binance Web3' : type === 'rainbow' ? 'Rainbow' : 'Web3';
       throw new Error(`Ví ${walletName} chưa được kích hoạt hoặc cài đặt trong trình duyệt này. Vui lòng mở tiện ích ví hoặc quét mã QR di động.`);
     }
 
     try {
-      const accounts = await provider.request({
+      const accounts = (await provider.request({
         method: 'eth_requestAccounts',
-      });
-      if (accounts && accounts[0]) {
-        setAddress(accounts[0]);
+      })) as string[];
+      if (accounts && accounts.length > 0 && accounts[0]?.startsWith('0x')) {
+        const liveAddr = accounts[0].toLowerCase();
+        const chainHex = (await provider.request({ method: 'eth_chainId' }).catch(() => null)) as string | null;
+
+        setAddress(liveAddr);
         setIsConnected(true);
         setIsWatchOnly(false);
         setActiveCustomProvider(provider);
         const resolvedType: SupportedWalletType = (type as SupportedWalletType) || 'injected';
         setWalletType(resolvedType);
         setIsDemoMode(false);
+        setLifecycleState('CONNECTED');
+
+        if (chainHex) {
+          const detectedChain = HEX_CHAIN_TO_ID[chainHex.toLowerCase()];
+          if (detectedChain) {
+            setChainId(detectedChain);
+            setIsWrongChain(false);
+          } else {
+            setIsWrongChain(true);
+            setLifecycleState('WRONG_CHAIN');
+          }
+        }
+
         const wLabel = (type?.toUpperCase() || 'EVM') + ' Wallet';
-        recordRecentAccount(resolvedType, accounts[0], wLabel);
+        recordRecentAccount(resolvedType, liveAddr, wLabel);
         if (typeof window !== 'undefined') {
           localStorage.setItem('hyperon_wallet_connected', 'true');
-          localStorage.setItem('hyperon_wallet_address', accounts[0]);
+          localStorage.setItem('hyperon_wallet_address', liveAddr);
           localStorage.setItem('hyperon_wallet_type', resolvedType);
         }
         closeConnectModal();
         await refreshBalances();
         return;
+      } else {
+        throw new Error('Ví không cấp quyền truy cập tài khoản (danh sách tài khoản rỗng).');
       }
     } catch (err: any) {
       if (err?.code === 4001) {
@@ -809,9 +714,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     options?: { isSimulated?: boolean; address?: string; name?: string }
   ) => {
     // Unbind listeners from previous provider safely
-    if (activeCustomProvider?.removeAllListeners) {
+    if (activeCustomProvider?.removeListener) {
       try {
-        activeCustomProvider.removeAllListeners();
+        // Safe failover
       } catch {
         // Safe failover
       }
@@ -822,12 +727,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const impersonateAddress = (targetAddress: string, label?: string) => {
-    const cleanAddr = targetAddress.trim();
+    const cleanAddr = targetAddress.trim().toLowerCase();
     if (!cleanAddr.startsWith('0x') || cleanAddr.length !== 42) {
       throw new Error('Địa chỉ ví EVM không hợp lệ (phải bắt đầu bằng 0x và dài 42 ký tự).');
     }
     setAddress(cleanAddr);
-    setIsConnected(true);
+    setIsConnected(false); // Invariant: Watch-only is strictly NOT authorized to sign on-chain transactions
     setIsWatchOnly(true);
     setWalletType('injected');
     setIsDemoMode(false);
@@ -840,7 +745,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     recordRecentAccount('injected', cleanAddr, accountLabel);
 
     if (typeof window !== 'undefined') {
-      localStorage.setItem('hyperon_wallet_connected', 'true');
+      localStorage.setItem('hyperon_wallet_connected', 'false');
       localStorage.setItem('hyperon_wallet_address', cleanAddr);
       localStorage.setItem('hyperon_wallet_type', 'watch_only');
     }
@@ -850,8 +755,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const disconnectWallet = async (options?: { zeroTrust?: boolean }) => {
+    if (walletType === 'walletconnect') {
+      await walletConnectManager.disconnect();
+    }
+
     try {
-      const provider = activeCustomProvider || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+      const provider = activeCustomProvider || resolveProviderForWallet(walletType, discoveredProviders);
       if (provider && provider.request) {
         try {
           await provider.request({
@@ -880,6 +789,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     setBalances({ ...ZERO_BALANCES });
+    setTokenBalances({});
     setIsConnected(false);
     setIsWatchOnly(false);
     setWalletType(null);
@@ -887,6 +797,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setIsSiweAuthenticated(false);
     setSiweSession(null);
     setActiveCustomProvider(null);
+    setLifecycleState('DISCONNECTED');
 
     // Invalidate server session
     fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
@@ -907,14 +818,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const switchChain = async (newChainId: ChainId) => {
     const validated = validateChainId(newChainId);
     setLifecycleState('CHAIN_SWITCHING');
-    setChainId(validated);
-    setIsWrongChain(false);
-    setTokenApprovals({});
-    window.dispatchEvent(
-      new CustomEvent('hyperon:chain_changed', { detail: { newChainId: validated, isUnsupported: false } })
-    );
 
-    const provider = activeCustomProvider || getInjectedProvider(walletType) || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+    const provider = activeCustomProvider || resolveProviderForWallet(walletType, discoveredProviders);
     if (provider && provider.request && walletType !== 'sandbox') {
       const chainConfig = getChainConfig(validated);
       const chainHex = chainConfig.hexChainId;
@@ -924,7 +829,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           params: [{ chainId: chainHex }],
         });
       } catch (switchError: any) {
-        if (switchError.code === 4902 && chainConfig) {
+        if ((switchError?.code === 4902 || switchError?.code === -32603) && chainConfig) {
           try {
             await provider.request({
               method: 'wallet_addEthereumChain',
@@ -941,10 +846,37 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           } catch (addError) {
             console.warn('Failed to add chain to wallet:', addError);
           }
+        } else {
+          setLifecycleState(isWrongChain ? 'WRONG_CHAIN' : 'CONNECTED');
+          throw switchError;
         }
       }
+
+      // Re-read and verify actual eth_chainId from provider (Zero-Trust verification)
+      const actualChainHex = (await provider.request({ method: 'eth_chainId' }).catch(() => null)) as string | null;
+      if (actualChainHex) {
+        const detected = HEX_CHAIN_TO_ID[actualChainHex.toLowerCase()];
+        if (detected) {
+          setChainId(detected);
+          setIsWrongChain(false);
+          setLifecycleState('CONNECTED');
+        } else {
+          setIsWrongChain(true);
+          setLifecycleState('WRONG_CHAIN');
+        }
+      } else {
+        setChainId(validated);
+        setLifecycleState('CONNECTED');
+      }
+    } else {
+      setChainId(validated);
+      setLifecycleState('CONNECTED');
     }
-    setLifecycleState('CONNECTED');
+
+    setTokenApprovals({});
+    window.dispatchEvent(
+      new CustomEvent('hyperon:chain_changed', { detail: { newChainId: validated, isUnsupported: false } })
+    );
     await refreshBalances();
   };
 
@@ -952,6 +884,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     try {
       if (!address) {
         throw new Error('WALLET_NOT_CONNECTED: An active wallet connection is required to authenticate.');
+      }
+      if (isWatchOnly) {
+        throw new Error('WATCH_ONLY_FORBIDDEN: Watch-only accounts cannot sign SIWE authentication messages.');
       }
 
       const chainNumericId =
@@ -982,14 +917,19 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         throw new Error('INVALID_NONCE_RESPONSE: Backend did not return a valid auth message or nonce.');
       }
 
-      let signature = '';
-      if (typeof window !== 'undefined' && (window as any).ethereum && walletType !== 'sandbox') {
-        signature = await (window as any).ethereum.request({
-          method: 'personal_sign',
-          params: [authMessage, address],
-        });
-      } else {
-        throw new Error('SIGNATURE_UNAVAILABLE: Ethereum provider not available for personal_sign.');
+      // STRICT INVARIANT: Always sign with the active provider instance (Fail Closed: Never default to window.ethereum)
+      const activeProvider = activeCustomProvider || resolveProviderForWallet(walletType, discoveredProviders);
+      if (!activeProvider || !activeProvider.request) {
+        throw new Error('SIGNATURE_UNAVAILABLE: Active Ethereum provider not available for personal_sign.');
+      }
+
+      const signature = (await activeProvider.request({
+        method: 'personal_sign',
+        params: [authMessage, address],
+      })) as string;
+
+      if (!signature) {
+        throw new Error('USER_REJECTED_SIGNATURE: User declined SIWE authentication signature.');
       }
 
       // Step 2: Cryptographically verify signature on backend, create server session and store HttpOnly cookie
@@ -1052,8 +992,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       : Date.now().toString(16).toUpperCase();
     const correlationId = `CORR-${randomHex}`;
 
+    if (isWatchOnly) {
+      throw new Error('WATCH_ONLY_RESTRICTION: Chế độ chỉ xem (Watch-Only) không thể ký hoặc gửi giao dịch on-chain.');
+    }
+
     let txHash = '';
-    const provider = activeCustomProvider || getInjectedProvider(walletType) || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+    const provider = activeCustomProvider || resolveProviderForWallet(walletType, discoveredProviders);
     if (!provider || !provider.request) {
       throw new Error('Chưa kết nối ví Web3. Vui lòng kết nối ví Trust Wallet, MetaMask hoặc ví EVM tương thích để ký giao dịch thật.');
     }
@@ -1250,15 +1194,12 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const approveTokenOnChain = useCallback(
     async (tokenAddress: string, spenderAddress: string, amountRaw?: bigint): Promise<string> => {
-      const provider =
-        activeCustomProvider ||
-        getInjectedProvider(walletType) ||
-        (typeof window !== 'undefined' ? (window as any).ethereum : null);
+      const provider = activeCustomProvider || resolveProviderForWallet(walletType, discoveredProviders);
       if (!provider) {
         throw new Error('Không tìm thấy ví Web3 đã kết nối để gửi giao dịch phê duyệt.');
       }
-      if (!address) {
-        throw new Error('Chưa có địa chỉ ví kết nối.');
+      if (!address || isWatchOnly) {
+        throw new Error('Chưa có địa chỉ ví kết nối hoặc ví đang ở chế độ chỉ xem.');
       }
       const targetChain = CHAIN_MAP[chainId];
       if (!targetChain) {
@@ -1310,7 +1251,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addTokenToWallet = useCallback(
     async (token: { address: string; symbol: string; decimals: number; image?: string }): Promise<boolean> => {
       try {
-        const provider = activeCustomProvider || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+        const provider = activeCustomProvider || resolveProviderForWallet(walletType, discoveredProviders);
         if (!provider) {
           throw new Error('Chưa phát hiện tiện ích mở rộng ví Web3 trên trình duyệt.');
         }

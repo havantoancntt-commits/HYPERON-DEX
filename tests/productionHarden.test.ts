@@ -246,3 +246,9 @@ export async function runProductionHardenTests(): Promise<{ total: number; passe
 
   return { total, passed, failed };
 }
+
+if (process.argv[1]?.includes('productionHarden.test.ts')) {
+  runProductionHardenTests().then((res) => {
+    if (res.failed > 0) process.exit(1);
+  });
+}

@@ -59,5 +59,8 @@ jobs:
       - name: Phase 3 Engine Verification & Chain Invariant Suite
         run: npx tsx tests/phase3EngineSuite.ts
 
+      - name: Financial Math & Distributed Invariants Hardening Suite
+        run: npx tsx tests/productionHarden.test.ts
+
       - name: Production Bundle & Server Compilation
         run: npm run build

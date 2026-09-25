@@ -252,7 +252,8 @@ export const GenesisDeployerModal: React.FC<GenesisDeployerModalProps> = ({ isOp
 
     try {
       // 1. Ensure correct chain
-      if (activeChainId !== selectedNetwork.chainId) {
+      const isCurrentChain = selectedNetwork.chainKey === String(activeChainId).toLowerCase() || selectedNetwork.chainId.toString() === String(activeChainId);
+      if (!isCurrentChain) {
         setDeployStep('SWITCHING_CHAIN');
         await switchOrAddNetwork(selectedNetwork);
       }

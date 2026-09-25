@@ -487,6 +487,9 @@ export interface CrossChainBridgeRoute {
   mevProtected?: boolean;
   zkAttestation?: boolean;
   protocolBadge?: 'FASTEST' | 'BEST_RETURN' | 'DECENTRALIZED' | 'RECOMMENDED';
+  badge?: string;
+  isExclusive?: boolean;
+  features?: string[];
 }
 
 export interface CrossChainStep {
@@ -665,6 +668,9 @@ export interface AITradingSignal {
     fundingRate: string;
   };
   aiRationale: string;
+  reasoning?: string;
+  entryPrice?: number;
+  source?: string;
   invalidationCriteria: string;
   status: SignalStatus;
   timestamp: number;

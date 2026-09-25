@@ -363,7 +363,7 @@ export const AISignalsView: React.FC = () => {
                 <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-[#060A14] border border-white/5 text-center font-mono">
                   <div>
                     <div className="text-[10px] text-slate-400 uppercase">Entry Target</div>
-                    <div className="text-xs font-bold text-white mt-0.5">${signal.entryPrice.toFixed(2)}</div>
+                    <div className="text-xs font-bold text-white mt-0.5">${(signal.entryPrice ?? signal.currentPrice ?? signal.entryZoneMin).toFixed(2)}</div>
                   </div>
                   <div>
                     <div className="text-[10px] text-emerald-400 uppercase">Take Profit</div>
@@ -387,12 +387,12 @@ export const AISignalsView: React.FC = () => {
 
                 {/* Rationale breakdown */}
                 <p className="text-[11px] text-slate-300 line-clamp-2 leading-relaxed bg-[#080D1A] p-2.5 rounded-xl border border-white/5">
-                  {signal.reasoning}
+                  {signal.reasoning || signal.aiRationale}
                 </p>
 
                 {/* Provenance Tag */}
                 <div className="text-[9px] font-mono text-slate-500 flex items-center justify-between border-t border-white/5 pt-2">
-                  <span>PROVENANCE: {signal.source}</span>
+                  <span>PROVENANCE: {signal.source || 'HYPERON QUANT ENGINE'}</span>
                   <span>CONF: {signal.confidenceScore}%</span>
                 </div>
 
