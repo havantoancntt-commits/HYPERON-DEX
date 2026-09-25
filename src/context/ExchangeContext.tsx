@@ -186,7 +186,7 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         name: symbol.toUpperCase(),
         decimals: 18,
         chainId: 'ethereum',
-        priceUsd: 1.0,
+        priceUsd: 0,
         change24h: 0,
         volume24h: 0,
         liquidityUsd: 0,
@@ -201,11 +201,11 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const getLivePrice = useCallback(
     (symbol: string): number => {
-      if (livePrices[symbol]) {
+      if (livePrices[symbol] && typeof livePrices[symbol].priceUsd === 'number' && !isNaN(livePrices[symbol].priceUsd)) {
         return livePrices[symbol].priceUsd;
       }
       const token = VERIFIED_TOKENS.find((t) => t.symbol.toUpperCase() === symbol.toUpperCase());
-      return token ? token.priceUsd : 1.0;
+      return token?.priceUsd && !isNaN(token.priceUsd) ? token.priceUsd : 0;
     },
     [livePrices]
   );

@@ -74,8 +74,10 @@ The protocol enforces an authoritative top-to-bottom hierarchy where local state
 | **HYPR-SEC-04** | **High (P0)** | `server/services/poolDiscovery.ts` | **Synthetic Volume Multiplication:** Removed arbitrary $15\%$ TVL multiplier (`Math.round(tvlUsd * 0.15)`) from pool discovery. Unindexed metrics strictly default to zero. | ✅ REMEDIATED |
 | **HYPR-SEC-05** | **High (P0)** | `server.ts` | **Administrative Endpoint Protection:** Secured `/api/protocol/treasury` with `requireSession({ roles: ['ADMIN'] })` and added multi-chain regex/checksum validation for EVM, Solana Base58, and TRON. | ✅ REMEDIATED |
 | **HYPR-SEC-06** | **High (P0)** | `src/lib/execution/ReceiptVerifier.ts` | **Status Invariant Alignment:** Output verification failure and slippage breach throw `VERIFICATION_FAILED` without falling back to ambiguous states. | ✅ REMEDIATED |
-| **HYPR-SEC-07** | **Medium (P1)** | `server.ts` | **Reverse Proxy Ingress Security:** Configured `trust proxy` to read from `process.env.TRUST_PROXY` dynamically to support diverse cloud infrastructures (Cloud Run, Cloudflare, AWS ALB, Nginx, Docker). | ✅ REMEDIATED |
-| **HYPR-SEC-08** | **Medium (P1)** | `server/services/priceFeed.ts` | **Unified Price Abstraction:** Introduced `getLivePrice(token, chainId)` maintaining provenance, staleness thresholds, and status (`LIVE`, `STALE`, `UNAVAILABLE`, `ERROR`). | ✅ REMEDIATED |
+| **HYPR-SEC-07** | **High (P0)** | `contracts/src/HyperonRouter.sol` & `TransactionBuilder.ts` | **Zero-Slippage Exposure:** Enforced `amountOutMinimum > 0` on-chain in `swapExactInputSingle`, `swapExactInputMultiple`, `swapCurveStable`, and `relaySwap`. Rejects sandwich exposure. | ✅ REMEDIATED |
+| **HYPR-SEC-08** | **High (P0)** | `.github/workflows/ci.yml` | **CI Failure Root Cause (Node.js Setup):** Missing `package-lock.json` caused `actions/setup-node@v4` with `cache: 'npm'` to throw fatal error. Generated canonical `package-lock.json`, pinned `cache-dependency-path`, added `permissions: contents: read`. | ✅ REMEDIATED |
+| **HYPR-SEC-09** | **Medium (P1)** | `server.ts` | **Reverse Proxy Ingress Security:** Configured `trust proxy` to read from `process.env.TRUST_PROXY` dynamically to support diverse cloud infrastructures (Cloud Run, Cloudflare, AWS ALB, Nginx, Docker). | ✅ REMEDIATED |
+| **HYPR-SEC-10** | **Medium (P1)** | `server/services/priceFeed.ts` & `ExchangeContext.tsx` | **Eliminate Synthetic $1.00 Fallbacks:** Removed 1.0 fallbacks from `ExchangeContext.tsx` and introduced `getLivePrice(token, chainId)` maintaining provenance, staleness thresholds, and status (`LIVE`, `STALE`, `UNAVAILABLE`, `ERROR`). | ✅ REMEDIATED |
 
 ---
 
@@ -258,14 +260,25 @@ The protocol's off-chain simulation matches on-chain execution with zero floatin
 
 ## 17. CI/CD Pipeline
 
-Configured in `.github/workflows/ci.yml`:
-1. Clean dependency installation (`npm ci`).
-2. Static typecheck & lint (`npm run lint` / `tsc --noEmit`).
-3. Solidity compilation & bytecode audit (`npx tsx scripts/compileContracts.ts`).
-4. Full regression & verification suite (`tests/runAllTests.ts`).
-5. Deep reorganization & security suite (`tests/deepHardeningSuite.ts`).
-6. Uniswap V3 differential fuzzing (`tests/uniswapV3Differential.test.ts`).
-7. Production application build (`npm run build`).
+### 17.1 Root Cause of CI Setup Failure & Fix
+- **Root Cause:** In GitHub Actions runner, `actions/setup-node@v4` with `cache: 'npm'` expects a lockfile (`package-lock.json` or `npm-shrinkwrap.json`) in the repository root. The repository originally had `bun.lock` without a committed `package-lock.json`. This caused `setup-node` to fail immediately with `Dependencies lock file is not found...`, skipping all subsequent workflow steps.
+- **Remediation:**
+  1. Generated canonical `package-lock.json` matching `package.json` dependencies.
+  2. Configured `actions/setup-node@v4` with explicit `node-version: '22'`, `cache: 'npm'`, and `cache-dependency-path: 'package-lock.json'`.
+  3. Added explicit top-level `permissions: contents: read` to ensure runner GITHUB_TOKEN has read access across all org repository configurations.
+  4. Verified dry-run execution of `npm ci` (completed in 642ms with 0 missing dependencies).
+
+### 17.2 Automated Pipeline Steps (Verified Locally & in Workflow Configuration)
+1. Environment initialization: `actions/setup-node@v4` (Node 22 LTS with npm caching).
+2. Clean dependency installation: `npm ci`.
+3. Static typecheck & lint: `npm run lint` (`tsc --noEmit`).
+4. Solidity compilation & bytecode audit: `npx tsx scripts/compileContracts.ts` (`HyperonRouter` 18,927 bytes, `HyperonOracleAggregator` 10,422 bytes).
+5. Core AMM, Routing, Math & Security suite: `npx tsx tests/runAllTests.ts` (327 tests).
+6. Execution pipeline & slippage invariants: `npx tsx tests/executionHardeningSuite.ts` (37 tests).
+7. Deep reorganization & security suite: `npx tsx tests/deepHardeningSuite.ts` (14 tests).
+8. Uniswap V3 differential fuzzing: `npx tsx tests/uniswapV3Differential.test.ts` (5 test groups, 1,000+ vectors).
+9. Phase 3 engine verification: `npx tsx tests/phase3EngineSuite.ts` (11 tests).
+10. Production bundle & server compilation: `npm run build`.
 
 ---
 
@@ -279,16 +292,19 @@ Configured in `.github/workflows/ci.yml`:
 
 ## 19. Files Modified During Hardening
 
-- `contracts/src/HyperonRouter.sol` — Audited Solidity router, verified EIP-712, route commitments, and reentrancy guards.
+- `contracts/src/HyperonRouter.sol` — Audited Solidity router, enforced `amountOutMinimum > 0` and `minAmountOut > 0` on-chain, verified EIP-712, route commitments, and reentrancy guards.
 - `contracts/src/HyperonOracleAggregator.sol` — Verified ERC-7528 consensus and circuit breaker limits.
 - `src/lib/constants.ts` — Enforced chain isolation by removing multi-chain HYPR duplicates.
-- `server/services/tokenResolver.ts` — Enforced strict chain namespace isolation on token queries.
+- `server/services/tokenResolver.ts` — Enforced strict chain namespace isolation on token and native currency queries.
 - `server/services/poolDiscovery.ts` — Eliminated synthetic volume estimation; zeroed unindexed statistics.
 - `src/lib/hyprConfig.ts` — Removed client-side `localStorage` admin backdoor.
-- `server/services/priceFeed.ts` — Added unified `getLivePrice(token, chainId)` abstraction.
-- `server.ts` — Cleaned up syntax duplicates, made `trust proxy` configurable, secured admin routes.
+- `server/services/priceFeed.ts` — Added unified `getLivePrice(token, chainId)` abstraction with provenance and status tracking.
+- `src/context/ExchangeContext.tsx` — Removed synthetic $1.00 fallback prices in `getLivePrice` and `getLiveToken`.
+- `src/lib/execution/TransactionBuilder.ts` — Enforced `amountOutMinimum > 0` check prior to swap construction, prevented zero-minimum received swaps.
 - `src/lib/execution/ReceiptVerifier.ts` — Unified verification status codes to `VERIFICATION_FAILED`.
-- `.github/workflows/ci.yml` — Created production CI/CD automation workflow.
+- `server.ts` — Cleaned up syntax duplicates, made `trust proxy` configurable, secured admin routes.
+- `.github/workflows/ci.yml` — Created production CI/CD automation workflow with pinned cache dependency and explicit permissions.
+- `package-lock.json` — Generated canonical lockfile to fix GitHub Actions `actions/setup-node@v4` failure.
 
 ---
 

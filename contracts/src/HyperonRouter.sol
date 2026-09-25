@@ -354,7 +354,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         SingleSwapParams calldata params
     ) external payable nonReentrant whenNotHalted checkDeadline(params.deadline) returns (uint256 amountOut) {
         if (msg.value > 0) revert UnexpectedETH();
-        if (params.amountIn == 0) revert InvalidAmount();
+        if (params.amountIn == 0 || params.amountOutMinimum == 0) revert InvalidAmount();
         if (params.recipient == address(0)) revert InvalidAddress();
 
         if (params.routeHash == bytes32(0)) revert RouteCommitmentRequired();
@@ -427,7 +427,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         MultiHopSwapParams calldata params
     ) external payable nonReentrant whenNotHalted checkDeadline(params.deadline) returns (uint256 amountOut) {
         if (msg.value > 0) revert UnexpectedETH();
-        if (params.amountIn == 0) revert InvalidAmount();
+        if (params.amountIn == 0 || params.amountOutMinimum == 0) revert InvalidAmount();
         if (params.recipient == address(0)) revert InvalidAddress();
 
         if (params.routeHash == bytes32(0)) revert RouteCommitmentRequired();
@@ -499,7 +499,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     function swapCurveStable(
         CurveSwapParams calldata params
     ) external nonReentrant whenNotHalted returns (uint256 amountOut) {
-        if (params.amountIn == 0) revert InvalidAmount();
+        if (params.amountIn == 0 || params.minAmountOut == 0) revert InvalidAmount();
         if (params.recipient == address(0) || params.curvePool == address(0)) revert InvalidAddress();
         if (!isTrustedCurvePool[params.curvePool]) revert UntrustedPool(params.curvePool);
         if (params.routeHash == bytes32(0)) revert RouteCommitmentRequired();
@@ -621,7 +621,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         if (params.tokenIn == address(0) || params.tokenOut == address(0) || params.tokenIn == params.tokenOut) {
             revert InvalidAddress();
         }
-        if (params.amountIn == 0) revert InvalidAmount();
+        if (params.amountIn == 0 || params.amountOutMinimum == 0) revert InvalidAmount();
 
         // Strict per-user nonce check
         uint256 expectedNonce = nonces[params.user];

@@ -98,7 +98,7 @@ export class CanonicalTokenResolver {
         const nativeCurrency = SUPPORTED_CHAINS[chainId].nativeCurrency;
         const nativeMatch = VERIFIED_TOKENS.find(
           (t) => t.isNative && t.chainId === chainId
-        ) || VERIFIED_TOKENS.find((t) => t.isNative && t.symbol === nativeCurrency.symbol);
+        );
 
         const price = getUsdPrice(nativeCurrency.symbol) ?? nativeMatch?.priceUsd ?? null;
 

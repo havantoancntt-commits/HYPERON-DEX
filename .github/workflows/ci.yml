@@ -10,6 +10,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   audit-and-verify:
     name: Production Hardening, Security, Contracts & Verification Suite
@@ -22,8 +25,9 @@ jobs:
       - name: Set up Node.js Environment (v22.x LTS)
         uses: actions/setup-node@v4
         with:
-          node-version: 22.x
+          node-version: '22'
           cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
 
       - name: Install Dependencies
         run: npm ci
@@ -36,6 +40,9 @@ jobs:
 
       - name: Core AMM, Routing, Math & Security Hardening Tests
         run: npx tsx tests/runAllTests.ts
+
+      - name: Execution Pipeline Hardening & Slippage Invariants
+        run: npx tsx tests/executionHardeningSuite.ts
 
       - name: Deep Reorganization, Nonce & Transaction State Hardening
         run: npx tsx tests/deepHardeningSuite.ts

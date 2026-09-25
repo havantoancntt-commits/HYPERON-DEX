@@ -485,6 +485,13 @@ export class TransactionBuilder {
       amountOutMinRaw = this.calculateAmountOutMinimum(quotedOutRaw, slippage);
     }
 
+    if (amountOutMinRaw <= 0n) {
+      throw new DexError(
+        DEX_ERROR_CODES.INVALID_SLIPPAGE,
+        'amountOutMinimum must be greater than zero. Production execution rejects zero minimum received.'
+      );
+    }
+
     const isNativeIn =
       quote.fromToken.symbol === routerConfig.nativeSymbol ||
       quote.fromToken.address === '0x0000000000000000000000000000000000000000';
