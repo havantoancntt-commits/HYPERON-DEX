@@ -530,6 +530,19 @@ export function getPriceState(symbol: string): PriceEntry {
 }
 
 /**
+ * Unified Live Price Feed Abstraction
+ * Evaluates live price for token and chain, returning full provenance and status:
+ * LIVE | STALE | UNAVAILABLE | ERROR
+ */
+export function getLivePrice(token: string, chainId?: string): PriceEntry {
+  const state = getPriceState(token);
+  return {
+    ...state,
+    source: chainId ? `${state.source} [chain: ${chainId}]` : state.source,
+  };
+}
+
+/**
  * Returns numeric price if available and non-zero, or null if UNAVAILABLE.
  * NO fallback to 1.0!
  */

@@ -50,8 +50,11 @@ import { validateChainId } from './src/lib/chainConfig';
 const app = express();
 const PORT = 3000;
 
-// Behind reverse proxy (Cloud Run / Nginx container ingress)
-app.set('trust proxy', 1);
+// Configurable reverse proxy trust for diverse deployment topologies (Cloud Run, Cloudflare, AWS ALB, Nginx, Docker)
+const trustProxyConfig = process.env.TRUST_PROXY
+  ? (process.env.TRUST_PROXY === 'true' ? true : isNaN(Number(process.env.TRUST_PROXY)) ? process.env.TRUST_PROXY : Number(process.env.TRUST_PROXY))
+  : 1;
+app.set('trust proxy', trustProxyConfig);
 
 // Production Web Security Headers via Helmet (HSTS, strict CSP without unsafe-eval, X-Content-Type-Options)
 // Security Architecture Note regarding 'unsafe-inline':
@@ -108,9 +111,6 @@ app.use((req, res, next) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   next();
 });
-
-// Enable trust proxy for reverse-proxy environments (e.g. Cloud Run / Nginx)
-app.set('trust proxy', 1);
 
 // Production Multi-Tier Rate Limiting with Secure Proxy IP Resolution
 const getClientIp = (req: Request): string => {

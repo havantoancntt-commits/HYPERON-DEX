@@ -125,11 +125,9 @@ export class CanonicalTokenResolver {
       const checksummed = getAddress(rawAddress);
       const lower = checksummed.toLowerCase();
 
-      // Check registry
+      // Check registry with strict chain isolation: same address + different chain != same token
       const regMatch = VERIFIED_TOKENS.find(
         (t) => t.address && t.address.toLowerCase() === lower && t.chainId === chainId
-      ) || VERIFIED_TOKENS.find(
-        (t) => t.address && t.address.toLowerCase() === lower && chainId === 'ethereum'
       );
 
       if (regMatch) {

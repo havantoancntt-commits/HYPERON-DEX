@@ -1,0 +1,50 @@
+name: HYPERON-DEX Enterprise Production CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, release/** ]
+  pull_request:
+    branches: [ main, master ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit-and-verify:
+    name: Production Hardening, Security, Contracts & Verification Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js Environment (v22.x LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Static Typecheck & Lint Integrity
+        run: npm run lint
+
+      - name: Solidity Smart Contracts Compile & Bytecode Audit
+        run: npx tsx scripts/compileContracts.ts
+
+      - name: Core AMM, Routing, Math & Security Hardening Tests
+        run: npx tsx tests/runAllTests.ts
+
+      - name: Deep Reorganization, Nonce & Transaction State Hardening
+        run: npx tsx tests/deepHardeningSuite.ts
+
+      - name: Uniswap V3 Differential & Fuzzing Suite (1,000+ Vectors)
+        run: npx tsx tests/uniswapV3Differential.test.ts
+
+      - name: Phase 3 Engine Verification & Chain Invariant Suite
+        run: npx tsx tests/phase3EngineSuite.ts
+
+      - name: Production Bundle & Server Compilation
+        run: npm run build

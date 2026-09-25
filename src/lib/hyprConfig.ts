@@ -15,29 +15,8 @@ export function isAuthorizedDeployer(walletAddress: string | null | undefined): 
   if (!walletAddress) return false;
   const normalized = walletAddress.trim().toLowerCase();
   
-  // 1. Direct match with authorized protocol multisig / treasury address
-  if (AUTHORIZED_PROTOCOL_ADMINS.includes(normalized)) return true;
-
-  // 2. Check local developer override key (for emergency authorized dev environments)
-  if (typeof window !== 'undefined') {
-    try {
-      const devOverride = localStorage.getItem('HYPERON_ADMIN_DEV_KEY');
-      if (devOverride === 'HYPR_GENESIS_CORE_2026') return true;
-
-      // Also allow any custom admin address saved in admin management
-      const customAdmins = localStorage.getItem('HYPERON_CUSTOM_ADMINS');
-      if (customAdmins) {
-        const parsed: string[] = JSON.parse(customAdmins);
-        if (Array.isArray(parsed) && parsed.map(a => a.toLowerCase()).includes(normalized)) {
-          return true;
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  return false;
+  // Strict cryptographic match with authorized protocol multisig / treasury address
+  return AUTHORIZED_PROTOCOL_ADMINS.includes(normalized);
 }
 
 export interface DeployedContractRecord {

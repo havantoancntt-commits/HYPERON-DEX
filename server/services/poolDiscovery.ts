@@ -744,9 +744,9 @@ export class PoolDiscoveryService {
                 },
                 feeTierPercent: p.feeBps / 100,
                 tvlUsd,
-                volume24hUsd: Math.round(tvlUsd * 0.15),
-                fees24hUsd: Math.round(tvlUsd * 0.15 * (p.feeBps / 10000)),
-                aprPercent: Number(((tvlUsd * 0.15 * (p.feeBps / 10000) * 365 * 100) / tvlUsd).toFixed(2)),
+                volume24hUsd: 0, // Unindexed historical volume strictly zeroed; no fake 15% synthetic multiplier
+                fees24hUsd: 0,
+                aprPercent: 0,
                 poolAddress: p.poolAddress,
                 dexProtocol: p.dexProtocol,
                 lastBlockNumber: p.lastBlockNumber ? p.lastBlockNumber.toString() : null,
