@@ -24,10 +24,17 @@ let isInitialized = false;
 let devToolsDetectedState = false;
 let integrityToken = '';
 
-// Generate pseudo-random client session signature bound to current tab instance
+// Generate cryptographically secure client session signature bound to current tab instance
 function generateSessionIntegrityToken(): string {
   const ts = Date.now().toString(36);
-  const entropy = Math.random().toString(36).substring(2, 10);
+  let entropy = '';
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+    const arr = new Uint8Array(8);
+    window.crypto.getRandomValues(arr);
+    entropy = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+  } else {
+    entropy = Date.now().toString(16);
+  }
   const screenFingerprint = typeof window !== 'undefined'
     ? `${window.screen.width}x${window.screen.height}:${window.devicePixelRatio || 1}`
     : 'headless';

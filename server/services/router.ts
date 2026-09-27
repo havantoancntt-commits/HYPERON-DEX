@@ -1044,7 +1044,7 @@ export const simulateSwapTransaction = (
 
 // ============================================================================
 // MINIMAL ZERO-TRUST RELAYER ENGINE
-// Only forwards signed transactions / ZK proofs to private mempool (Flashbots).
+// Only forwards signed transactions / cryptographic route commitments to private mempool (Flashbots).
 // Does NOT participate in route calculation or user profiling.
 // ============================================================================
 export interface RouteCommitmentPayload {

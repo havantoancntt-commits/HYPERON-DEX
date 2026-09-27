@@ -166,7 +166,7 @@ export async function calculateClientSmartRouteQuote(params: ClientQuoteParams):
 
 /**
  * Submits a transaction via the minimal off-chain Relayer.
- * The Relayer only broadcasts the signed transaction or ZK proof to Flashbots/Mempool.
+ * The Relayer only broadcasts the signed transaction or cryptographic route commitment to Flashbots/Mempool.
  */
 export async function submitRelayedSwap(payload: {
   signedTx?: string;

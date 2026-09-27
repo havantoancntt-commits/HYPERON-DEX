@@ -93,7 +93,7 @@ const DEFAULT_COOLDOWN_MS = 60_000; // 60s cooldown
 export class InMemoryCircuitBreakerStore implements ICircuitBreakerStore {
   private states = new Map<string, CircuitBreakerState>();
   private locks = new Map<string, Promise<any>>();
-  private instanceId = `mem-${process.pid}-${Math.random().toString(36).substring(2, 7)}`;
+  private instanceId = `mem-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
 
   constructor(private auditStore?: ICircuitBreakerAuditStore) {}
 

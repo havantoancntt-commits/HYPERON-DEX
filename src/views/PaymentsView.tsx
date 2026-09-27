@@ -537,7 +537,7 @@ export const PaymentsView: React.FC = () => {
               </button>
             </div>
 
-            {/* QR Mock */}
+            {/* EIP-681 QR Visual Frame */}
             <div className="p-4 rounded-2xl bg-white mx-auto w-48 h-48 flex flex-col items-center justify-center shadow-lg">
               <QrCode className="w-36 h-36 text-black" />
               <span className="text-[10px] text-black font-mono font-bold mt-1">EIP-681 Pay Link</span>

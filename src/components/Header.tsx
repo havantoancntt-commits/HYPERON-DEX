@@ -91,7 +91,7 @@ export const Header: React.FC = () => {
     setSoundActive(next);
     addToast({
       title: next ? 'Tactile Audio Enabled' : 'Audio Muted',
-      message: next ? 'Institutional synthetic sound effects active.' : 'Synthetic sound effects muted.',
+      message: next ? 'Institutional audio feedback active.' : 'Audio feedback muted.',
       type: 'info'
     });
   };

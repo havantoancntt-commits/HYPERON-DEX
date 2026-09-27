@@ -17,6 +17,7 @@
  */
 
 import { Address, Hex, isAddress, keccak256 } from 'viem';
+import crypto from 'node:crypto';
 import { CHAIN_CLIENTS, getChainClient } from './rpc';
 import { getRouterConfig, isVerifiedRouter } from './routerRegistry';
 import { ReceiptVerifier, VerificationResult } from '../../src/lib/execution/ReceiptVerifier';
@@ -111,7 +112,7 @@ export class TransactionLifecycleManager {
     message: string;
   }> {
     const now = Date.now();
-    const id = `hyp_tx_${now}_${Math.random().toString(36).substring(2, 9)}`;
+    const id = `hyp_tx_${now}_${crypto.randomBytes(6).toString('hex')}`;
 
     // 1. Session Wallet Binding
     const sessionWallet = authenticatedSession.walletAddress.toLowerCase();

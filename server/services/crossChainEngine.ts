@@ -2,7 +2,7 @@
  * HYPERON-DEX PROPRIETARY CROSS-CHAIN ROUTING & ATOMIC INTENT ENGINE
  * 
  * World-Class Cross-Chain Liquidity Routing:
- * - Hyperon Quantum Tunnel™ (ZK-SNARK Atomic Intent Relaying)
+ * - Hyperon Quantum Tunnel™ (Cryptographic Atomic Intent Relaying)
  * - Across Protocol v3 (Optimistic Intent Network)
  * - Stargate v2 (LayerZero OFT Unified Liquidity)
  * - Hop Protocol (Rollup-to-Rollup AMM)
@@ -114,7 +114,7 @@ export class HyperonCrossChainEngine {
       : 0;
 
     // Bridge protocols calculation
-    // 1. Hyperon Quantum Tunnel™ (Proprietary ZK Atomic Intent Relay)
+    // 1. Hyperon Quantum Tunnel™ (Proprietary Cryptographic Atomic Intent Relay)
     const hyperonBridgeFeeUsd = Number(Math.max(0.40, sourceGrossValueUsd * 0.0002).toFixed(4)); // 0.02%
     const hyperonDestGasUsd = Number((fromChain === 'ethereum' ? 1.80 : 0.45).toFixed(2));
     const hyperonTotalDeductionUsd = sourceDexFeeUsd + destDexFeeUsd + hyperonBridgeFeeUsd + hyperonDestGasUsd + gasOnDestinationUsd;
@@ -123,7 +123,7 @@ export class HyperonCrossChainEngine {
 
     const hyperonRoute: CrossChainBridgeRoute = {
       id: 'bridge-hyperon-zk',
-      protocolName: 'Hyperon Quantum Tunnel™ (ZK-Relay)',
+      protocolName: 'Hyperon Quantum Tunnel™ (Cryptographic Relay)',
       logo: '⚡',
       fromChain,
       toChain,
@@ -345,13 +345,13 @@ export class HyperonCrossChainEngine {
         name: `Bridge Vault Finality & Attestation`,
         description: isBridgeRelayerConfigured
           ? `Verifying block finality and bridge contract deposit.`
-          : `BLOCKED: TESTNET CONFIGURATION MISSING — Cross-chain bridge contracts and ZK relayer endpoints not configured.`,
+          : `BLOCKED: TESTNET CONFIGURATION MISSING — Cross-chain bridge contracts and cryptographic relayer endpoints not configured.`,
         status: isBridgeRelayerConfigured ? ('active' as const) : ('failed' as const),
         timestamp: Date.now(),
       },
       {
         stepIndex: 3,
-        name: `Zero-Knowledge Cross-Chain Attestation`,
+        name: `Cryptographic Cross-Chain Attestation`,
         description: isBridgeRelayerConfigured
           ? `Relayer network attesting Merkle state root.`
           : `Relayer network awaiting bridge deployment.`,

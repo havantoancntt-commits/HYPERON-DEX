@@ -118,7 +118,7 @@ export const CrossChainExecutionModal: React.FC<CrossChainExecutionModalProps> =
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
                 <ArrowRight className="w-5 h-5" />
               </div>
-              <span className="text-[10px] font-mono text-slate-500 mt-1">ZK Tunnel</span>
+              <span className="text-[10px] font-mono text-slate-500 mt-1">Crypto Tunnel</span>
             </div>
 
             {/* Destination */}

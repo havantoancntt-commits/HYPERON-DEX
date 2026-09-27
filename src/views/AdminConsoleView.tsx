@@ -99,10 +99,10 @@ export const AdminConsoleView: React.FC = () => {
     } catch (err) {
       console.warn('Failed to load admin metrics:', err);
     }
-    // If API unavailable, mark nodes as degraded/offline rather than fabricating fake latencies
+    // If API unavailable, fail closed with zero metrics and offline nodes rather than fabricating fake volume/uptime
     setMetrics({
-      uptimePercent: 99.998,
-      totalVolume24hUsd: 184500000,
+      uptimePercent: 0,
+      totalVolume24hUsd: 0,
       activeQuotesPerSec: 0,
       averageQuoteLatencyMs: 0,
       aiModelQuotaUsage: {

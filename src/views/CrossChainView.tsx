@@ -194,7 +194,7 @@ export const CrossChainView: React.FC = () => {
           setExecutionStatus(data.status);
           setIsModalOpen(true);
           addToast({
-            title: 'ZK Intent Broadcasted',
+            title: 'Cryptographic Intent Broadcasted',
             message: `Initiated bridge transfer via ${selectedRoute.protocolName}. Tracking live status...`,
             type: 'success',
           });
@@ -228,11 +228,11 @@ export const CrossChainView: React.FC = () => {
                   Hyperon Quantum Tunnel™
                 </h1>
                 <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-sm">
-                  PROPRIETARY ZK-ROUTING
+                  PROPRIETARY CRYPTOGRAPHIC ROUTING
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1 font-mono">
-                Atomic cross-chain settlement with zero-knowledge attestation & frontrunning protection
+                Atomic cross-chain settlement with cryptographic state attestation & frontrunning protection
               </p>
             </div>
           </div>
@@ -246,7 +246,7 @@ export const CrossChainView: React.FC = () => {
           </div>
           <div className="px-3.5 py-2 rounded-xl bg-black/40 border border-white/5 text-center">
             <div className="text-slate-400 text-[10px]">MEV SHIELD</div>
-            <div className="font-bold text-cyan-400 mt-0.5">Zero-Knowledge Guard</div>
+            <div className="font-bold text-cyan-400 mt-0.5">Cryptographic Guard</div>
           </div>
         </div>
       </div>
@@ -488,7 +488,7 @@ export const CrossChainView: React.FC = () => {
               {isExecuting ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Executing ZK Bridge Relaying...</span>
+                  <span>Executing Cryptographic Bridge Relaying...</span>
                 </>
               ) : (
                 <>
@@ -602,7 +602,7 @@ export const CrossChainView: React.FC = () => {
             <div className="p-3.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 flex items-center gap-2.5">
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
               <p className="text-[11px] text-emerald-300 leading-relaxed font-mono">
-                Attested by Hyperon Decentralized ZK-Relayers. Zero synthetic tokens, instant destination finality.
+                Attested by Hyperon Decentralized Cryptographic Relayers. Zero synthetic tokens, instant destination finality.
               </p>
             </div>
 

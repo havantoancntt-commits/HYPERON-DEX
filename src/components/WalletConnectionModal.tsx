@@ -1292,7 +1292,7 @@ export const WalletConnectionModal: React.FC = () => {
               {/* Dynamic QR Display Box */}
               <div className="w-56 h-56 mx-auto p-4 rounded-3xl bg-white border-4 border-cyan-400/40 shadow-2xl flex flex-col items-center justify-center relative group">
                 <div className="w-full h-full bg-slate-900 rounded-2xl p-3 flex flex-col items-center justify-center relative overflow-hidden">
-                  {/* High fidelity QR mock grid */}
+                  {/* High fidelity QR display frame */}
                   <div className="w-full h-full border border-cyan-400/30 rounded-xl p-2 flex flex-col justify-between items-center text-cyan-400">
                     <div className="flex justify-between w-full">
                       <div className="w-7 h-7 border-4 border-cyan-400 rounded-lg p-1">

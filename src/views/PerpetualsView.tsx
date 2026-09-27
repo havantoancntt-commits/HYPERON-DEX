@@ -92,6 +92,45 @@ export const PerpetualsView: React.FC = () => {
     };
   }, [currentToken.symbol]);
 
+  const [timeframe, setTimeframe] = useState<'15M' | '1H' | '4H' | '1D'>('1H');
+  const [candles, setCandles] = useState<Array<{ timestamp: number; open: number; high: number; low: number; close: number; volume: number }>>([]);
+  const [loadingCandles, setLoadingCandles] = useState<boolean>(true);
+
+  // Fetch real live candlestick history from exchange oracles
+  useEffect(() => {
+    let active = true;
+    setLoadingCandles(true);
+    fetch(`/api/market/candles?symbol=${currentToken.symbol}&timeframe=${timeframe.toLowerCase()}&count=20`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (active) {
+          if (data && Array.isArray(data.candles)) {
+            const parsed = data.candles.map((c: any) => ({
+              timestamp: c.time || c.timestamp || Date.now(),
+              open: Number(c.open),
+              high: Number(c.high),
+              low: Number(c.low),
+              close: Number(c.close),
+              volume: Number(c.volume || 0),
+            }));
+            setCandles(parsed);
+          } else {
+            setCandles([]);
+          }
+          setLoadingCandles(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setCandles([]);
+          setLoadingCandles(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentToken.symbol, timeframe]);
+
   // Fetch active positions
   const fetchPositions = async () => {
     try {
@@ -259,11 +298,12 @@ export const PerpetualsView: React.FC = () => {
                 </span>
               </div>
               <div className="flex items-center gap-1.5 text-xs font-mono">
-                {['15M', '1H', '4H', '1D'].map((tf) => (
+                {(['15M', '1H', '4H', '1D'] as const).map((tf) => (
                   <button
                     key={tf}
-                    className={`px-2.5 py-1 rounded-lg text-xs cursor-pointer ${
-                      tf === '1H' ? 'bg-blue-600 text-white font-bold' : 'bg-white/5 text-slate-400 hover:text-white'
+                    onClick={() => setTimeframe(tf)}
+                    className={`px-2.5 py-1 rounded-lg text-xs cursor-pointer transition-colors ${
+                      timeframe === tf ? 'bg-blue-600 text-white font-bold' : 'bg-white/5 text-slate-400 hover:text-white'
                     }`}
                   >
                     {tf}
@@ -272,7 +312,7 @@ export const PerpetualsView: React.FC = () => {
               </div>
             </div>
 
-            {/* Interactive Visual Canvas Mock / Price Action */}
+            {/* Verified Market Candlesticks & Technical Indicators */}
             <div className="h-72 rounded-xl bg-gradient-to-b from-[#0B1122] to-[#060A14] border border-white/5 p-4 flex flex-col justify-between relative overflow-hidden font-mono">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-400">MA(20): <strong className="text-amber-400">{techIndicators?.ma25 ? `$${techIndicators.ma25.toFixed(2)}` : '—'}</strong></span>
@@ -280,28 +320,56 @@ export const PerpetualsView: React.FC = () => {
                 <span className="text-slate-400">RSI(14): <strong className="text-emerald-400">{techIndicators?.rsi ? techIndicators.rsi.toFixed(1) : '—'}</strong></span>
               </div>
 
-              {/* Graphical Candlestick Simulation Wave */}
-              <div className="relative h-44 flex items-end justify-between gap-1.5 px-2">
-                {[45, 52, 48, 60, 58, 65, 62, 70, 68, 75, 72, 80, 78, 85, 82, 90, 88, 95, 92, 100].map((h, i) => {
-                  const isUp = i % 3 !== 0;
+              {/* Real Candlestick Chart */}
+              {candles.length === 0 ? (
+                <div className="relative h-44 flex flex-col items-center justify-center text-slate-500 text-xs">
+                  <AlertTriangle className="w-5 h-5 text-amber-500/70 mb-2" />
+                  <span>{loadingCandles ? 'Đang truy xuất dữ liệu nến thực từ Oracle/Exchange...' : 'Không có dữ liệu nến thực cho cặp giao dịch này'}</span>
+                </div>
+              ) : (
+                (() => {
+                  const minPrice = Math.min(...candles.map((c) => c.low));
+                  const maxPrice = Math.max(...candles.map((c) => c.high));
+                  const priceRange = maxPrice > minPrice ? maxPrice - minPrice : 1;
+
                   return (
-                    <div key={i} className="flex-1 flex flex-col items-center justify-end h-full">
-                      <div className={`w-[1px] ${isUp ? 'bg-emerald-500/60' : 'bg-rose-500/60'}`} style={{ height: `${h + 10}%` }} />
-                      <div
-                        className={`w-full rounded-sm ${isUp ? 'bg-emerald-500 shadow-emerald-900/40' : 'bg-rose-500 shadow-rose-900/40'}`}
-                        style={{ height: `${h}%` }}
-                      />
+                    <div className="relative h-44 flex items-end justify-between gap-1.5 px-2">
+                      {candles.map((c, i) => {
+                        const isUp = c.close >= c.open;
+                        const highPct = Math.max(0, Math.min(100, ((c.high - minPrice) / priceRange) * 100));
+                        const lowPct = Math.max(0, Math.min(100, ((c.low - minPrice) / priceRange) * 100));
+                        const openPct = Math.max(0, Math.min(100, ((c.open - minPrice) / priceRange) * 100));
+                        const closePct = Math.max(0, Math.min(100, ((c.close - minPrice) / priceRange) * 100));
+                        const bodyBottom = Math.min(openPct, closePct);
+                        const bodyHeight = Math.max(3, Math.abs(closePct - openPct));
+                        const wickHeight = Math.max(4, highPct - lowPct);
+
+                        return (
+                          <div key={i} className="flex-1 flex flex-col items-center justify-end h-full relative group">
+                            {/* Wick */}
+                            <div
+                              className={`w-[1px] absolute ${isUp ? 'bg-emerald-500/70' : 'bg-rose-500/70'}`}
+                              style={{ bottom: `${lowPct}%`, height: `${wickHeight}%` }}
+                            />
+                            {/* Candle Body */}
+                            <div
+                              className={`w-full rounded-[1px] absolute ${
+                                isUp ? 'bg-emerald-500 shadow-emerald-900/40' : 'bg-rose-500 shadow-rose-900/40'
+                              }`}
+                              style={{ bottom: `${bodyBottom}%`, height: `${bodyHeight}%` }}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   );
-                })}
-              </div>
+                })()
+              )}
 
               <div className="flex items-center justify-between text-[11px] text-slate-500 border-t border-white/5 pt-2">
-                <span>04:00</span>
-                <span>08:00</span>
-                <span>12:00</span>
-                <span>16:00</span>
-                <span>20:00</span>
+                <span>{candles.length > 0 ? new Date(candles[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                <span>{candles.length > 2 ? new Date(candles[Math.floor(candles.length / 2)].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                <span>{candles.length > 0 ? new Date(candles[candles.length - 1].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}</span>
                 <span className="text-cyan-400 font-bold">Now: ${formatCurrency(currentPrice)}</span>
               </div>
             </div>

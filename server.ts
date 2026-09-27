@@ -479,6 +479,33 @@ app.get('/api/prices/history', async (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/market/candles', async (req: Request, res: Response) => {
+  try {
+    const symbol = (req.query.symbol as string) || 'ETH';
+    const timeframe = (req.query.timeframe as string) || '15m';
+    const count = parseInt(req.query.count as string) || 36;
+
+    const currentPrice = getPrice(symbol);
+    const candles = await fetchLiveKlines(symbol, timeframe, count);
+
+    res.json({
+      symbol,
+      timeframe,
+      currentPrice,
+      candles,
+      timestamp: Date.now(),
+      source: 'Live Exchange Klines (Binance / AMM Depth)',
+    });
+  } catch (err: unknown) {
+    console.error('[HYPERON-DEX] Candlestick history error:', err);
+    res.status(503).json({
+      error: 'Failed to retrieve market candlestick history from exchange oracles',
+      candles: [],
+      timestamp: Date.now(),
+    });
+  }
+});
+
 // -------------------------------------------------------------
 // 3. Tokens & Market Endpoints
 // -------------------------------------------------------------
