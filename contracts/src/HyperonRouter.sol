@@ -70,6 +70,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     error InvalidAmount();
     error ExpiredDeadline();
     error OracleCircuitBreakerTriggered(address asset);
+    error OracleUnavailable(address asset); // <-- FIX: Differentiate oracle unavailability/unsupported token from tripped breaker
     error UntrustedPool(address pool);
     error UntrustedVault(address vault);
     error InvalidSignature();
@@ -728,17 +729,19 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
             revert InvalidAddress();
         }
         try oracleAggregator.isCircuitBreakerTripped(token) returns (bool tripped) {
-            if (tripped) revert OracleCircuitBreakerTriggered(token);
+            if (tripped) revert OracleCircuitBreakerTriggered(token); // <-- FIX: Only revert when tripped is true
         } catch {
-            revert OracleCircuitBreakerTriggered(token);
+            // FIX: Differentiate between circuit breaker trip and oracle unavailability / unsupported token
+            revert OracleUnavailable(token); // <-- FIX
         }
 
         try oracleAggregator.getAssetPriceData(token) returns (IERC7528PriceOracle.PriceData memory data) {
             if (data.isCircuitBreakerActive) {
-                revert OracleCircuitBreakerTriggered(token);
+                revert OracleCircuitBreakerTriggered(token); // <-- FIX
             }
         } catch {
-            revert OracleCircuitBreakerTriggered(token);
+            // FIX: Prevent false positive circuit breaker triggers when token price data is unconfigured
+            revert OracleUnavailable(token); // <-- FIX
         }
     }
 

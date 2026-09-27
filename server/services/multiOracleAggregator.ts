@@ -108,11 +108,12 @@ export const EMERGENCY_SPIKE_PERCENT: number = 10.0;
 export const EMERGENCY_WINDOW_MS: number = 5_000; // 5 seconds window for instant flash crash/attack detection
 export const CIRCUIT_BREAKER_COOLDOWN_MS: number = 300_000; // 5 minutes cool-off
 export const MIN_INDEPENDENT_SOURCES: number = 2; // Hard constraint: at least 2 independent providers required
+export const MIN_ABSOLUTE_VOLUME_USD: number = 10_000; // $10,000 minimum absolute 24h volume threshold (prevents starvation) // <-- FIX
 
 /**
  * Calculates consolidated price across independent sources.
  * 1. Discards expired or non-positive sources.
- * 2. Filters out oracles with volume < 1% of total liquidity.
+ * 2. Filters out oracles with volume < 1% of total liquidity AND below absolute threshold.
  * 3. Computes median price using pure BigInt integer arithmetic.
  * 4. Identifies and strips outliers deviating > 5% from median.
  * 5. Computes volume-weighted average of surviving sources using strict BigInt integer arithmetic.
@@ -127,13 +128,18 @@ export function getConsolidatedPrice(sources: PriceSource[]): bigint {
     return 0n;
   }
 
-  // Filter sources with volume < 1% of total volume when volume is reported
+  // Filter sources with volume < 1% of total volume when volume is reported (with starvation guard)
   const totalVolume = validSources.reduce((sum, s) => sum + (s.volume24h || 0), 0);
   if (totalVolume > 0) {
     const volumeThreshold = totalVolume * 0.01;
-    const highVolumeSources = validSources.filter((s) => (s.volume24h || 0) >= volumeThreshold);
-    if (highVolumeSources.length > 0) {
-      validSources = highVolumeSources;
+    // FIX: Only filter out sources below 1% AND below absolute volume threshold
+    const highVolumeSources = validSources.filter((s) => {
+      const vol = s.volume24h || 0;
+      return vol >= volumeThreshold || vol >= MIN_ABSOLUTE_VOLUME_USD; // <-- FIX
+    });
+    // FIX: Ensure starvation guard always preserves at least 2 sources if validSources had >= 2
+    if (highVolumeSources.length >= 2 || (validSources.length < 2 && highVolumeSources.length > 0)) {
+      validSources = highVolumeSources; // <-- FIX
     }
   }
 
@@ -283,25 +289,29 @@ export function aggregateMultiSourcePrice(
   }
   const independentSourcesCount = independentProviders.size;
 
-  // 3. Filter sources by 24h volume (>1% liquidity filter)
+  // 3. Filter sources by 24h volume (>1% liquidity filter with starvation guard)
   const totalVolume = validSources.reduce((sum, s) => sum + (s.volume24h || 0), 0);
   const volumeFilteredSources: { name: string; volume24h: number; reason: string }[] = [];
 
   let quorumSources = validSources;
   if (totalVolume > 0) {
     const threshold = totalVolume * 0.01;
-    quorumSources = validSources.filter((s) => {
+    const candidates = validSources.filter((s) => {
       const vol = s.volume24h || 0;
-      if (vol < threshold) {
+      // FIX: Source is filtered out only if it is below 1% threshold AND below MIN_ABSOLUTE_VOLUME_USD
+      const isStarved = vol < threshold && vol < MIN_ABSOLUTE_VOLUME_USD; // <-- FIX
+      if (isStarved) {
         volumeFilteredSources.push({
           name: s.name,
           volume24h: vol,
-          reason: `Volume $${vol.toLocaleString()} is below 1% of total liquidity ($${threshold.toFixed(0)})`,
+          reason: `Volume $${vol.toLocaleString()} is below 1% of total liquidity ($${threshold.toFixed(0)}) and below $${MIN_ABSOLUTE_VOLUME_USD.toLocaleString()} absolute floor`,
         });
         return false;
       }
       return true;
     });
+
+    quorumSources = candidates.length > 0 ? candidates : validSources; // <-- FIX: Retain candidates or fallback if all filtered
   }
 
   // 4. Fail-closed if no valid sources at all

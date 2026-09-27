@@ -1245,7 +1245,7 @@ app.post('/api/auth/verify', async (req: Request, res: Response) => {
     res.cookie('hyp_session_id', session.sessionId, {
       httpOnly: true,
       secure: isProd,
-      sameSite: 'lax',
+      sameSite: 'strict', // <-- FIX: Upgraded from lax to strict for CSRF defense in financial transactions
       maxAge: SESSION_TTL_MS,
       path: '/',
     });
@@ -1415,6 +1415,51 @@ app.get('/api/ai/signals', async (req: Request, res: Response) => {
 // -------------------------------------------------------------
 // 10. Cross-Chain Routes & Proprietary Liquidity Engine
 // -------------------------------------------------------------
+
+/**
+ * Resolves verified canonical token address by symbol and chainId from VERIFIED_TOKENS.
+ * Fails closed if token is not in canonical registry.
+ */
+function resolveCanonicalTokenAddress(
+  symbol: string,
+  chainId: string,
+  explicitAddress?: string
+): { address: string; decimals: number } | null {
+  const normSymbol = (symbol || '').trim().toUpperCase();
+  const normChain = (chainId || '').trim().toLowerCase();
+
+  // If explicit address provided, strictly verify it exists in VERIFIED_TOKENS for this chain
+  if (explicitAddress && isAddress(explicitAddress) && explicitAddress !== '0x0000000000000000000000000000000000000000') {
+    const byAddr = VERIFIED_TOKENS.find(
+      (t) =>
+        t.address.toLowerCase() === explicitAddress.toLowerCase() &&
+        (!t.chainId || t.chainId.toLowerCase() === normChain)
+    );
+    if (byAddr) {
+      return { address: byAddr.address, decimals: byAddr.decimals || 18 };
+    }
+  }
+
+  // Lookup canonical token by verified symbol and chainId
+  const bySymbol = VERIFIED_TOKENS.find(
+    (t) =>
+      t.symbol.toUpperCase() === normSymbol &&
+      (!t.chainId || t.chainId.toLowerCase() === normChain)
+  );
+
+  if (bySymbol) {
+    return { address: bySymbol.address, decimals: bySymbol.decimals || 18 };
+  }
+
+  // Fallback to cross-chain verified list if chain-specific entry is not differentiated
+  const genericFound = VERIFIED_TOKENS.find((t) => t.symbol.toUpperCase() === normSymbol);
+  if (genericFound) {
+    return { address: genericFound.address, decimals: genericFound.decimals || 18 };
+  }
+
+  return null;
+}
+
 app.get('/api/crosschain/routes', async (req: Request, res: Response) => {
   try {
     const fromChain = (req.query.fromChain as any) || 'ethereum';
@@ -1423,15 +1468,24 @@ app.get('/api/crosschain/routes', async (req: Request, res: Response) => {
     const fromToken = (req.query.fromToken as string) || 'ETH';
     const toToken = (req.query.toToken as string) || 'ETH';
 
+    // FIX: Verify canonical token existence
+    const canonicalFrom = resolveCanonicalTokenAddress(fromToken, fromChain);
+    const canonicalTo = resolveCanonicalTokenAddress(toToken, toChain);
+    if (!canonicalFrom || !canonicalTo) {
+      return res.status(400).json({
+        error: '400 BAD REQUEST: TOKEN_NOT_CANONICAL: Requested tokens must be in verified canonical registry',
+      });
+    }
+
     const quote = await hyperonCrossChainEngine.computeCrossChainQuote({
       fromChain,
       toChain,
-      fromTokenAddress: '0x0000000000000000000000000000000000000000',
+      fromTokenAddress: canonicalFrom.address, // <-- FIX
       fromTokenSymbol: fromToken,
-      fromTokenDecimals: 18,
-      toTokenAddress: '0x0000000000000000000000000000000000000000',
+      fromTokenDecimals: canonicalFrom.decimals,
+      toTokenAddress: canonicalTo.address, // <-- FIX
       toTokenSymbol: toToken,
-      toTokenDecimals: 18,
+      toTokenDecimals: canonicalTo.decimals,
       amount,
     });
 
@@ -1466,15 +1520,30 @@ app.post('/api/crosschain/quote', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'MISSING_PARAMETERS: fromChain, toChain, fromTokenSymbol, toTokenSymbol, and amount are required' });
     }
 
+    // FIX: Strictly resolve canonical token addresses from VERIFIED_TOKENS to prevent token spoofing
+    const canonicalFrom = resolveCanonicalTokenAddress(fromTokenSymbol, fromChain, fromTokenAddress);
+    if (!canonicalFrom) {
+      return res.status(400).json({
+        error: `400 BAD REQUEST: TOKEN_NOT_CANONICAL: Source token '${fromTokenSymbol}' on chain '${fromChain}' is not in the verified canonical token registry`,
+      });
+    }
+
+    const canonicalTo = resolveCanonicalTokenAddress(toTokenSymbol, toChain, toTokenAddress);
+    if (!canonicalTo) {
+      return res.status(400).json({
+        error: `400 BAD REQUEST: TOKEN_NOT_CANONICAL: Destination token '${toTokenSymbol}' on chain '${toChain}' is not in the verified canonical token registry`,
+      });
+    }
+
     const quote = await hyperonCrossChainEngine.computeCrossChainQuote({
       fromChain,
       toChain,
-      fromTokenAddress: fromTokenAddress || '0x0000000000000000000000000000000000000000',
+      fromTokenAddress: canonicalFrom.address, // <-- FIX: Use resolved canonical address instead of 0x0 fallback
       fromTokenSymbol,
-      fromTokenDecimals: fromTokenDecimals || 18,
-      toTokenAddress: toTokenAddress || '0x0000000000000000000000000000000000000000',
+      fromTokenDecimals: fromTokenDecimals || canonicalFrom.decimals,
+      toTokenAddress: canonicalTo.address, // <-- FIX: Use resolved canonical address instead of 0x0 fallback
       toTokenSymbol,
-      toTokenDecimals: toTokenDecimals || 18,
+      toTokenDecimals: toTokenDecimals || canonicalTo.decimals,
       amount: parseFloat(amount),
       slippagePercent: slippagePercent ? parseFloat(slippagePercent) : 0.5,
       userAddress,
@@ -1704,8 +1773,10 @@ app.get('/api/admin/metrics', requireSession({ roles: ['ADMIN'] }), async (req: 
       : 24;
 
     const procUptimeSec = process.uptime();
-    // System uptime calculation from real process availability
-    const uptimePercent = Math.min(100, Math.max(99.0, Number(((procUptimeSec / (procUptimeSec + 0.1)) * 100).toFixed(3))));
+    // FIX: Calculate real system operational uptime based on live RPC node health ratio and process uptime (no fake floor)
+    const allNodes = [ethBlock, baseBlock, arbBlock, optBlock, bscBlock, polyBlock];
+    const operationalCount = allNodes.filter((n) => n.status === 'SUCCESS').length;
+    const uptimePercent = Number(((operationalCount / allNodes.length) * 100).toFixed(2)); // <-- FIX
 
     res.json({
       metrics: {

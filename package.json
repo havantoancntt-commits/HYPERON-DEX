@@ -9,7 +9,7 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "test": "tsx tests/runAllTests.ts",
-    "test:all": "tsx tests/runAllTests.ts && tsx tests/executionHardeningSuite.ts && tsx tests/deepHardeningSuite.ts && tsx tests/uniswapV3Differential.test.ts && tsx tests/uniswapV3Verification.ts && tsx tests/UltraRouter.test.ts && tsx tests/phase3EngineSuite.ts && tsx tests/productionHarden.test.ts && tsx tests/pwaOfflineInvariants.test.ts && tsx tests/transactionLifecycleStore.test.ts",
+    "test:all": "tsx tests/runAllTests.ts && tsx tests/executionHardeningSuite.ts && tsx tests/deepHardeningSuite.ts && tsx tests/uniswapV3Differential.test.ts && tsx tests/uniswapV3Verification.ts && tsx tests/UltraRouter.test.ts && tsx tests/phase3EngineSuite.ts && tsx tests/productionHarden.test.ts && tsx tests/pwaOfflineInvariants.test.ts && tsx tests/transactionLifecycleStore.test.ts && tsx tests/securityHardeningReview.test.ts",
     "contracts:compile": "tsx scripts/compileContracts.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"

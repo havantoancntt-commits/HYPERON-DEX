@@ -342,8 +342,11 @@ export class CurveAdapter implements IDexAdapter {
     const sum = balances.reduce((acc, b) => acc + b, 0n);
     if (sum === 0n) return 0n;
 
-    let D = sum;
     const Ann = A * N;
+    // FIX: Defensive check to ensure mathematical stability and prevent division by zero or underflow in (Ann - 1)
+    if (Ann <= 1n || N === 0n) return sum; // <-- FIX
+
+    let D = sum;
     let converged = false;
 
     // Newton's method for D:
