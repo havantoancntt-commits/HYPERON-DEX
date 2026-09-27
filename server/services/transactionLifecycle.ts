@@ -269,22 +269,22 @@ export class PostgresTransactionStore implements ITransactionStore {
 }
 
 export class FailClosedTransactionStore implements ITransactionStore {
-  async saveRecord(): Promise<void> {
+  async saveRecord(_record: TransactionRecord): Promise<void> {
     throw new Error('TX_STORE_UNAVAILABLE: Production requires distributed persistent store (PostgreSQL via DATABASE_URL). Fails closed.');
   }
-  async updateRecord(): Promise<void> {
+  async updateRecord(_record: TransactionRecord): Promise<void> {
     throw new Error('TX_STORE_UNAVAILABLE: Production requires distributed persistent store (PostgreSQL via DATABASE_URL). Fails closed.');
   }
-  async getRecord(): Promise<TransactionRecord | undefined> {
+  async getRecord(_id: string): Promise<TransactionRecord | undefined> {
     throw new Error('TX_STORE_UNAVAILABLE: Production requires distributed persistent store (PostgreSQL via DATABASE_URL). Fails closed.');
   }
-  async getRecordByIdempotencyKey(): Promise<TransactionRecord | undefined> {
+  async getRecordByIdempotencyKey(_key: string): Promise<TransactionRecord | undefined> {
     throw new Error('TX_STORE_UNAVAILABLE: Production requires distributed persistent store (PostgreSQL via DATABASE_URL). Fails closed.');
   }
-  async getRecordByHash(): Promise<TransactionRecord | undefined> {
+  async getRecordByHash(_txHash: string): Promise<TransactionRecord | undefined> {
     throw new Error('TX_STORE_UNAVAILABLE: Production requires distributed persistent store (PostgreSQL via DATABASE_URL). Fails closed.');
   }
-  async getUserTransactions(): Promise<TransactionRecord[]> {
+  async getUserTransactions(_userAddress: string): Promise<TransactionRecord[]> {
     throw new Error('TX_STORE_UNAVAILABLE: Production requires distributed persistent store (PostgreSQL via DATABASE_URL). Fails closed.');
   }
   async getPendingRecords(): Promise<TransactionRecord[]> {

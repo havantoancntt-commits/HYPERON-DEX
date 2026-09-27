@@ -210,19 +210,16 @@ export const Header: React.FC = () => {
         <div className="flex items-center gap-6">
           <button 
             onClick={() => setActiveView('dashboard')}
-            className="flex items-center gap-3.5 group cursor-pointer focus:outline-none"
+            className="flex items-center gap-3 group cursor-pointer focus:outline-none"
           >
-            <Hyperon3DLogo className="w-11 h-11 shrink-0" />
+            <Hyperon3DLogo className="w-9 h-9 shrink-0 transition-transform duration-200 group-hover:scale-105" />
             <div className="text-left">
-              <div className="font-extrabold tracking-tight text-white flex items-center gap-2 text-xl font-sans leading-none">
-                HYPERON<span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 font-black">DEX</span>
-                <span className="text-[9px] font-mono font-extrabold px-2 py-0.5 rounded-full bg-gradient-to-r from-cyan-500/15 via-blue-500/20 to-purple-500/20 text-cyan-300 border border-cyan-400/40 uppercase tracking-widest shadow-sm shadow-cyan-500/10">
-                  AI PRO
-                </span>
+              <div className="font-syne font-black tracking-tight text-white flex items-center gap-1 text-lg leading-none">
+                HYPERON<span className="text-cyan-400">DEX</span>
               </div>
-              <div className="text-[10px] font-mono text-slate-400 tracking-wider font-semibold uppercase mt-1 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
-                <span>QUANTUM SUPER EXCHANGE</span>
+              <div className="text-[10px] font-mono text-slate-400 tracking-wider uppercase mt-1 flex items-center gap-1.5 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>TERMINAL V4.2</span>
               </div>
             </div>
           </button>
@@ -230,11 +227,11 @@ export const Header: React.FC = () => {
           {/* Quick Search Trigger Bar */}
           <button
             onClick={() => setShowSearchModal(true)}
-            className="hidden md:flex items-center gap-3 px-3.5 py-2 rounded-xl bg-[#0D111A] hover:bg-[#131926] border border-white/[0.08] hover:border-blue-500/30 text-xs text-slate-400 transition-all w-80 justify-between group cursor-pointer shadow-inner"
+            className="hidden md:flex items-center gap-3 px-3.5 py-2 rounded-xl bg-[#0D111A] hover:bg-[#131926] border border-white/[0.08] hover:border-cyan-500/30 text-xs text-slate-400 transition-all w-72 justify-between group cursor-pointer shadow-inner"
           >
             <span className="flex items-center gap-2.5">
               <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-400 transition-colors" />
-              <span className="text-slate-400 group-hover:text-slate-200">Search tokens, pools, AI agents...</span>
+              <span className="text-slate-400 group-hover:text-slate-200 font-sans">Search tokens, pools, agents...</span>
             </span>
             <kbd className="font-mono text-[10px] bg-[#171F30] text-slate-400 group-hover:text-cyan-300 px-2 py-0.5 rounded border border-white/10 shadow-sm">
               ⌘K
@@ -244,100 +241,28 @@ export const Header: React.FC = () => {
 
         {/* Right Tools & Navigation Quick Badges */}
         <div className="flex items-center gap-3">
-          {/* Institutional Primary Desktop Navigation Links */}
-          <div className="hidden xl:flex items-center gap-1 bg-[#090C14] p-1 rounded-2xl border border-white/[0.08] text-xs font-medium shadow-inner">
-            <button
-              onClick={() => setActiveView('hypr-coin')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeView === 'hypr-coin'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-extrabold border border-cyan-400/40 shadow-sm shadow-cyan-500/20'
-                  : 'text-cyan-400 hover:text-cyan-200 hover:bg-cyan-500/10'
-              }`}
-            >
-              <Hyperon3DLogo className="w-3.5 h-3.5" />
-              <span>HYPR Coin</span>
-            </button>
-            <button
-              onClick={() => setActiveView('trade')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                activeView === 'trade'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
-                  : 'text-slate-300 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              Trade
-            </button>
-            <button
-              onClick={() => setActiveView('swap')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                activeView === 'swap'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
-                  : 'text-slate-300 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              Swap
-            </button>
-            <button
-              onClick={() => setActiveView('markets')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                activeView === 'markets'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
-                  : 'text-slate-300 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              Markets
-            </button>
-            <button
-              onClick={() => setActiveView('portfolio')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                activeView === 'portfolio'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
-                  : 'text-slate-300 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              Portfolio
-            </button>
-            <button
-              onClick={() => setActiveView('onchain-radar')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                activeView === 'onchain-radar'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
-                  : 'text-slate-300 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              Analytics
-            </button>
-            <button
-              onClick={() => setActiveView('security-center')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                activeView === 'security-center'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
-                  : 'text-slate-300 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              Security
-            </button>
-            <button
-              onClick={() => setActiveView('transactions')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                activeView === 'transactions'
-                  ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30'
-                  : 'text-slate-300 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              Activity
-            </button>
-            <button
-              onClick={() => setActiveView('ai-intelligence')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
-                activeView === 'ai-intelligence'
-                  ? 'bg-gradient-to-r from-blue-600/30 via-cyan-500/30 to-indigo-600/30 text-cyan-300 font-bold border border-cyan-400/40'
-                  : 'text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10'
-              }`}
-            >
-              <Cpu className="w-3.5 h-3.5" />
-              <span>AI Terminal</span>
-            </button>
+          {/* Institutional Primary Desktop Navigation Links (Strict 6 Items + More Dropdown) */}
+          <nav className="hidden xl:flex items-center gap-1 bg-[#090C14]/90 backdrop-blur-md p-1 rounded-2xl border border-white/[0.08] text-xs font-medium shadow-inner">
+            {[
+              { id: 'trade', label: 'Trade' },
+              { id: 'swap', label: 'Swap' },
+              { id: 'perpetuals', label: 'Perps 50x' },
+              { id: 'markets', label: 'Markets' },
+              { id: 'portfolio', label: 'Portfolio' },
+              { id: 'onchain-radar', label: 'Analytics' },
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveView(item.id as any)}
+                className={`px-3.5 py-1.5 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                  activeView === item.id
+                    ? 'bg-cyan-500/15 text-cyan-300 font-bold border border-cyan-500/30 shadow-sm shadow-cyan-950/40'
+                    : 'text-slate-300 hover:text-white hover:bg-white/[0.04]'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
 
             {/* Dropdown More */}
             <div className="relative">
@@ -359,15 +284,17 @@ export const Header: React.FC = () => {
                   </div>
                   <div className="space-y-0.5 mt-1">
                     {[
-                      { id: 'perpetuals', label: 'Perpetuals (50x)', icon: TrendingUp },
-                      { id: 'onchain-radar', label: 'Smart Money Radar', icon: Radio },
-                      { id: 'launchpad', label: 'Anti-Rug Launchpad', icon: Zap },
+                      { id: 'hypr-coin', label: 'HYPR Native Coin', icon: Zap },
+                      { id: 'ai-intelligence', label: 'AI Market Intelligence', icon: Cpu },
+                      { id: 'security-center', label: 'Security & Sentinel Shield', icon: ShieldCheck },
+                      { id: 'transactions', label: 'Transaction Activity', icon: Terminal },
+                      { id: 'launchpad', label: 'Fair Launchpad', icon: Zap },
                       { id: 'lending', label: 'Institutional Lending', icon: Sliders },
                       { id: 'staking', label: 'DeFi Staking', icon: ShieldCheck },
                       { id: 'liquidity', label: 'Concentrated Liquidity', icon: Layers },
                       { id: 'cross-chain', label: 'Cross-Chain Bridge', icon: ArrowRightLeft },
                       { id: 'developer-api', label: 'Developer API (SDK)', icon: Terminal },
-                      { id: 'admin-console', label: 'Admin Terminal', icon: Sliders },
+                      { id: 'admin-console', label: 'Admin Console', icon: Sliders },
                     ].map((item) => (
                       <button
                         key={item.id}
@@ -384,7 +311,7 @@ export const Header: React.FC = () => {
                 </div>
               )}
             </div>
-          </div>
+          </nav>
 
           {/* PWA Install Button */}
           <PWAInstallButton />
