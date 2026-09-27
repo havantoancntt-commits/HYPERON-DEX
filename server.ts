@@ -48,7 +48,8 @@ import { treasuryService } from './server/services/treasuryService';
 import { validateChainId } from './src/lib/chainConfig';
 
 const app = express();
-const PORT = 3000;
+const rawPort = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = !isNaN(rawPort) && rawPort > 0 && rawPort <= 65535 ? rawPort : 3000;
 
 // Configurable reverse proxy trust for diverse deployment topologies (Cloud Run, Cloudflare, AWS ALB, Nginx, Docker)
 const trustProxyConfig = process.env.TRUST_PROXY
@@ -972,8 +973,8 @@ app.post('/api/submit', requireSession(), async (req: Request, res: Response) =>
   }
 });
 
-app.get('/api/tx/lifecycle/:id', (req: Request, res: Response) => {
-  const intent = transactionLifecycle.getIntent(req.params.id);
+app.get('/api/tx/lifecycle/:id', async (req: Request, res: Response) => {
+  const intent = await transactionLifecycle.getIntent(req.params.id);
   if (!intent) {
     return res.status(404).json({ error: 'INTENT_NOT_FOUND', message: 'Transaction intent not found in lifecycle manager' });
   }
@@ -1770,6 +1771,12 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[HYPERON-DEX] Production Web3 DEX Running on http://0.0.0.0:${PORT}`);
+    // Asynchronously reconcile pending transactions against canonical on-chain state
+    transactionLifecycle.reconcilePendingTransactions().then((r) => {
+      if (r.reconciledCount > 0) {
+        console.log(`[HYPERON-DEX] Reconciled ${r.reconciledCount} pending transactions on startup`);
+      }
+    }).catch(() => {});
   });
 }
 
