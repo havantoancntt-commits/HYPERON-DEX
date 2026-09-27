@@ -44,6 +44,7 @@ export interface ComprehensiveSecurityAudit extends TokenSecurityReport {
   verificationTier: 'VERIFIED' | 'MEDIUM_RISK' | 'HIGH_RISK';
   isImpersonator?: boolean;
   impersonatedSymbol?: string;
+  warningLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'; // <-- FIX: Non-impersonator collision warning tier
   isScamToken?: boolean;
   scamWarnings?: string[];
   externalReputation?: {
@@ -306,11 +307,13 @@ export async function scanTokenSecurity(
   // 4. Evidence-based scoring calculation & Scam / Impersonation Intelligence
   let isImpersonator = false;
   let impersonatedSymbol: string | undefined = undefined;
+  let warningLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | undefined = undefined;
   const scamWarnings: string[] = [];
 
   // Check for Canonical Impersonation:
-  // If an untrusted contract claims the symbol or name of a canonical verified asset on this chain or Ethereum
+  // FIX: Multi-dimensional verification matching BOTH symbol AND full name to eliminate false positives.
   const checkSymbol = (metadata.symbol || cleanSymbol || '').toUpperCase().trim();
+  const checkName = (metadata.name || '').toLowerCase().trim();
   const isAddressNonCanonical = !!normalizedAddr && !verifiedMatch;
 
   if (isAddressNonCanonical && checkSymbol && checkSymbol !== 'TOKEN') {
@@ -323,11 +326,33 @@ export async function scanTokenSecurity(
     );
 
     if (canonicalCollision) {
-      isImpersonator = true;
-      impersonatedSymbol = canonicalCollision.symbol;
-      const warningMsg = `CẢNH BÁO GIẢ MẠO CỰC KỲ NGUY HIỂM: Token sử dụng ký hiệu "${checkSymbol}" trùng với đồng coin chính thống (${canonicalCollision.name}), nhưng địa chỉ hợp đồng (${tokenAddress}) là hợp đồng giả mạo! Kẻ xấu thường tạo token giả này để lừa đảo hút thanh khoản.`;
-      scamWarnings.push(warningMsg);
-      suspiciousPermissions.push(`[PHAKE_CLONE] Giả mạo tài sản định danh: ${canonicalCollision.symbol} (${canonicalCollision.address})`);
+      const canonicalName = (canonicalCollision.name || '').toLowerCase().trim();
+      // FIX: Check full name in parallel with symbol.
+      // If name matches canonical name OR matches canonical symbol -> high confidence impersonator (isImpersonator = true).
+      // If name is distinct and different from both canonical name and symbol -> false positive prevented (warningLevel = 'LOW').
+      const isNameOrSymbolMatching =
+        checkName === canonicalName ||
+        (canonicalName.length > 0 && checkName.includes(canonicalName)) ||
+        (checkName.length > 0 && canonicalName.includes(checkName)) ||
+        checkName === checkSymbol.toLowerCase();
+
+      const hasDistinctDifferentName =
+        checkName.length > 0 &&
+        !isNameOrSymbolMatching;
+
+      if (hasDistinctDifferentName) {
+        // Ticker collision only (legitimate cross-chain or community projects): warningLevel: 'LOW'
+        warningLevel = 'LOW'; // <-- FIX: Lower severity warning level for ticker-only collisions
+        evidence.push(`Ticker collision noted: shares symbol "${checkSymbol}" with ${canonicalCollision.name}, but distinct project name "${metadata.name}".`);
+      } else {
+        // Both symbol and name match, or unverified contract claims exact canonical symbol: high-confidence impersonator
+        isImpersonator = true; // <-- FIX: Confirmed impersonator
+        impersonatedSymbol = canonicalCollision.symbol;
+        warningLevel = 'CRITICAL';
+        const warningMsg = `CẢNH BÁO GIẢ MẠO CỰC KỲ NGUY HIỂM: Token sử dụng ký hiệu "${checkSymbol}" trùng với đồng coin chính thống (${canonicalCollision.name}), nhưng địa chỉ hợp đồng (${tokenAddress}) là hợp đồng giả mạo! Kẻ xấu thường tạo token giả này để lừa đảo hút thanh khoản.`;
+        scamWarnings.push(warningMsg);
+        suspiciousPermissions.push(`[PHAKE_CLONE] Giả mạo tài sản định danh: ${canonicalCollision.symbol} (${canonicalCollision.address})`);
+      }
     }
   }
 
@@ -471,6 +496,7 @@ export async function scanTokenSecurity(
     hasCreate2: opcodes.hasCreate2,
     isImpersonator,
     impersonatedSymbol,
+    warningLevel, // <-- FIX: Ticker collision warning level
     isScamToken,
     scamWarnings,
   };

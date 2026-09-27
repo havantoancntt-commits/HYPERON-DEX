@@ -34,6 +34,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     mapping(address => bool) public authorizedRelayers;
     mapping(address => bool) public isTrustedCurvePool;
     mapping(address => bool) public isTrustedVault;
+    mapping(address => bool) public canonicalVerifiedTokens; // <-- FIX: Canonical verified tokens mapping
     mapping(address => uint256) public nonces;
 
     bool public emergencyHaltActive;
@@ -55,6 +56,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
     );
 
     event RelayerUpdated(address indexed relayer, bool authorized);
+    event CanonicalTokenUpdated(address indexed token, bool status); // <-- FIX: Event for canonical tokens
     event EmergencyHaltUpdated(bool active, string reason);
     event OracleAggregatorUpdated(address indexed newOracle);
     event TrustedPoolUpdated(address indexed pool, bool status);
@@ -116,9 +118,22 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         uniswapV3Router = ISwapRouter(_uniswapV3Router);
         oracleAggregator = IERC7528PriceOracle(_oracleAggregator);
         authorizedRelayers[_initialOwner] = true;
+
+        // Seed core canonical verified tokens (WETH, USDC, USDT, WBTC, DAI) // <-- FIX
+        canonicalVerifiedTokens[0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2] = true; // WETH
+        canonicalVerifiedTokens[0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48] = true; // USDC
+        canonicalVerifiedTokens[0xdAC17F958D2ee523a2206206994597C13D831ec7] = true; // USDT
+        canonicalVerifiedTokens[0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599] = true; // WBTC
+        canonicalVerifiedTokens[0x6B175474E89094C44Da98b954EedeAC495271d0F] = true; // DAI
     }
 
     // --- Configuration Functions ---
+
+    function setCanonicalVerifiedToken(address token, bool status) external onlyOwner {
+        if (token == address(0)) revert InvalidAddress();
+        canonicalVerifiedTokens[token] = status;
+        emit CanonicalTokenUpdated(token, status);
+    } // <-- FIX: Admin setter for canonical verified tokens
 
     function setRelayer(address relayer, bool status) external onlyOwner {
         if (relayer == address(0)) revert InvalidAddress();
@@ -728,20 +743,29 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, EIP712 {
         if (address(oracleAggregator) == address(0) || address(oracleAggregator).code.length == 0) {
             revert InvalidAddress();
         }
+
+        // State (a): Explicit Circuit Breaker Trip Check
         try oracleAggregator.isCircuitBreakerTripped(token) returns (bool tripped) {
-            if (tripped) revert OracleCircuitBreakerTriggered(token); // <-- FIX: Only revert when tripped is true
+            if (tripped) revert OracleCircuitBreakerTriggered(token); // <-- FIX: State (a) Tripped circuit breaker
         } catch {
-            // FIX: Differentiate between circuit breaker trip and oracle unavailability / unsupported token
-            revert OracleUnavailable(token); // <-- FIX
+            // State (c): Canonical verified tokens bypass oracle check if oracle is unavailable // <-- FIX
+            if (canonicalVerifiedTokens[token]) {
+                return; // <-- FIX: State (c) Canonical bypass
+            }
+            // State (b): Unverified token with no operational oracle reverts with OracleUnavailable // <-- FIX
+            revert OracleUnavailable(token); // <-- FIX: State (b) Oracle unavailable
         }
 
+        // State (a) & (b): Validate price data active circuit breaker flag
         try oracleAggregator.getAssetPriceData(token) returns (IERC7528PriceOracle.PriceData memory data) {
             if (data.isCircuitBreakerActive) {
-                revert OracleCircuitBreakerTriggered(token); // <-- FIX
+                revert OracleCircuitBreakerTriggered(token); // <-- FIX: State (a)
             }
         } catch {
-            // FIX: Prevent false positive circuit breaker triggers when token price data is unconfigured
-            revert OracleUnavailable(token); // <-- FIX
+            if (canonicalVerifiedTokens[token]) {
+                return; // <-- FIX: State (c) Canonical bypass
+            }
+            revert OracleUnavailable(token); // <-- FIX: State (b)
         }
     }
 

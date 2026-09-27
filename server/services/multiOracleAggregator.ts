@@ -299,7 +299,7 @@ export function aggregateMultiSourcePrice(
     const candidates = validSources.filter((s) => {
       const vol = s.volume24h || 0;
       // FIX: Source is filtered out only if it is below 1% threshold AND below MIN_ABSOLUTE_VOLUME_USD
-      const isStarved = vol < threshold && vol < MIN_ABSOLUTE_VOLUME_USD; // <-- FIX
+      const isStarved = vol < threshold && vol < MIN_ABSOLUTE_VOLUME_USD;
       if (isStarved) {
         volumeFilteredSources.push({
           name: s.name,
@@ -311,7 +311,7 @@ export function aggregateMultiSourcePrice(
       return true;
     });
 
-    quorumSources = candidates.length > 0 ? candidates : validSources; // <-- FIX: Retain candidates or fallback if all filtered
+    quorumSources = candidates.length > 0 ? candidates : validSources;
   }
 
   // 4. Fail-closed if no valid sources at all
