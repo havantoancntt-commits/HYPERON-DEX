@@ -4,6 +4,7 @@ import { WalletProvider } from './context/WalletContext';
 import { ExchangeProvider, useExchange } from './context/ExchangeContext';
 import { I18nProvider, useI18n } from './context/I18nContext';
 import { Header } from './components/Header';
+import { OfflineBanner } from './components/OfflineBanner';
 import { Navigation } from './components/Navigation';
 import { SimulationModal } from './components/SimulationModal';
 import { WalletConnectionModal } from './components/WalletConnectionModal';
@@ -171,6 +172,9 @@ const MainLayout: React.FC = () => {
       {/* Ambient Quantum Light Accents */}
       <div className="fixed top-0 left-1/4 w-[600px] h-[300px] bg-gradient-to-r from-blue-600/10 via-cyan-500/10 to-transparent rounded-full blur-3xl pointer-events-none -z-10 animate-quantum-pulse" />
       <div className="fixed bottom-0 right-1/4 w-[500px] h-[350px] bg-gradient-to-r from-purple-600/8 via-indigo-500/8 to-transparent rounded-full blur-3xl pointer-events-none -z-10" />
+
+      {/* Offline Alert Banner */}
+      <OfflineBanner />
 
       {/* Top Header */}
       <Header />

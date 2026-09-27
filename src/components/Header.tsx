@@ -8,6 +8,7 @@ import { shortenAddress, formatCurrency } from '../lib/utils';
 import { ChainLogo, TokenLogo, Hyperon3DLogo } from './CryptoIcon';
 import { soundManager } from '../lib/sound';
 import { CommandPalette } from './CommandPalette';
+import { PWAInstallButton } from './PWAInstallButton';
 import { 
   ShieldCheck, 
   Fuel, 
@@ -384,6 +385,9 @@ export const Header: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* PWA Install Button */}
+          <PWAInstallButton />
 
           {/* Sound FX Toggle Button */}
           <button

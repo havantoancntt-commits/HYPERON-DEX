@@ -961,6 +961,14 @@ export const SwapView: React.FC = () => {
               <AlertCircle className="w-4 h-4 text-rose-400" />
               <span>Unverified Token Detected - Trading Disabled</span>
             </button>
+          ) : typeof navigator !== 'undefined' && !navigator.onLine ? (
+            <button
+              disabled
+              className="w-full py-4 bg-rose-500/15 border border-rose-500/30 text-rose-400 font-bold text-sm rounded-2xl cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <AlertCircle className="w-4 h-4 text-rose-400" />
+              <span>Offline — Mạng Internet Bị Ngắt Kết Nối</span>
+            </button>
           ) : numFromAmount <= 0 ? (
             <button
               disabled

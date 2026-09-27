@@ -892,17 +892,27 @@ export const TradeTerminalView: React.FC = () => {
           </div>
 
           {/* Place Order CTA */}
-          <button
-            onClick={handlePlaceOrder}
-            id="terminal-place-order-btn"
-            className={`w-full py-3.5 rounded-xl font-extrabold text-xs transition-all shadow-xl cursor-pointer active:scale-[0.99] ${
-              side === 'buy'
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-900/30'
-                : 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white shadow-rose-900/30'
-            }`}
-          >
-            {side === 'buy' ? t('trade.buy') : t('trade.sell')} {activePair.symbol} NOW
-          </button>
+          {typeof navigator !== 'undefined' && !navigator.onLine ? (
+            <button
+              disabled
+              className="w-full py-3.5 rounded-xl font-bold text-xs bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-not-allowed flex items-center justify-center gap-1.5"
+            >
+              <AlertTriangle className="w-4 h-4 text-rose-400" />
+              <span>Offline — Mạng Bị Ngắt Kết Nối</span>
+            </button>
+          ) : (
+            <button
+              onClick={handlePlaceOrder}
+              id="terminal-place-order-btn"
+              className={`w-full py-3.5 rounded-xl font-extrabold text-xs transition-all shadow-xl cursor-pointer active:scale-[0.99] ${
+                side === 'buy'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-900/30'
+                  : 'bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white shadow-rose-900/30'
+              }`}
+            >
+              {side === 'buy' ? t('trade.buy') : t('trade.sell')} {activePair.symbol} NOW
+            </button>
+          )}
         </div>
       </div>
 

@@ -398,6 +398,20 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     refreshBalances();
   }, [refreshBalances]);
 
+  // Foreground return & network reconnect reconciliation (PWA / mobile tabs)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleForeground = () => {
+      refreshBalances();
+    };
+    window.addEventListener('hyperon-foreground-refresh', handleForeground);
+    window.addEventListener('hyperon-network-reconnected', handleForeground);
+    return () => {
+      window.removeEventListener('hyperon-foreground-refresh', handleForeground);
+      window.removeEventListener('hyperon-network-reconnected', handleForeground);
+    };
+  }, [refreshBalances]);
+
   // Automatic reconciliation of pending transactions on mount / address change
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -994,6 +1008,10 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (isWatchOnly) {
       throw new Error('WATCH_ONLY_RESTRICTION: Chế độ chỉ xem (Watch-Only) không thể ký hoặc gửi giao dịch on-chain.');
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      throw new Error('OFFLINE_TRANSACTION_REJECTED: Mất kết nối mạng. Không thể ký hoặc gửi giao dịch khi offline để bảo vệ tài sản.');
     }
 
     let txHash = '';

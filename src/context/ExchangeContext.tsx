@@ -155,7 +155,18 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   useEffect(() => {
     fetchLivePrices();
     const interval = setInterval(fetchLivePrices, 3000);
-    return () => clearInterval(interval);
+
+    const handleForeground = () => {
+      fetchLivePrices();
+    };
+    window.addEventListener('hyperon-foreground-refresh', handleForeground);
+    window.addEventListener('hyperon-network-reconnected', handleForeground);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('hyperon-foreground-refresh', handleForeground);
+      window.removeEventListener('hyperon-network-reconnected', handleForeground);
+    };
   }, [fetchLivePrices]);
 
   // Derived live tokens with real-time dynamic pricing

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080C14"/>
+      <stop offset="50%" stop-color="#0B132B"/>
+      <stop offset="100%" stop-color="#05070A"/>
+    </linearGradient>
+    <linearGradient id="cyanBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF"/>
+      <stop offset="50%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F0FF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#2563EB" stop-opacity="0.1"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background with Safe Padding for Maskable Icons -->
+  <rect width="512" height="512" rx="100" fill="url(#bgGrad)"/>
+  
+  <!-- Outer Hexagonal Frame -->
+  <polygon points="256,60 420,154 420,358 256,452 92,358 92,154" 
+           fill="none" stroke="url(#cyanBlue)" stroke-width="8" stroke-opacity="0.4"/>
+
+  <!-- Inner Quantum Hypercube Core -->
+  <g filter="url(#glow)">
+    <!-- Stylized H for HYPERON -->
+    <!-- Left Pillar -->
+    <path d="M 170 160 L 210 160 L 210 352 L 170 352 Z" fill="url(#cyanBlue)" rx="6"/>
+    <!-- Right Pillar -->
+    <path d="M 302 160 L 342 160 L 342 352 L 302 352 Z" fill="url(#cyanBlue)" rx="6"/>
+    <!-- Central Dynamic Crossbeam with Chevron -->
+    <polygon points="205,236 307,236 322,256 307,276 205,276 220,256" fill="url(#cyanBlue)"/>
+    <!-- Quantum Orbital Nodes -->
+    <circle cx="256" cy="154" r="10" fill="#00F0FF"/>
+    <circle cx="256" cy="358" r="10" fill="#00F0FF"/>
+    <circle cx="170" cy="256" r="8" fill="#3B82F6"/>
+    <circle cx="342" cy="256" r="8" fill="#3B82F6"/>
+  </g>
+</svg>
