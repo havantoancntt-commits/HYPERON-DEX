@@ -144,6 +144,34 @@ export const UNISWAP_V3_ROUTER_ABI = [
 
 export const HYPERON_ROUTER_ABI = [
   {
+    name: 'swapExactInputSingleV3',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'tokenIn', type: 'address' },
+      { name: 'tokenOut', type: 'address' },
+      { name: 'feeTier', type: 'uint24' },
+      { name: 'recipient', type: 'address' },
+      { name: 'amountIn', type: 'uint256' },
+      { name: 'amountOutMinimum', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' },
+    ],
+    outputs: [{ name: 'amountOut', type: 'uint256' }],
+  },
+  {
+    name: 'swapExactTokensForTokensV2',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'amountIn', type: 'uint256' },
+      { name: 'amountOutMin', type: 'uint256' },
+      { name: 'path', type: 'address[]' },
+      { name: 'recipient', type: 'address' },
+      { name: 'deadline', type: 'uint256' },
+    ],
+    outputs: [{ name: 'amounts', type: 'uint256[]' }],
+  },
+  {
     name: 'swapExactInputSingle',
     type: 'function',
     stateMutability: 'payable',
@@ -518,7 +546,21 @@ export class TransactionBuilder {
     let calldata: Hex;
     let feeTier = 3000;
 
-    if (protocolHint.includes('v2') || protocolHint.includes('sushiswap') || protocolHint.includes('pancake_v2')) {
+    if (options.protocolPreference === 'hyperon' || protocolHint === 'hyperon') {
+      targetProtocol = 'hyperon';
+      routerTarget = options.targetRouterOverride || routerConfig.hyperonRouter!;
+      if (!routerTarget) {
+        throw new DexError(
+          DEX_ERROR_CODES.ROUTER_UNAVAILABLE,
+          `Swap execution qua HyperonRouter chưa khả dụng trên mạng ${chainSlug}.`
+        );
+      }
+      if ((quote as any).feeTierBps !== undefined) {
+        feeTier = (quote as any).feeTierBps * 100;
+      } else if ((quote as any).feeTier !== undefined) {
+        feeTier = (quote as any).feeTier;
+      }
+    } else if (protocolHint.includes('v2') || protocolHint.includes('sushiswap') || protocolHint.includes('pancake_v2')) {
       targetProtocol = 'v2';
       routerTarget = options.targetRouterOverride || routerConfig.uniswapV2Router || routerConfig.universalRouter!;
     } else {
@@ -582,7 +624,22 @@ export class TransactionBuilder {
     }
 
     // Encode exact calldata
-    if (targetProtocol === 'v2') {
+    if (targetProtocol === 'hyperon') {
+      if (intermediateTokens.length > 0) {
+        const path = [tokenInAddr, ...intermediateTokens, tokenOutAddr];
+        calldata = encodeFunctionData({
+          abi: HYPERON_ROUTER_ABI,
+          functionName: 'swapExactTokensForTokensV2',
+          args: [amountInRaw, amountOutMinRaw, path, recipient, deadline],
+        });
+      } else {
+        calldata = encodeFunctionData({
+          abi: HYPERON_ROUTER_ABI,
+          functionName: 'swapExactInputSingleV3',
+          args: [tokenInAddr, tokenOutAddr, feeTier, recipient, amountInRaw, amountOutMinRaw, deadline],
+        });
+      }
+    } else if (targetProtocol === 'v2') {
       const path = [tokenInAddr, ...intermediateTokens, tokenOutAddr];
       if (isNativeIn) {
         calldata = encodeFunctionData({

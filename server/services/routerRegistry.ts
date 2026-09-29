@@ -18,6 +18,7 @@ export interface ChainRouterConfig {
   universalRouter?: Address;
   curveRegistry?: Address;
   balancerVault?: Address;
+  hyperonRouter?: Address;
   flashbotsRelaySupported: boolean;
 }
 
@@ -137,6 +138,7 @@ export function getAllowedRouters(chainId: string | number): Address[] {
   if (config.uniswapV3Router) routers.push(config.uniswapV3Router.toLowerCase() as Address);
   if (config.universalRouter) routers.push(config.universalRouter.toLowerCase() as Address);
   if (config.balancerVault) routers.push(config.balancerVault.toLowerCase() as Address);
+  if (config.hyperonRouter) routers.push(config.hyperonRouter.toLowerCase() as Address);
   return routers;
 }
 
