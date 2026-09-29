@@ -217,6 +217,8 @@ if (process.argv[1]?.endsWith('UltraRouter.test.ts')) {
   runUltraRouterTests().then((res) => {
     if (res.failed > 0) {
       process.exit(1);
+    } else {
+      process.exit(0);
     }
   });
 }

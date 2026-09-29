@@ -2,7 +2,8 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { z } from 'zod';
-import { VERIFIED_TOKENS, SUPPORTED_CHAINS, DEX_SOURCES, SAMPLE_POOLS, SAMPLE_STAKING_VAULTS } from './src/lib/constants';
+import { VERIFIED_TOKENS, SUPPORTED_CHAINS, DEX_SOURCES, SAMPLE_STAKING_VAULTS } from './src/lib/constants';
+import { handleGetLiquidityPools } from './server/services/liquidityService';
 import { priceCache, getPrice, getPriceState, getUsdPrice, syncRealTimePrices } from './server/services/priceFeed';
 import { fetchLiveKlines, fetchLiveOrderBook, fetchLiveTrades, calculateLiveTechnicalIndicators } from './server/services/marketData';
 import { calculateSmartRouteQuote, simulateSwapTransaction, relayTransaction, verifyZkProof } from './server/services/router';
@@ -220,6 +221,92 @@ app.use('/api/submit', authenticatedTxLimiter);
 app.use('/api/ai/', aiEndpointLimiter);
 app.use('/api/admin/', adminEndpointLimiter);
 app.use('/api/auth/nonce', authNonceLimiter);
+
+/**
+ * Centralized error handler utility for HYPERON-DEX routes (DRY principle).
+ * Eliminates repetitive try/catch mapping boilerplate and provides consistent,
+ * fail-closed HTTP responses for DexError, ZodError, and unexpected exceptions.
+ */
+export function handleDexError(
+  err: unknown,
+  res: Response,
+  defaultMessage: string = 'Internal DEX engine error'
+): Response {
+  if (err instanceof DexError) {
+    let httpStatus = 500;
+    if (
+      err.code === DEX_ERROR_CODES.INVALID_AMOUNT ||
+      err.code === DEX_ERROR_CODES.INVALID_SLIPPAGE ||
+      err.code === DEX_ERROR_CODES.INVALID_CHAIN ||
+      err.code === DEX_ERROR_CODES.AMBIGUOUS_TOKEN ||
+      err.code === DEX_ERROR_CODES.TOKEN_UNVERIFIED ||
+      err.code === DEX_ERROR_CODES.USER_ADDRESS_REQUIRED ||
+      err.code === DEX_ERROR_CODES.INVALID_PARAMS ||
+      err.code === DEX_ERROR_CODES.QUOTE_EXPIRED
+    ) {
+      httpStatus = 400;
+    } else if (
+      err.code === DEX_ERROR_CODES.TOKEN_NOT_FOUND ||
+      err.code === DEX_ERROR_CODES.NO_LIQUIDITY ||
+      err.code === DEX_ERROR_CODES.ROUTE_UNAVAILABLE
+    ) {
+      httpStatus = 404;
+    } else if (
+      err.code === DEX_ERROR_CODES.RPC_UNAVAILABLE ||
+      err.code === DEX_ERROR_CODES.PRICE_UNAVAILABLE
+    ) {
+      httpStatus = 503;
+    }
+
+    return res.status(httpStatus).json(
+      createDexError(err.code, err.message, ERROR_MESSAGES[err.code] || err.message, err.details)
+    );
+  }
+
+  const msg = err instanceof Error ? err.message : String(err || defaultMessage);
+  let code: DexErrorCode = DEX_ERROR_CODES.ROUTER_UNAVAILABLE;
+  let httpStatus = 500;
+
+  if (
+    msg.includes('INVALID_AMOUNT') ||
+    msg.includes('INVALID_SLIPPAGE') ||
+    msg.includes('INVALID_CHAIN') ||
+    msg.includes('AMBIGUOUS_TOKEN') ||
+    msg.includes('TOKEN_UNVERIFIED') ||
+    msg.includes('USER_ADDRESS_REQUIRED') ||
+    msg.includes('INVALID_PARAMS') ||
+    msg.includes('QUOTE_EXPIRED')
+  ) {
+    httpStatus = 400;
+    if (msg.includes('INVALID_AMOUNT')) code = DEX_ERROR_CODES.INVALID_AMOUNT;
+    else if (msg.includes('INVALID_SLIPPAGE')) code = DEX_ERROR_CODES.INVALID_SLIPPAGE;
+    else if (msg.includes('INVALID_CHAIN')) code = DEX_ERROR_CODES.INVALID_CHAIN;
+    else if (msg.includes('AMBIGUOUS_TOKEN')) code = DEX_ERROR_CODES.AMBIGUOUS_TOKEN;
+    else if (msg.includes('TOKEN_UNVERIFIED')) code = DEX_ERROR_CODES.TOKEN_UNVERIFIED;
+    else if (msg.includes('QUOTE_EXPIRED')) code = DEX_ERROR_CODES.QUOTE_EXPIRED;
+    else if (msg.includes('INVALID_PARAMS')) code = DEX_ERROR_CODES.INVALID_PARAMS;
+    else code = DEX_ERROR_CODES.USER_ADDRESS_REQUIRED;
+  } else if (
+    msg.includes('TOKEN_NOT_FOUND') ||
+    msg.includes('NO_LIQUIDITY') ||
+    msg.includes('ROUTE_UNAVAILABLE')
+  ) {
+    httpStatus = 404;
+    if (msg.includes('TOKEN_NOT_FOUND')) code = DEX_ERROR_CODES.TOKEN_NOT_FOUND;
+    else if (msg.includes('NO_LIQUIDITY')) code = DEX_ERROR_CODES.NO_LIQUIDITY;
+    else code = DEX_ERROR_CODES.ROUTE_UNAVAILABLE;
+  } else if (
+    msg.includes('RPC_UNAVAILABLE') ||
+    msg.includes('PRICE_UNAVAILABLE') ||
+    msg.includes('NO_LIVE_POOLS')
+  ) {
+    httpStatus = 503;
+    if (msg.includes('PRICE_UNAVAILABLE')) code = DEX_ERROR_CODES.PRICE_UNAVAILABLE;
+    else code = DEX_ERROR_CODES.RPC_UNAVAILABLE;
+  }
+
+  return res.status(httpStatus).json(createDexError(code, msg, ERROR_MESSAGES[code] || msg));
+}
 
 // -------------------------------------------------------------
 // Validation Schemas (Zod)
@@ -746,86 +833,8 @@ app.post(['/api/quotes', '/api/quote'], async (req: Request, res: Response) => {
     });
     // Return both { quote } wrapper and root quote fields for full client compatibility
     res.json({ quote, ...quote });
-  } catch (err: any) {
-    if (err instanceof DexError) {
-      let httpStatus = 500;
-      if (
-        err.code === DEX_ERROR_CODES.INVALID_AMOUNT ||
-        err.code === DEX_ERROR_CODES.INVALID_SLIPPAGE ||
-        err.code === DEX_ERROR_CODES.INVALID_CHAIN ||
-        err.code === DEX_ERROR_CODES.AMBIGUOUS_TOKEN ||
-        err.code === DEX_ERROR_CODES.TOKEN_UNVERIFIED ||
-        err.code === DEX_ERROR_CODES.USER_ADDRESS_REQUIRED ||
-        err.code === DEX_ERROR_CODES.INVALID_PARAMS
-      ) {
-        httpStatus = 400;
-      } else if (
-        err.code === DEX_ERROR_CODES.TOKEN_NOT_FOUND ||
-        err.code === DEX_ERROR_CODES.NO_LIQUIDITY ||
-        err.code === DEX_ERROR_CODES.ROUTE_UNAVAILABLE
-      ) {
-        httpStatus = 404;
-      } else if (
-        err.code === DEX_ERROR_CODES.RPC_UNAVAILABLE ||
-        err.code === DEX_ERROR_CODES.PRICE_UNAVAILABLE
-      ) {
-        httpStatus = 503;
-      }
-
-      return res.status(httpStatus).json(
-        createDexError(err.code, err.message, ERROR_MESSAGES[err.code] || err.message, err.details)
-      );
-    }
-
-    const msg = err?.message || 'Failed to compute swap quote';
-    const code: DexErrorCode = msg.includes('TOKEN_NOT_FOUND')
-      ? DEX_ERROR_CODES.TOKEN_NOT_FOUND
-      : msg.includes('AMBIGUOUS_TOKEN')
-      ? DEX_ERROR_CODES.AMBIGUOUS_TOKEN
-      : msg.includes('TOKEN_UNVERIFIED')
-      ? DEX_ERROR_CODES.TOKEN_UNVERIFIED
-      : msg.includes('NO_LIQUIDITY')
-      ? DEX_ERROR_CODES.NO_LIQUIDITY
-      : msg.includes('INVALID_SLIPPAGE')
-      ? DEX_ERROR_CODES.INVALID_SLIPPAGE
-      : msg.includes('INVALID_CHAIN')
-      ? DEX_ERROR_CODES.INVALID_CHAIN
-      : msg.includes('INVALID_AMOUNT')
-      ? DEX_ERROR_CODES.INVALID_AMOUNT
-      : msg.includes('USER_ADDRESS_REQUIRED')
-      ? DEX_ERROR_CODES.USER_ADDRESS_REQUIRED
-      : msg.includes('ROUTE_UNAVAILABLE')
-      ? DEX_ERROR_CODES.ROUTE_UNAVAILABLE
-      : msg.includes('RPC_UNAVAILABLE')
-      ? DEX_ERROR_CODES.RPC_UNAVAILABLE
-      : msg.includes('PRICE_UNAVAILABLE')
-      ? DEX_ERROR_CODES.PRICE_UNAVAILABLE
-      : DEX_ERROR_CODES.ROUTER_UNAVAILABLE;
-
-    let httpStatus = 500;
-    if (
-      code === DEX_ERROR_CODES.INVALID_AMOUNT ||
-      code === DEX_ERROR_CODES.INVALID_SLIPPAGE ||
-      code === DEX_ERROR_CODES.INVALID_CHAIN ||
-      code === DEX_ERROR_CODES.AMBIGUOUS_TOKEN ||
-      code === DEX_ERROR_CODES.TOKEN_UNVERIFIED ||
-      code === DEX_ERROR_CODES.USER_ADDRESS_REQUIRED
-    ) {
-      httpStatus = 400;
-    } else if (
-      code === DEX_ERROR_CODES.TOKEN_NOT_FOUND ||
-      code === DEX_ERROR_CODES.NO_LIQUIDITY ||
-      code === DEX_ERROR_CODES.ROUTE_UNAVAILABLE
-    ) {
-      httpStatus = 404;
-    } else if (
-      code === DEX_ERROR_CODES.RPC_UNAVAILABLE ||
-      code === DEX_ERROR_CODES.PRICE_UNAVAILABLE
-    ) {
-      httpStatus = 503;
-    }
-
-    res.status(httpStatus).json(createDexError(code, msg, ERROR_MESSAGES[code] || msg));
+  } catch (err: unknown) {
+    return handleDexError(err, res, 'Failed to compute swap quote');
   }
 });
 
@@ -875,25 +884,8 @@ app.post(['/api/swaps/simulate', '/api/simulate-swap'], async (req: Request, res
     // Apply strict schema validation to prevent internal simulation data leakage
     const validatedSimulation = SimulationOutputSchema.parse(simulation);
     res.json({ simulation: validatedSimulation });
-  } catch (err: any) {
-    if (err instanceof DexError) {
-      const httpStatus =
-        err.code === DEX_ERROR_CODES.INVALID_CHAIN ||
-        err.code === DEX_ERROR_CODES.USER_ADDRESS_REQUIRED ||
-        err.code === DEX_ERROR_CODES.QUOTE_EXPIRED
-          ? 400
-          : 500;
-      return res.status(httpStatus).json(
-        createDexError(err.code, err.message, ERROR_MESSAGES[err.code] || err.message, err.details)
-      );
-    }
-    res.status(500).json(
-      createDexError(
-        DEX_ERROR_CODES.SIMULATION_FAILED,
-        err?.message || 'Transaction simulation failed',
-        ERROR_MESSAGES.SIMULATION_FAILED
-      )
-    );
+  } catch (err: unknown) {
+    return handleDexError(err, res, 'Transaction simulation failed');
   }
 });
 
@@ -937,19 +929,8 @@ app.post(['/api/transactions/build', '/api/build-transaction'], async (req: Requ
         commitmentHash: tx.commitmentHash,
       },
     });
-  } catch (err: any) {
-    if (err instanceof DexError) {
-      return res.status(400).json(
-        createDexError(err.code, err.message, ERROR_MESSAGES[err.code] || err.message, err.details)
-      );
-    }
-    res.status(500).json(
-      createDexError(
-        DEX_ERROR_CODES.INTERNAL_ERROR,
-        err?.message || 'Failed to build transaction payload',
-        ERROR_MESSAGES.INTERNAL_ERROR
-      )
-    );
+  } catch (err: unknown) {
+    return handleDexError(err, res, 'Failed to build transaction payload');
   }
 });
 
@@ -1359,21 +1340,51 @@ app.post('/api/ai/portfolio-copilot', async (req: Request, res: Response) => {
     const sanitizedMsg = sanitizePromptText(message).toLowerCase();
 
     const balances = portfolioSummary?.balances || {};
-    const ethBalance = Number(balances.ETH || balances.eth || 0);
-    const wbtcBalance = Number(balances.WBTC || balances.wbtc || 0);
-    const usdcBalance = Number(balances.USDC || balances.usdc || 0);
-    const usdtBalance = Number(balances.USDT || balances.usdt || 0);
+    let calculatedTotalUsd = 0;
+    const assetBreakdown: { symbol: string; balance: number; priceUsd: number; valueUsd: number }[] = [];
 
-    const ethPrice = getPrice('ETH');
-    const wbtcPrice = getPrice('WBTC');
+    // Dynamically evaluate all assets in user's portfolio without hardcoding ETH/WBTC
+    for (const [rawSymbol, rawBal] of Object.entries(balances)) {
+      const sym = rawSymbol.trim().toUpperCase();
+      const bal = Number(rawBal) || 0;
+      if (bal <= 0) continue;
 
-    const ethUsd = ethBalance * ethPrice;
-    const wbtcUsd = wbtcBalance * wbtcPrice;
-    const stableUsd = usdcBalance + usdtBalance;
-    const calculatedSum = ethUsd + wbtcUsd + stableUsd;
+      let unitPriceUsd = getUsdPrice(sym) || 0;
+      try {
+        if (unitPriceUsd > 0) {
+          const sources = buildLiveOracleSources(sym, unitPriceUsd);
+          if (sources && sources.length > 0) {
+            const report = aggregateMultiSourcePrice(sym, sources);
+            if (report && report.consolidatedPriceUsd > 0) {
+              unitPriceUsd = report.consolidatedPriceUsd;
+            }
+          }
+        }
+      } catch {
+        // Fallback to getUsdPrice
+      }
+
+      if (unitPriceUsd === 0 && priceCache[sym]?.priceUsd) {
+        unitPriceUsd = priceCache[sym].priceUsd || 0;
+      }
+
+      const valueUsd = bal * unitPriceUsd;
+      calculatedTotalUsd += valueUsd;
+      assetBreakdown.push({ symbol: sym, balance: bal, priceUsd: unitPriceUsd, valueUsd });
+    }
+
     const computedTotal = (portfolioSummary?.totalValue && portfolioSummary.totalValue > 0)
       ? portfolioSummary.totalValue
-      : calculatedSum;
+      : calculatedTotalUsd;
+
+    // Categorize allocations dynamically
+    const ethItem = assetBreakdown.find((a) => a.symbol === 'ETH');
+    const wbtcItem = assetBreakdown.find((a) => a.symbol === 'WBTC' || a.symbol === 'BTC');
+    const stableItems = assetBreakdown.filter((a) => ['USDC', 'USDT', 'DAI', 'USDE'].includes(a.symbol));
+    const stableUsd = stableItems.reduce((sum, a) => sum + a.valueUsd, 0);
+    const ethUsd = ethItem ? ethItem.valueUsd : 0;
+    const wbtcUsd = wbtcItem ? wbtcItem.valueUsd : 0;
+    const ethPrice = ethItem?.priceUsd || getPrice('ETH') || 2600;
 
     const stableRatio = computedTotal > 0 ? Math.round((stableUsd / computedTotal) * 100) : 0;
     const ethRatio = computedTotal > 0 ? Math.round((ethUsd / computedTotal) * 100) : 0;
@@ -1386,7 +1397,7 @@ app.post('/api/ai/portfolio-copilot', async (req: Request, res: Response) => {
 
     if (sanitizedMsg.includes('rebalance') || sanitizedMsg.includes('allocation') || sanitizedMsg.includes('portfolio')) {
       analysis = `### 📊 Institutional Portfolio Structure Analysis
-- **Current Total Asset Exposure**: ~$${computedTotal.toLocaleString()}
+- **Current Total Asset Exposure**: ~$${computedTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}
 - **Allocation Vectors**: ETH (${ethRatio}%), WBTC (${wbtcRatio}%), Stablecoins (${stableRatio}%)
 - **Systemic Beta Exposure**: Moderate-High correlated with Layer-1 ecosystem.
 - **Smart Router Recommendation**: Maintaining a 20-30% stablecoin liquidity reserve protects against downside volatility while generating yield in Hyperon AMM pools.`;
@@ -1438,10 +1449,14 @@ Analyzed query: *"${message}"*
       analysis,
       riskFactors,
       suggestedActions,
+      portfolioMetrics: {
+        totalValueUsd: computedTotal,
+        assetCount: assetBreakdown.length,
+        assets: assetBreakdown,
+      },
     });
-  } catch (err: any) {
-    console.error('[HYPERON-DEX AI Copilot Route Error]:', err);
-    res.status(500).json({ error: 'Copilot analysis failed' });
+  } catch (err: unknown) {
+    return handleDexError(err, res, 'Copilot analysis failed');
   }
 });
 
@@ -1645,34 +1660,7 @@ app.get('/api/crosschain/track/:intentId', (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/liquidity/pools', async (req: Request, res: Response) => {
-  try {
-    const chainId = (req.query.chainId as any) || undefined;
-    const isProd = process.env.NODE_ENV === 'production' || process.env.APP_MODE === 'PRODUCTION';
-
-    const livePools = await poolDiscovery.getAllLiveVerifiedPools(chainId);
-    if (livePools && livePools.length > 0) {
-      return res.json({ pools: livePools, source: 'ONCHAIN_VERIFIED_DISCOVERY' });
-    }
-
-    if (isProd) {
-      return res.status(503).json({
-        error: 'NO_LIVE_POOLS',
-        code: 'NO_LIVE_POOLS',
-        message: 'No live on-chain pools verified on current RPC nodes. Synthetic fallback prohibited in production.',
-        pools: [],
-      });
-    }
-
-    res.json({
-      pools: SAMPLE_POOLS,
-      isSimulation: true,
-      notice: 'DEV_SIMULATION_DATA',
-    });
-  } catch (err: unknown) {
-    res.status(500).json({ error: 'Failed to retrieve liquidity pools' });
-  }
-});
+app.get('/api/liquidity/pools', handleGetLiquidityPools);
 
 app.get('/api/staking/vaults', (req: Request, res: Response) => {
   try {
