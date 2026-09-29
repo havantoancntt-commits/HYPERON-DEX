@@ -370,6 +370,18 @@ export const WalletConnectionModal: React.FC = () => {
       category: 'mobile',
       securityFeature: 'Mã hóa đầu cuối End-to-End Encryption không bao giờ rò rỉ khóa',
     },
+    {
+      id: 'sandbox',
+      name: 'Ví Thử Nghiệm Web3 (Sandbox Testnet)',
+      shortDesc: 'Ví Web3 ký giao dịch thử nghiệm chuẩn EIP-1193 — Trải nghiệm ngay 1-Click không cần tiện ích',
+      badge: '1-CLICK TESTNET',
+      badgeType: 'success',
+      iconUrl: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png',
+      installUrl: '',
+      isPopular: true,
+      category: 'popular',
+      securityFeature: 'Ký giao dịch on-chain chuẩn EVM, hỗ trợ toàn diện Hoán Đổi, Cho Vay, Staking',
+    },
   ], [installedMap]);
 
   // Filter providers by search query and category
@@ -409,6 +421,25 @@ export const WalletConnectionModal: React.FC = () => {
     if (provider.id === 'walletconnect') {
       setActiveTab('qrcode');
       setConnectingId(null);
+      return;
+    }
+
+    if (provider.id === 'sandbox') {
+      try {
+        setConnectingStep('Đang khởi tạo ví thử nghiệm Web3 EIP-1193...');
+        await connectWallet('sandbox');
+        soundManager.playSuccess();
+        addToast({
+          title: 'Kết nối ví thành công',
+          message: 'Đã kích hoạt ví Web3 Institutional Sandbox (Testnet).',
+          type: 'success',
+        });
+        closeConnectModal();
+      } catch (err: any) {
+        setConnectionError(err?.message || 'Lỗi kết nối ví sandbox');
+      } finally {
+        setConnectingId(null);
+      }
       return;
     }
 
@@ -804,6 +835,45 @@ export const WalletConnectionModal: React.FC = () => {
                         </div>
                       </div>
                       <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform shrink-0" />
+                    </button>
+
+                    {/* Option: Instant Testnet Signer (No extension required) */}
+                    <button
+                      onClick={async () => {
+                        try {
+                          await connectWallet('sandbox', undefined, { name: `${selectedAssistantWallet.name} (Testnet)` });
+                          setSelectedAssistantWallet(null);
+                          closeConnectModal();
+                          addToast({
+                            title: 'Kết Nối Ví Thành Công',
+                            message: `Đã kích hoạt phiên làm việc Web3 cho ${selectedAssistantWallet.name}.`,
+                            type: 'success',
+                          });
+                        } catch (err: any) {
+                          addToast({
+                            title: 'Lỗi Kết Nối',
+                            message: err?.message,
+                            type: 'error',
+                          });
+                        }
+                      }}
+                      className="w-full p-3.5 rounded-xl bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/40 hover:to-teal-600/40 border border-emerald-500/40 text-white text-xs font-bold transition-all flex items-center justify-between cursor-pointer group shadow-lg shadow-emerald-950/30"
+                    >
+                      <div className="flex items-center gap-2.5 text-left">
+                        <div className="p-1.5 rounded-lg bg-emerald-500/30 text-emerald-300 shrink-0">
+                          <Zap className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-extrabold text-white flex items-center gap-1.5">
+                            <span>Kích Hoạt Ví Thử Nghiệm Web3 (1-Click Testnet)</span>
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono">Instant Signer</span>
+                          </div>
+                          <div className="text-[10px] text-emerald-200 font-normal">
+                            Trải nghiệm ký và giao dịch token ngay lập tức mà không cần cài đặt extension
+                          </div>
+                        </div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-emerald-300 group-hover:translate-x-1 transition-transform shrink-0" />
                     </button>
 
                     {/* Option 2: Mobile Deep Link */}

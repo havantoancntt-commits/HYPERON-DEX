@@ -17,11 +17,12 @@ import {
   CheckCircle2,
   TrendingUp,
   Sliders,
-  DollarSign
+  DollarSign,
+  Wallet
 } from 'lucide-react';
 
 export const LiquidityView: React.FC = () => {
-  const { isConnected, connectWallet, executeTransaction } = useWallet();
+  const { isConnected, address, openConnectModal, executeTransaction } = useWallet();
   const { addToast } = useExchange();
 
   const [pools, setPools] = useState<LiquidityPool[]>(SAMPLE_POOLS);
@@ -40,24 +41,44 @@ export const LiquidityView: React.FC = () => {
   const impermanentLossPercent = (2 * Math.sqrt(priceRatio) / (1 + priceRatio) - 1) * 100;
 
   const handleAddLiquidity = async () => {
+    if (!isConnected || !address) {
+      addToast({
+        title: 'Chưa Kết Nối Ví',
+        message: 'Vui lòng kết nối ví Web3 để tạo vị thế thanh khoản.',
+        type: 'warning',
+      });
+      openConnectModal();
+      return;
+    }
     if (!selectedPool) return;
-    await executeTransaction({
-      chainId: 'ethereum',
-      type: 'ADD_LIQUIDITY',
-      fromToken: selectedPool.token0.symbol,
-      toToken: selectedPool.token1.symbol,
-      fromAmount: parseFloat(depositAmountA),
-      toAmount: parseFloat(depositAmountB),
-      gasSpentGwei: 22,
-      gasSpentUsd: 4.60,
-    });
 
-    addToast({
-      title: 'Liquidity Position Minted',
-      message: `Minted concentrated LP NFT in ${selectedPool.name} pool earning ${selectedPool.feeTierPercent}% fees.`,
-      type: 'success',
-    });
-    setShowAddModal(false);
+    try {
+      await executeTransaction({
+        chainId: 'ethereum',
+        type: 'ADD_LIQUIDITY',
+        fromToken: selectedPool.token0.symbol,
+        toToken: selectedPool.token1.symbol,
+        fromAmount: parseFloat(depositAmountA),
+        toAmount: parseFloat(depositAmountB),
+        gasSpentGwei: 22,
+        gasSpentUsd: 4.60,
+        targetAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
+        calldata: '0x',
+      });
+
+      addToast({
+        title: 'Liquidity Position Minted',
+        message: `Minted concentrated LP NFT in ${selectedPool.name} pool earning ${selectedPool.feeTierPercent}% fees.`,
+        type: 'success',
+      });
+      setShowAddModal(false);
+    } catch (err: any) {
+      addToast({
+        title: 'Thêm Thanh Khoản Thất Bại',
+        message: err?.message || 'Không thể tạo vị thế thanh khoản.',
+        type: 'error',
+      });
+    }
   };
 
   return (
@@ -221,12 +242,22 @@ export const LiquidityView: React.FC = () => {
               </div>
             </div>
 
-            <button
-              onClick={handleAddLiquidity}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-sm shadow-xl shadow-blue-900/30 transition-all cursor-pointer font-sans"
-            >
-              Confirm Deposit & Mint LP Position
-            </button>
+            {!isConnected ? (
+              <button
+                onClick={openConnectModal}
+                className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-sm shadow-xl shadow-cyan-900/30 transition-all cursor-pointer font-sans flex items-center justify-center gap-2"
+              >
+                <Wallet className="w-4 h-4" />
+                <span>Kết Nối Ví Web3 Để Thêm Thanh Khoản</span>
+              </button>
+            ) : (
+              <button
+                onClick={handleAddLiquidity}
+                className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-sm shadow-xl shadow-blue-900/30 transition-all cursor-pointer font-sans"
+              >
+                Confirm Deposit & Mint LP Position
+              </button>
+            )}
           </div>
         </div>
       )}

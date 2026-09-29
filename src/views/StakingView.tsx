@@ -24,13 +24,14 @@ import {
   Activity,
   ArrowUpRight,
   Info,
-  Server
+  Server,
+  Wallet
 } from 'lucide-react';
 
 type StakingTab = 'vaults' | 'liquid-restaking' | 'calculator' | 'validators';
 
 export const StakingView: React.FC = () => {
-  const { balances, executeTransaction } = useWallet();
+  const { balances, isConnected, address, openConnectModal, executeTransaction } = useWallet();
   const { addToast } = useExchange();
 
   const [activeTab, setActiveTab] = useState<StakingTab>('vaults');
@@ -76,138 +77,225 @@ export const StakingView: React.FC = () => {
 
   // Handle Stake into Vault
   const handleStake = async () => {
+    if (!isConnected || !address) {
+      addToast({
+        title: 'Chưa Kết Nối Ví',
+        message: 'Vui lòng kết nối ví Web3 để gửi tài sản vào vault staking.',
+        type: 'warning',
+      });
+      openConnectModal();
+      return;
+    }
+
     const amount = parseFloat(stakeAmount);
     if (!amount || amount <= 0) return;
 
     setIsProcessing(true);
     const tokenSymbol = selectedVault.asset?.symbol || selectedVault.stakeToken?.symbol || 'HYPR';
 
-    await executeTransaction({
-      chainId: selectedVault.chainId,
-      type: 'STAKE',
-      fromToken: tokenSymbol,
-      fromAmount: amount,
-      gasSpentGwei: 19,
-      gasSpentUsd: 3.80,
-    });
+    try {
+      await executeTransaction({
+        chainId: selectedVault.chainId,
+        type: 'STAKE',
+        fromToken: tokenSymbol,
+        fromAmount: amount,
+        gasSpentGwei: 19,
+        gasSpentUsd: 3.80,
+        targetAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
+        calldata: '0x',
+      });
 
-    setVaults((prev) =>
-      prev.map((v) => {
-        if (v.id === selectedVault.id) {
-          const currentStaked = v.userStaked?.stakedAmount || 0;
-          return {
-            ...v,
-            userStaked: {
-              stakedAmount: currentStaked + amount,
-              stakedUsd: (currentStaked + amount) * (v.asset?.priceUsd || 4.82),
-              pendingRewards: v.userStaked?.pendingRewards || 0,
-              unlockTimestamp: Date.now() + lockDurationDays * 86400000,
-            },
-          };
-        }
-        return v;
-      })
-    );
+      setVaults((prev) =>
+        prev.map((v) => {
+          if (v.id === selectedVault.id) {
+            const currentStaked = v.userStaked?.stakedAmount || 0;
+            return {
+              ...v,
+              userStaked: {
+                stakedAmount: currentStaked + amount,
+                stakedUsd: (currentStaked + amount) * (v.asset?.priceUsd || 4.82),
+                pendingRewards: v.userStaked?.pendingRewards || 0,
+                unlockTimestamp: Date.now() + lockDurationDays * 86400000,
+              },
+            };
+          }
+          return v;
+        })
+      );
 
-    setIsProcessing(false);
-    soundManager.playSuccess();
-    addToast({
-      title: 'Staking Deposit Confirmed',
-      message: `Locked ${amount} ${tokenSymbol} into ${selectedVault.protocolName || selectedVault.name} for ${lockDurationDays} days earning ${selectedVault.totalApyPercent || selectedVault.aprPercent}% APY.`,
-      type: 'success',
-    });
+      soundManager.playSuccess();
+      addToast({
+        title: 'Staking Deposit Confirmed',
+        message: `Locked ${amount} ${tokenSymbol} into ${selectedVault.protocolName || selectedVault.name} for ${lockDurationDays} days earning ${selectedVault.totalApyPercent || selectedVault.aprPercent}% APY.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      soundManager.playAlert();
+      addToast({
+        title: 'Staking Thất Bại',
+        message: err?.message || 'Không thể thực thi giao dịch staking.',
+        type: 'error',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Handle Restaking Deposit
   const handleRestake = async () => {
+    if (!isConnected || !address) {
+      addToast({
+        title: 'Chưa Kết Nối Ví',
+        message: 'Vui lòng kết nối ví Web3 để thực hiện restaking.',
+        type: 'warning',
+      });
+      openConnectModal();
+      return;
+    }
+
     const amount = parseFloat(stakeAmount);
     if (!amount || amount <= 0) return;
 
     setIsProcessing(true);
-    await executeTransaction({
-      chainId: 'ethereum',
-      type: 'RESTAKE',
-      fromToken: selectedRestake.asset.symbol,
-      toToken: selectedRestake.derivativeTokenSymbol,
-      fromAmount: amount,
-      toAmount: amount * 0.998,
-      gasSpentGwei: 22,
-      gasSpentUsd: 4.20,
-    });
+    try {
+      await executeTransaction({
+        chainId: 'ethereum',
+        type: 'RESTAKE',
+        fromToken: selectedRestake.asset.symbol,
+        toToken: selectedRestake.derivativeTokenSymbol,
+        fromAmount: amount,
+        toAmount: amount * 0.998,
+        gasSpentGwei: 22,
+        gasSpentUsd: 4.20,
+        targetAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
+        calldata: '0x',
+      });
 
-    setRestakingStrategies((prev) =>
-      prev.map((r) => {
-        if (r.id === selectedRestake.id) {
-          return {
-            ...r,
-            userStakedAmount: r.userStakedAmount + amount,
-          };
-        }
-        return r;
-      })
-    );
+      setRestakingStrategies((prev) =>
+        prev.map((r) => {
+          if (r.id === selectedRestake.id) {
+            return {
+              ...r,
+              userStakedAmount: r.userStakedAmount + amount,
+            };
+          }
+          return r;
+        })
+      );
 
-    setIsProcessing(false);
-    soundManager.playSuccess();
-    addToast({
-      title: 'Restaking Mint Completed',
-      message: `Deposited ${amount} ${selectedRestake.asset.symbol} and minted ${selectedRestake.derivativeTokenSymbol} at ${selectedRestake.totalApyPercent}% total APY.`,
-      type: 'success',
-    });
+      soundManager.playSuccess();
+      addToast({
+        title: 'Restaking Mint Completed',
+        message: `Deposited ${amount} ${selectedRestake.asset.symbol} and minted ${selectedRestake.derivativeTokenSymbol} at ${selectedRestake.totalApyPercent}% total APY.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      soundManager.playAlert();
+      addToast({
+        title: 'Restaking Thất Bại',
+        message: err?.message || 'Không thể thực thi giao dịch restake.',
+        type: 'error',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Handle Claim Rewards
   const handleClaimRewards = async (vault: StakingVault) => {
+    if (!isConnected || !address) {
+      addToast({
+        title: 'Chưa Kết Nối Ví',
+        message: 'Vui lòng kết nối ví Web3 để nhận thưởng staking.',
+        type: 'warning',
+      });
+      openConnectModal();
+      return;
+    }
+
     const rewards = vault.userStaked?.pendingRewards || vault.userPendingRewards || 45.2;
-    await executeTransaction({
-      chainId: vault.chainId,
-      type: 'CLAIM_REWARDS',
-      toToken: vault.rewardToken.symbol,
-      toAmount: rewards,
-      gasSpentGwei: 14,
-      gasSpentUsd: 2.80,
-    });
+    try {
+      await executeTransaction({
+        chainId: vault.chainId,
+        type: 'CLAIM_REWARDS',
+        toToken: vault.rewardToken.symbol,
+        toAmount: rewards,
+        gasSpentGwei: 14,
+        gasSpentUsd: 2.80,
+        targetAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
+        calldata: '0x',
+      });
 
-    setVaults((prev) =>
-      prev.map((v) => {
-        if (v.id === vault.id) {
-          return {
-            ...v,
-            userStaked: v.userStaked ? { ...v.userStaked, pendingRewards: 0 } : undefined,
-            userPendingRewards: 0,
-          };
-        }
-        return v;
-      })
-    );
+      setVaults((prev) =>
+        prev.map((v) => {
+          if (v.id === vault.id) {
+            return {
+              ...v,
+              userStaked: v.userStaked ? { ...v.userStaked, pendingRewards: 0 } : undefined,
+              userPendingRewards: 0,
+            };
+          }
+          return v;
+        })
+      );
 
-    soundManager.playSuccess();
-    addToast({
-      title: 'Rewards Claimed',
-      message: `Claimed ${rewards.toFixed(2)} ${vault.rewardToken.symbol} to wallet.`,
-      type: 'success',
-    });
+      soundManager.playSuccess();
+      addToast({
+        title: 'Rewards Claimed',
+        message: `Claimed ${rewards.toFixed(2)} ${vault.rewardToken.symbol} to wallet.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      soundManager.playAlert();
+      addToast({
+        title: 'Nhận Thưởng Thất Bại',
+        message: err?.message || 'Không thể nhận thưởng staking.',
+        type: 'error',
+      });
+    }
   };
 
   // 1-Click AI Harvest & Compound All
   const handleHarvestAndCompoundAll = async () => {
-    setIsProcessing(true);
-    await executeTransaction({
-      chainId: 'ethereum',
-      type: 'CLAIM_REWARDS',
-      toToken: 'HYPR',
-      toAmount: 142.3,
-      gasSpentGwei: 18,
-      gasSpentUsd: 3.50,
-    });
-    setIsProcessing(false);
-    soundManager.playSuccess();
+    if (!isConnected || !address) {
+      addToast({
+        title: 'Chưa Kết Nối Ví',
+        message: 'Vui lòng kết nối ví Web3 để thực hiện gom thưởng và tự động tái đầu tư.',
+        type: 'warning',
+      });
+      openConnectModal();
+      return;
+    }
 
-    addToast({
-      title: 'AI Auto-Compound Executed',
-      message: 'All accrued staking yields have been harvested and auto-reinvested at peak APY with batch gas optimization.',
-      type: 'success',
-    });
+    setIsProcessing(true);
+    try {
+      await executeTransaction({
+        chainId: 'ethereum',
+        type: 'CLAIM_REWARDS',
+        toToken: 'HYPR',
+        toAmount: 142.3,
+        gasSpentGwei: 18,
+        gasSpentUsd: 3.50,
+        targetAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
+        calldata: '0x',
+      });
+      soundManager.playSuccess();
+
+      addToast({
+        title: 'AI Auto-Compound Executed',
+        message: 'All accrued staking yields have been harvested and auto-reinvested at peak APY with batch gas optimization.',
+        type: 'success',
+      });
+    } catch (err: any) {
+      soundManager.playAlert();
+      addToast({
+        title: 'Auto-Compound Thất Bại',
+        message: err?.message || 'Không thể thực thi tái đầu tư.',
+        type: 'error',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Calculator projections
@@ -490,13 +578,23 @@ export const StakingView: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                disabled={isProcessing || !parseFloat(stakeAmount)}
-                onClick={handleStake}
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold font-mono text-sm uppercase tracking-wider transition-all cursor-pointer shadow-xl"
-              >
-                {isProcessing ? 'Processing Stake...' : `Confirm Deposit & Stake`}
-              </button>
+              {!isConnected ? (
+                <button
+                  onClick={openConnectModal}
+                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold font-mono text-sm uppercase tracking-wider transition-all cursor-pointer shadow-xl flex items-center justify-center gap-2"
+                >
+                  <Wallet className="w-4 h-4" />
+                  <span>Kết Nối Ví Web3 Để Stake</span>
+                </button>
+              ) : (
+                <button
+                  disabled={isProcessing || !parseFloat(stakeAmount)}
+                  onClick={handleStake}
+                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold font-mono text-sm uppercase tracking-wider transition-all cursor-pointer shadow-xl"
+                >
+                  {isProcessing ? 'Processing Stake...' : `Confirm Deposit & Stake`}
+                </button>
+              )}
             </div>
           </div>
         </div>

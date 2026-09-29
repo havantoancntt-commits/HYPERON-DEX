@@ -303,22 +303,32 @@ export const TradeTerminalView: React.FC = () => {
     }
 
     if (orderType === 'market') {
-      const success = await executeTransaction({
-        chainId: 'ethereum',
-        type: 'SWAP',
-        fromToken: side === 'buy' ? 'USDC' : activePair.symbol,
-        toToken: side === 'buy' ? activePair.symbol : 'USDC',
-        fromAmount: side === 'buy' ? parsedAmount * parsedPrice : parsedAmount,
-        toAmount: side === 'buy' ? parsedAmount : parsedAmount * parsedPrice,
-        gasSpentGwei: 24,
-        gasSpentUsd: 0.45,
-      });
+      try {
+        const success = await executeTransaction({
+          chainId: 'ethereum',
+          type: 'SWAP',
+          fromToken: side === 'buy' ? 'USDC' : activePair.symbol,
+          toToken: side === 'buy' ? activePair.symbol : 'USDC',
+          fromAmount: side === 'buy' ? parsedAmount * parsedPrice : parsedAmount,
+          toAmount: side === 'buy' ? parsedAmount : parsedAmount * parsedPrice,
+          gasSpentGwei: 24,
+          gasSpentUsd: 0.45,
+          targetAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
+          calldata: '0x',
+        });
 
-      if (success) {
+        if (success) {
+          addToast({
+            title: 'Market Order Filled',
+            message: `Successfully executed ${side.toUpperCase()} ${parsedAmount} ${activePair.symbol} at market price $${activePair.priceUsd.toFixed(2)}.`,
+            type: 'success',
+          });
+        }
+      } catch (err: any) {
         addToast({
-          title: 'Market Order Filled',
-          message: `Successfully executed ${side.toUpperCase()} ${parsedAmount} ${activePair.symbol} at market price $${activePair.priceUsd.toFixed(2)}.`,
-          type: 'success',
+          title: 'Khớp Lệnh Thất Bại',
+          message: err?.message || 'Không thể thực thi lệnh thị trường.',
+          type: 'error',
         });
       }
     } else {

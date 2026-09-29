@@ -6,7 +6,7 @@ import { Bot, Play, Pause, ShieldCheck, CheckCircle2, ArrowRight, Zap, RefreshCw
 import { formatCurrency } from '../lib/utils';
 
 export const AITradingAgentView: React.FC = () => {
-  const { isConnected, connectWallet, executeTransaction } = useWallet();
+  const { isConnected, address, openConnectModal, executeTransaction } = useWallet();
   const { setActiveSimulation, addToast } = useExchange();
 
   const [activeTab, setActiveTab] = useState<'agents' | 'proposals' | 'logs'>('agents');
@@ -96,23 +96,43 @@ export const AITradingAgentView: React.FC = () => {
   };
 
   const handleApproveProposal = async (intent: AIAgentIntent) => {
-    await executeTransaction({
-      chainId: 'ethereum',
-      type: 'SWAP',
-      fromToken: 'USDC',
-      toToken: 'ETH',
-      fromAmount: intent.suggestedAmount,
-      toAmount: intent.suggestedAmount / 3420.50,
-      gasSpentGwei: 18,
-      gasSpentUsd: 3.80,
-    });
+    if (!isConnected || !address) {
+      addToast({
+        title: 'Chưa Kết Nối Ví',
+        message: 'Vui lòng kết nối ví Web3 để phê duyệt lệnh giao dịch.',
+        type: 'warning',
+      });
+      openConnectModal();
+      return;
+    }
 
-    setPendingProposals((prev) => prev.filter((p) => p.id !== intent.id));
-    addToast({
-      title: 'Agent Intent Executed On-Chain',
-      message: `Successfully executed proposal #${intent.id} with zero-trust validation.`,
-      type: 'success',
-    });
+    try {
+      await executeTransaction({
+        chainId: 'ethereum',
+        type: 'SWAP',
+        fromToken: 'USDC',
+        toToken: 'ETH',
+        fromAmount: intent.suggestedAmount,
+        toAmount: intent.suggestedAmount / 3420.50,
+        gasSpentGwei: 18,
+        gasSpentUsd: 3.80,
+        targetAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
+        calldata: '0x',
+      });
+
+      setPendingProposals((prev) => prev.filter((p) => p.id !== intent.id));
+      addToast({
+        title: 'Agent Intent Executed On-Chain',
+        message: `Successfully executed proposal #${intent.id} with zero-trust validation.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      addToast({
+        title: 'Thực Thi Đề Xuất Thất Bại',
+        message: err?.message || 'Không thể thực thi lệnh đề xuất.',
+        type: 'error',
+      });
+    }
   };
 
   return (

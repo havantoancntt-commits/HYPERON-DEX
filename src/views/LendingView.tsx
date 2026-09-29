@@ -26,14 +26,15 @@ import {
   Activity,
   ArrowRight,
   Cpu,
-  Flame
+  Flame,
+  Wallet
 } from 'lucide-react';
 
 type LendingTab = 'markets' | 'interest-rates' | 'flash-loans' | 'isolated-pools';
 type ActionType = 'supply' | 'borrow' | 'repay' | 'withdraw';
 
 export const LendingView: React.FC = () => {
-  const { balances, executeTransaction } = useWallet();
+  const { balances, isConnected, address, openConnectModal, executeTransaction } = useWallet();
   const { addToast } = useExchange();
 
   const [activeTab, setActiveTab] = useState<LendingTab>('markets');
@@ -150,6 +151,16 @@ export const LendingView: React.FC = () => {
 
   // Handle Execution (Supply, Borrow, Repay, Withdraw)
   const handleExecuteAction = async () => {
+    if (!isConnected || !address) {
+      addToast({
+        title: 'Chưa Kết Nối Ví',
+        message: 'Vui lòng kết nối ví Web3 để thực hiện giao dịch trên chuỗi.',
+        type: 'warning',
+      });
+      openConnectModal();
+      return;
+    }
+
     const amount = parseFloat(actionAmount);
     if (!amount || amount <= 0 || !selectedAsset || !activeAction) return;
 
@@ -160,78 +171,111 @@ export const LendingView: React.FC = () => {
     if (activeAction === 'repay') txType = 'REPAY';
     if (activeAction === 'withdraw') txType = 'WITHDRAW_LENDING';
 
-    await executeTransaction({
-      chainId: selectedAsset.chainId,
-      type: txType,
-      fromToken: activeAction === 'supply' || activeAction === 'repay' ? selectedAsset.token.symbol : undefined,
-      toToken: activeAction === 'borrow' || activeAction === 'withdraw' ? selectedAsset.token.symbol : undefined,
-      fromAmount: amount,
-      toAmount: amount,
-      gasSpentGwei: 21,
-      gasSpentUsd: 3.40,
-    });
+    try {
+      await executeTransaction({
+        chainId: selectedAsset.chainId,
+        type: txType,
+        fromToken: activeAction === 'supply' || activeAction === 'repay' ? selectedAsset.token.symbol : undefined,
+        toToken: activeAction === 'borrow' || activeAction === 'withdraw' ? selectedAsset.token.symbol : undefined,
+        fromAmount: amount,
+        toAmount: amount,
+        gasSpentGwei: 21,
+        gasSpentUsd: 3.40,
+        targetAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
+        calldata: '0x',
+      });
 
-    // Update local state
-    setMarkets((prev) =>
-      prev.map((m) => {
-        if (m.id === selectedAsset.id) {
-          let updated = { ...m };
-          if (activeAction === 'supply') {
-            updated.userSuppliedAmount += amount;
-            updated.isCollateralActive = true;
-          } else if (activeAction === 'withdraw') {
-            updated.userSuppliedAmount = Math.max(0, updated.userSuppliedAmount - amount);
-          } else if (activeAction === 'borrow') {
-            updated.userBorrowedAmount += amount;
-          } else if (activeAction === 'repay') {
-            updated.userBorrowedAmount = Math.max(0, updated.userBorrowedAmount - amount);
+      // Update local state
+      setMarkets((prev) =>
+        prev.map((m) => {
+          if (m.id === selectedAsset.id) {
+            let updated = { ...m };
+            if (activeAction === 'supply') {
+              updated.userSuppliedAmount += amount;
+              updated.isCollateralActive = true;
+            } else if (activeAction === 'withdraw') {
+              updated.userSuppliedAmount = Math.max(0, updated.userSuppliedAmount - amount);
+            } else if (activeAction === 'borrow') {
+              updated.userBorrowedAmount += amount;
+            } else if (activeAction === 'repay') {
+              updated.userBorrowedAmount = Math.max(0, updated.userBorrowedAmount - amount);
+            }
+            return updated;
           }
-          return updated;
-        }
-        return m;
-      })
-    );
+          return m;
+        })
+      );
 
-    setIsProcessing(false);
-    setActiveAction(null);
-    setActionAmount('');
+      setActiveAction(null);
+      setActionAmount('');
 
-    const actionNames: Record<ActionType, string> = {
-      supply: 'Supplied',
-      borrow: 'Borrowed',
-      repay: 'Repaid',
-      withdraw: 'Withdrawn',
-    };
+      const actionNames: Record<ActionType, string> = {
+        supply: 'Supplied',
+        borrow: 'Borrowed',
+        repay: 'Repaid',
+        withdraw: 'Withdrawn',
+      };
 
-    soundManager.playSuccess();
-    addToast({
-      title: `${actionNames[activeAction]} Successfully`,
-      message: `${amount} ${selectedAsset.token.symbol} processed on ${selectedAsset.chainId.toUpperCase()} with 0% slippage.`,
-      type: 'success',
-    });
+      soundManager.playSuccess();
+      addToast({
+        title: `${actionNames[activeAction]} Successfully`,
+        message: `${amount} ${selectedAsset.token.symbol} processed on ${selectedAsset.chainId.toUpperCase()} with 0% slippage.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      soundManager.playAlert();
+      addToast({
+        title: 'Giao Dịch Thất Bại',
+        message: err?.message || 'Không thể thực thi giao dịch lending.',
+        type: 'error',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Handle Flash Loan Trigger
   const handleExecuteFlashLoan = async (opp: FlashLoanOpportunity) => {
-    setIsProcessing(true);
-    await executeTransaction({
-      chainId: 'ethereum',
-      type: 'FLASH_LOAN',
-      fromToken: opp.token.symbol,
-      toToken: opp.token.symbol,
-      fromAmount: 500000,
-      toAmount: 500000 + opp.estimatedNetProfitUsd / opp.token.priceUsd,
-      gasSpentGwei: 35,
-      gasSpentUsd: 12.50,
-    });
-    setIsProcessing(false);
-    soundManager.playSuccess();
+    if (!isConnected || !address) {
+      addToast({
+        title: 'Chưa Kết Nối Ví',
+        message: 'Vui lòng kết nối ví Web3 để thực hiện flash loan.',
+        type: 'warning',
+      });
+      openConnectModal();
+      return;
+    }
 
-    addToast({
-      title: 'Atomic Flash Loan Executed',
-      message: `Captured ${formatCurrency(opp.estimatedNetProfitUsd)} net arbitrage profit via ${opp.targetDEXA} & ${opp.targetDEXB}.`,
-      type: 'success',
-    });
+    setIsProcessing(true);
+    try {
+      await executeTransaction({
+        chainId: 'ethereum',
+        type: 'FLASH_LOAN',
+        fromToken: opp.token.symbol,
+        toToken: opp.token.symbol,
+        fromAmount: 500000,
+        toAmount: 500000 + opp.estimatedNetProfitUsd / opp.token.priceUsd,
+        gasSpentGwei: 35,
+        gasSpentUsd: 12.50,
+        targetAddress: '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
+        calldata: '0x',
+      });
+      soundManager.playSuccess();
+      addToast({
+        title: 'Atomic Flash Loan Executed',
+        message: `Captured ${formatCurrency(opp.estimatedNetProfitUsd)} net arbitrage profit via ${opp.targetDEXA} & ${opp.targetDEXB}.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      soundManager.playAlert();
+      addToast({
+        title: 'Flash Loan Thất Bại',
+        message: err?.message || 'Không thể thực thi flash loan.',
+        type: 'error',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Filtered markets
@@ -986,19 +1030,29 @@ export const LendingView: React.FC = () => {
             </div>
 
             {/* Action Button */}
-            <button
-              disabled={isProcessing || !parseFloat(actionAmount)}
-              onClick={handleExecuteAction}
-              className={`w-full py-4 rounded-2xl font-bold font-mono text-sm uppercase tracking-wider transition-all cursor-pointer shadow-xl ${
-                activeAction === 'supply'
-                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white'
-                  : activeAction === 'borrow'
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white'
-                  : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white'
-              }`}
-            >
-              {isProcessing ? 'Confirming Transaction...' : `Confirm ${activeAction} ${selectedAsset.token.symbol}`}
-            </button>
+            {!isConnected ? (
+              <button
+                onClick={openConnectModal}
+                className="w-full py-4 rounded-2xl font-bold font-mono text-sm uppercase tracking-wider transition-all cursor-pointer shadow-xl bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white flex items-center justify-center gap-2"
+              >
+                <Wallet className="w-4 h-4" />
+                <span>Kết Nối Ví Web3 Để {activeAction === 'supply' ? 'Cung Cấp' : activeAction === 'borrow' ? 'Vay' : activeAction === 'repay' ? 'Trả Nợ' : 'Rút Vốn'}</span>
+              </button>
+            ) : (
+              <button
+                disabled={isProcessing || !parseFloat(actionAmount)}
+                onClick={handleExecuteAction}
+                className={`w-full py-4 rounded-2xl font-bold font-mono text-sm uppercase tracking-wider transition-all cursor-pointer shadow-xl ${
+                  activeAction === 'supply'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white'
+                    : activeAction === 'borrow'
+                    ? 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white'
+                    : 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white'
+                }`}
+              >
+                {isProcessing ? 'Confirming Transaction...' : `Confirm ${activeAction} ${selectedAsset.token.symbol}`}
+              </button>
+            )}
           </div>
         </div>
       )}

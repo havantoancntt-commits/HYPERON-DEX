@@ -29,7 +29,7 @@ import {
 
 export const PaymentsView: React.FC = () => {
   const { addToast } = useExchange();
-  const { isConnected, connectWallet, address, executeTransaction, chainId } = useWallet();
+  const { isConnected, connectWallet, openConnectModal, address, executeTransaction, chainId } = useWallet();
 
   const [invoices, setInvoices] = useState<Web3MerchantInvoice[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -124,7 +124,7 @@ export const PaymentsView: React.FC = () => {
         message: 'Vui lòng kết nối ví Web3 để thanh toán hóa đơn.',
         type: 'warning',
       });
-      connectWallet('sandbox');
+      openConnectModal();
       return;
     }
 
