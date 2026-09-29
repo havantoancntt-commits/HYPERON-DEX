@@ -67,6 +67,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, Pausable {
     IERC7528PriceOracle public oracleAggregator;
 
     mapping(address => bool) public canonicalVerifiedTokens;
+    mapping(address => bool) public authorizedRelayers;
 
     // --- Events ---
     event SwapExecuted(
@@ -81,6 +82,7 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, Pausable {
 
     event FundsRescued(address indexed token, address indexed to, uint256 amount);
     event CanonicalTokenUpdated(address indexed token, bool status);
+    event RelayerUpdated(address indexed relayer, bool status);
     event OracleAggregatorUpdated(address indexed newOracle);
     event UniswapV3RouterUpdated(address indexed newRouter);
     event UniswapV2RouterUpdated(address indexed newRouter);
@@ -89,11 +91,20 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, Pausable {
     error InvalidAddress();
     error InvalidAmount();
     error ExpiredDeadline();
+    error UnauthorizedRelayer();
     error InsufficientOutputAmount(uint256 received, uint256 minimumExpected);
     error InsufficientContractBalance(uint256 available, uint256 required);
     error ETHTransferFailed();
     error OracleCircuitBreakerTriggered(address asset);
     error OracleUnavailable(address asset);
+
+    /// @notice Restricts execution to authorized relayers or protocol owner
+    modifier onlyRelayer() {
+        if (msg.sender != owner() && !authorizedRelayers[msg.sender]) {
+            revert UnauthorizedRelayer();
+        }
+        _;
+    }
 
     /**
      * @notice Initializes the HyperonRouter contract.
@@ -134,6 +145,12 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, Pausable {
         if (token == address(0)) revert InvalidAddress();
         canonicalVerifiedTokens[token] = status;
         emit CanonicalTokenUpdated(token, status);
+    }
+
+    function setRelayer(address relayer, bool status) external onlyOwner {
+        if (relayer == address(0)) revert InvalidAddress();
+        authorizedRelayers[relayer] = status;
+        emit RelayerUpdated(relayer, status);
     }
 
     function setOracleAggregator(address _oracle) external onlyOwner {
@@ -210,6 +227,60 @@ contract HyperonRouter is Ownable2Step, ReentrancyGuard, Pausable {
             amountIn,
             amountOut,
             bytes32("UNISWAP_V3")
+        );
+    }
+
+    /**
+     * @notice Executes a relayed swap via Uniswap V3 on behalf of a user.
+     * @dev Controlled strictly by authorized relayers or owner via `onlyRelayer`.
+     */
+    function executeRelayedSwapV3(
+        address tokenIn,
+        address tokenOut,
+        uint24 feeTier,
+        address user,
+        address recipient,
+        uint256 amountIn,
+        uint256 amountOutMinimum,
+        uint256 deadline
+    ) external onlyRelayer nonReentrant whenNotPaused returns (uint256 amountOut) {
+        if (user == address(0) || recipient == address(0)) revert InvalidAddress();
+        if (tokenIn == address(0) || tokenOut == address(0)) revert InvalidAddress();
+        if (amountIn == 0) revert InvalidAmount();
+        if (block.timestamp > deadline) revert ExpiredDeadline();
+        if (address(uniswapV3Router) == address(0)) revert InvalidAddress();
+
+        _checkOracleSafety(tokenIn);
+        _checkOracleSafety(tokenOut);
+
+        IERC20(tokenIn).safeTransferFrom(user, address(this), amountIn);
+        IERC20(tokenIn).forceApprove(address(uniswapV3Router), amountIn);
+
+        amountOut = uniswapV3Router.exactInputSingle(
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                fee: feeTier,
+                recipient: recipient,
+                deadline: deadline,
+                amountIn: amountIn,
+                amountOutMinimum: amountOutMinimum,
+                sqrtPriceLimitX96: 0
+            })
+        );
+
+        if (amountOut < amountOutMinimum) {
+            revert InsufficientOutputAmount(amountOut, amountOutMinimum);
+        }
+
+        emit SwapExecuted(
+            user,
+            recipient,
+            tokenIn,
+            tokenOut,
+            amountIn,
+            amountOut,
+            bytes32("RELAYED_UNISWAP_V3")
         );
     }
 

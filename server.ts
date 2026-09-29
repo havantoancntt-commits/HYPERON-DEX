@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { z } from 'zod';
-import { VERIFIED_TOKENS, SUPPORTED_CHAINS, DEX_SOURCES, SAMPLE_STAKING_VAULTS } from './src/lib/constants';
+import { VERIFIED_TOKENS, SUPPORTED_CHAINS, DEX_SOURCES } from './src/lib/constants';
 import { handleGetLiquidityPools } from './server/services/liquidityService';
 import { priceCache, getPrice, getPriceState, getUsdPrice, syncRealTimePrices } from './server/services/priceFeed';
 import { fetchLiveKlines, fetchLiveOrderBook, fetchLiveTrades, calculateLiveTechnicalIndicators } from './server/services/marketData';
@@ -1384,7 +1384,7 @@ app.post('/api/ai/portfolio-copilot', async (req: Request, res: Response) => {
     const stableUsd = stableItems.reduce((sum, a) => sum + a.valueUsd, 0);
     const ethUsd = ethItem ? ethItem.valueUsd : 0;
     const wbtcUsd = wbtcItem ? wbtcItem.valueUsd : 0;
-    const ethPrice = ethItem?.priceUsd || getPrice('ETH') || 2600;
+    const ethPrice = ethItem?.priceUsd || getUsdPrice('ETH') || priceCache['ETH']?.priceUsd || 0;
 
     const stableRatio = computedTotal > 0 ? Math.round((stableUsd / computedTotal) * 100) : 0;
     const ethRatio = computedTotal > 0 ? Math.round((ethUsd / computedTotal) * 100) : 0;
@@ -1411,7 +1411,7 @@ app.post('/api/ai/portfolio-copilot', async (req: Request, res: Response) => {
         title: 'Defensive Liquidity Rebalance',
         description: 'Swap small allocation into USDC to maintain 25% cash buffer against market volatility.',
         targetPair: 'ETH/USDC',
-        suggestedAmount: Number(((computedTotal * 0.05) / (ethPrice || 2500)).toFixed(3)),
+        suggestedAmount: ethPrice > 0 ? Number(((computedTotal * 0.05) / ethPrice).toFixed(3)) : 0,
         type: 'REBALANCE',
       });
     } else if (sanitizedMsg.includes('risk') || sanitizedMsg.includes('safe') || sanitizedMsg.includes('audit')) {
@@ -1664,17 +1664,18 @@ app.get('/api/liquidity/pools', handleGetLiquidityPools);
 
 app.get('/api/staking/vaults', (req: Request, res: Response) => {
   try {
-    const isProd = process.env.NODE_ENV === 'production' || process.env.APP_MODE === 'PRODUCTION';
-    if (isProd) {
-      return res.json({
-        vaults: [],
-        status: 'VAULTS_NOT_CONFIGURED',
-        message: 'No production staking contracts configured on connected network',
+    // Fail-Closed Zero-Synthetic policy: strictly no SAMPLE_STAKING_VAULTS fallback
+    const liveVaults: any[] = [];
+    if (!liveVaults || liveVaults.length === 0) {
+      return res.status(503).json({
+        error: 'NO_LIVE_POOLS',
+        code: 'NO_LIVE_POOLS',
+        message: 'On-chain discovery yielded no results',
       });
     }
-    res.json({ vaults: SAMPLE_STAKING_VAULTS, isSimulation: true });
+    return res.json({ vaults: liveVaults, count: liveVaults.length });
   } catch (err: unknown) {
-    res.status(500).json({ error: 'Failed to retrieve staking vaults' });
+    return handleDexError(err, res, 'Failed to retrieve staking vaults');
   }
 });
 
@@ -1909,4 +1910,7 @@ async function startServer() {
   });
 }
 
-startServer();
+const isDirectRun = !process.argv[1] || process.argv[1].endsWith('server.ts') || process.argv[1].endsWith('server.cjs');
+if (isDirectRun && process.env.NODE_ENV !== 'test') {
+  startServer();
+}

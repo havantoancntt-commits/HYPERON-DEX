@@ -69,6 +69,7 @@ import { runUltraRouterTests } from './UltraRouter.test';
 import { runUniswapV3Suite } from './uniswapV3Verification';
 import { runProductionHardenTests } from './productionHarden.test';
 import { runExecutionHardeningTests } from './executionHardeningSuite';
+import { runHandleDexErrorTests } from './handleDexError.test';
 
 let totalTests = 0;
 let passedTests = 0;
@@ -1479,6 +1480,12 @@ async function runTests() {
   assert(fullCsv.startsWith('Asset,Symbol,Chain'), 'CSV ledger contains valid header row');
   assert(fullCsv.includes('"ETH"'), 'CSV ledger contains formatted token symbol');
   assert(fullCsv.includes('8500.00'), 'CSV ledger accurately calculates total USD value');
+
+  // 6. Centralized Error Handler (DRY Refactor) Verification
+  const dexErrorResults = runHandleDexErrorTests();
+  totalTests += dexErrorResults.total;
+  passedTests += dexErrorResults.passed;
+  failedTests += dexErrorResults.failed;
 
   // Summary
   console.log('\n======================================================');

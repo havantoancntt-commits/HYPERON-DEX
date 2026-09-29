@@ -12,7 +12,7 @@ function findImports(importPath: string) {
   const candidatePaths = [
     path.resolve('contracts', importPath),
     path.resolve('contracts/src', importPath),
-    path.resolve('contracts/src', importPath.replace(/^(\.\.\/src\/|\.\/src\/|src\/)/, '')),
+    path.resolve('contracts/src', importPath.replace(/^(\.\.\/src\/|\.\/src\/|src\/|contracts_src\/)/, '')),
     path.resolve('contracts/src', importPath.replace(/^\.\//, '')),
     path.resolve('contracts/test', importPath),
     path.resolve(importPath),
@@ -29,9 +29,15 @@ export function compileSolidityContracts() {
   console.log('Compiling Solidity contracts with solc', solc.version());
   const sources: Record<string, { content: string }> = {
     'HyperonRouter.sol': {
+      content: fs.readFileSync(path.resolve('contracts/HyperonRouter.sol'), 'utf8'),
+    },
+    'contracts_src/HyperonRouter.sol': {
       content: fs.readFileSync(path.resolve('contracts/src/HyperonRouter.sol'), 'utf8'),
     },
     'HyperonOracleAggregator.sol': {
+      content: fs.readFileSync(path.resolve('contracts/HyperonOracleAggregator.sol'), 'utf8'),
+    },
+    'src/HyperonOracleAggregator.sol': {
       content: fs.readFileSync(path.resolve('contracts/src/HyperonOracleAggregator.sol'), 'utf8'),
     },
     'interfaces/ISwapRouter.sol': {
@@ -45,6 +51,15 @@ export function compileSolidityContracts() {
     },
     'HyperonRouter.t.sol': {
       content: fs.readFileSync(path.resolve('contracts/test/HyperonRouter.t.sol'), 'utf8'),
+    },
+    'HyperonOracleAggregator.t.sol': {
+      content: fs.readFileSync(path.resolve('contracts/test/HyperonOracleAggregator.t.sol'), 'utf8'),
+    },
+    'root_test/HyperonOracleAggregator.t.sol': {
+      content: fs.readFileSync(path.resolve('test/HyperonOracleAggregator.t.sol'), 'utf8'),
+    },
+    'HyperonToken.sol': {
+      content: fs.readFileSync(path.resolve('contracts/HyperonToken.sol'), 'utf8'),
     },
   };
 

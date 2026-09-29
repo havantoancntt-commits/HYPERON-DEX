@@ -248,11 +248,47 @@ export async function getCircuitBreakerAuditLogsAsync(symbol?: string, limit: nu
   return CircuitBreakerService.getAuditLogs(symbol, limit);
 }
 
+export const MAX_HISTORY_SIZE = 1000;
+export const HISTORY_PRUNE_INTERVAL_MS = 60_000;
+
+/**
+ * In-memory rolling price history store.
+ * Strictly bounded to MAX_HISTORY_SIZE (1,000 entries) per asset and pruned
+ * every HISTORY_PRUNE_INTERVAL_MS to prevent long-term memory leaks in high-frequency trading.
+ */
+export const priceHistory: Record<string, PriceSnapshot[]> = {};
+let lastPruneTimestamp = Date.now();
+
 /**
  * Records a new price observation into rolling history and evaluates flashloan / volatility trip conditions.
  * Uses 100% BigInt integer arithmetic for all volatility assertions.
+ * Contains memory leak prevention logic with bounded array pruning.
  */
 export function recordPriceSnapshot(symbol: string, priceRaw: bigint): CircuitBreakerStatus {
+  const symKey = symbol.toUpperCase();
+  if (!priceHistory[symKey]) {
+    priceHistory[symKey] = [];
+  }
+  priceHistory[symKey].push({ priceRaw, timestamp: Date.now() });
+
+  // Memory Safety: If history exceeds MAX_HISTORY_SIZE, prune the oldest items
+  if (priceHistory[symKey].length > MAX_HISTORY_SIZE) {
+    priceHistory[symKey].splice(0, priceHistory[symKey].length - MAX_HISTORY_SIZE);
+  }
+
+  // Periodic background garbage collection to evict obsolete window snapshots
+  const now = Date.now();
+  if (now - lastPruneTimestamp > HISTORY_PRUNE_INTERVAL_MS) {
+    lastPruneTimestamp = now;
+    const cutoff = now - 300_000; // 5-minute rolling window
+    for (const key of Object.keys(priceHistory)) {
+      priceHistory[key] = priceHistory[key].filter((snap) => snap.timestamp >= cutoff);
+      if (priceHistory[key].length > MAX_HISTORY_SIZE) {
+        priceHistory[key].splice(0, priceHistory[key].length - MAX_HISTORY_SIZE);
+      }
+    }
+  }
+
   const status = CircuitBreakerService.recordSnapshotSync(symbol, priceRaw);
   if (status.lastValidPriceRaw && status.lastValidPriceUsd === undefined) {
     status.lastValidPriceUsd = parseFloat(formatUnits(status.lastValidPriceRaw, PRICE_DECIMALS));

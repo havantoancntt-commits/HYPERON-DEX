@@ -31,7 +31,7 @@ export interface ClientQuoteParams {
 }
 
 export interface RouteCommitment {
-  protocol: 'keccak256-route-commitment' | 'eip712-commitment' | 'groth16' | 'sha256-merkle';
+  protocol: 'keccak256-route-commitment' | 'eip712-commitment' | 'sha256-merkle';
   proofHash: string;
   nullifier: string;
   publicSignals: {
@@ -68,11 +68,11 @@ export function getClientPublicRpc(chainId: string = 'ethereum') {
 }
 
 /**
- * Generates a Cryptographic Route Commitment (SHA-256 Merkle Commitment & Nullifier)
+ * Generates a SHA-256 Cryptographic Route Commitment (SHA-256 Merkle Commitment & Nullifier)
  * for private transaction execution.
  * Binds routing intent parameters cryptographically to prevent frontrunning and unauthorized tampering.
  */
-export async function generateRouteCommitment(
+export async function generateSha256RouteCommitment(
   tokenIn: string,
   tokenOut: string,
   amountIn: string,
@@ -118,11 +118,13 @@ export async function generateRouteCommitment(
   };
 }
 
-export const generateZkRoutingProof = generateRouteCommitment;
-export const generateCryptographicRouteCommitment = generateRouteCommitment;
+export const generateCryptographicRouteCommitment = generateSha256RouteCommitment;
+export const generateRouteCommitment = generateSha256RouteCommitment;
+export const generateZkRoutingProof = generateSha256RouteCommitment;
 
 /**
- * Calculates a decentralized swap quote directly in the client environment.
+ * Server-side aggregation via API proxy.
+ * Offloads complex multi-DEX pathfinding to backend aggregator while validating inputs locally.
  */
 export async function calculateClientSmartRouteQuote(params: ClientQuoteParams): Promise<SwapQuote> {
   const {

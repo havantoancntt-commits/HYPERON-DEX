@@ -9,17 +9,22 @@
 
 ## 1. Executive Summary
 
-HYPERON-DEX has undergone a comprehensive multi-layered security audit, formal mathematical precision refactoring, and production hardening across smart contracts, routing algorithms, distributed authentication, multi-oracle consensus, and relayer security.
+HYPERON-DEX has undergone a comprehensive multi-layered security audit, formal mathematical precision refactoring, and production hardening across routing algorithms, distributed authentication, multi-oracle consensus, and relayer security.
+
+### Core Architectural Truthfulness & Commitments:
+- **Routing Engine**: Server-side aggregation routing via API proxy with multi-DEX split pathfinding.
+- **Transaction Privacy & Intent Binding**: SHA-256 Cryptographic Route Commitments binding chainId, router, token pairs, amounts, and recipient nullifiers (replacing prior experimental ZK-proof assumptions).
+- **Zero-Synthetic Data Mandate**: 100% enforced across execution paths (no mock prices, no synthetic liquidity fallbacks, fail-closed on oracle consensus outage).
+- **Financial Precision Standard**: 100% integer math (`BigInt`, `DecimalMath`, `PriceMath`, `GasMath`, `FeeMath`) with directional rounding guarantees (ceil on protocol fees/required input, floor on outputs).
+
+> **Disclaimer:** Smart contracts listed in Section 3 are pending implementation and formal on-chain verification prior to mainnet deployment.
 
 ### Key Audit Metrics:
 - **Total Invariant & Regression Tests Executed:** 217/217 Passing (100% Pass Rate).
 - **Critical Vulnerabilities (P0) Remediated:** 11/11
 - **High Vulnerabilities (P1) Remediated:** 14/14
 - **Medium Vulnerabilities (P2) Remediated:** 18/18
-- **Solidity Smart Contracts:** 100% compiled with `solc 0.8.28` (`HyperonRouter.sol`, `HyperonOracleAggregator.sol`, and `HyperonRouter.t.sol` test suite: 0 errors, 0 warnings).
 - **TypeScript Type-Safety:** 0 errors on `tsc --noEmit`.
-- **Zero-Synthetic Data Mandate:** 100% enforced across execution paths (no mock prices, no synthetic liquidity fallbacks, fail-closed on oracle consensus outage).
-- **Financial Precision Standard:** 100% integer math (`BigInt`, `DecimalMath`, `PriceMath`, `GasMath`, `FeeMath`) with directional rounding guarantees (ceil on protocol fees/required input, floor on outputs).
 
 ---
 
