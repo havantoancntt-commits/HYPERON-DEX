@@ -57,6 +57,9 @@ export const DEX_ERROR_CODES = {
   APPROVAL_FAILED: 'APPROVAL_FAILED',
   TRANSACTION_TIMEOUT: 'TRANSACTION_TIMEOUT',
   WALLET_REJECTED: 'WALLET_REJECTED',
+  CONTRACT_NOT_DEPLOYED: 'CONTRACT_NOT_DEPLOYED',
+  CONTRACT_WRONG_CHAIN: 'CONTRACT_WRONG_CHAIN',
+  CONTRACT_ABI_MISMATCH: 'CONTRACT_ABI_MISMATCH',
 } as const;
 
 export type DexErrorCode = (typeof DEX_ERROR_CODES)[keyof typeof DEX_ERROR_CODES];
@@ -151,4 +154,7 @@ export const ERROR_MESSAGES: Record<DexErrorCode, string> = {
   APPROVAL_FAILED: 'Token approval failed or was reverted on-chain.',
   TRANSACTION_TIMEOUT: 'Transaction timed out waiting for on-chain receipt confirmation.',
   WALLET_REJECTED: 'User rejected the transaction request in wallet.',
+  CONTRACT_NOT_DEPLOYED: 'Smart contract is not deployed at this address on the target blockchain network (bytecode is empty 0x).',
+  CONTRACT_WRONG_CHAIN: 'Contract was queried or submitted on the wrong blockchain network ID.',
+  CONTRACT_ABI_MISMATCH: 'Contract interface or function selector does not match the expected contract ABI.',
 };

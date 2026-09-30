@@ -99,8 +99,17 @@ export function compileSolidityContracts() {
 
   const contracts = output.contracts;
   console.log('✅ Solidity Compilation Succeeded!');
-  const routerBytecode = contracts['HyperonRouter.sol']['HyperonRouter'].evm.bytecode.object;
-  const oracleBytecode = contracts['HyperonOracleAggregator.sol']['HyperonOracleAggregator'].evm.bytecode.object;
+  const routerContract =
+    contracts['contracts_src/HyperonRouter.sol']?.['HyperonRouter'] ||
+    contracts['src/HyperonRouter.sol']?.['HyperonRouter'] ||
+    contracts['HyperonRouter.sol']?.['HyperonRouter'];
+  const oracleContract =
+    contracts['src/HyperonOracleAggregator.sol']?.['HyperonOracleAggregator'] ||
+    contracts['contracts_src/HyperonOracleAggregator.sol']?.['HyperonOracleAggregator'] ||
+    contracts['HyperonOracleAggregator.sol']?.['HyperonOracleAggregator'];
+
+  const routerBytecode = routerContract?.evm?.bytecode?.object || '';
+  const oracleBytecode = oracleContract?.evm?.bytecode?.object || '';
   console.log(`- HyperonRouter bytecode length: ${routerBytecode.length / 2} bytes`);
   console.log(`- HyperonOracleAggregator bytecode length: ${oracleBytecode.length / 2} bytes`);
 

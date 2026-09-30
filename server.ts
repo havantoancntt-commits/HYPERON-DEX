@@ -58,22 +58,20 @@ const trustProxyConfig = process.env.TRUST_PROXY
   : 1;
 app.set('trust proxy', trustProxyConfig);
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 // Production Web Security Headers via Helmet (HSTS, strict CSP without unsafe-eval, X-Content-Type-Options)
 // Security Architecture Note regarding 'unsafe-inline':
-// 1. scriptSrc: 'unsafe-inline' is currently permitted because Vite dev server middleware and
-//    preview client bootstraps inject dynamic client initialization scripts.
-//    TODO (Production Hardening): In isolated static standalone production SSR, migrate to
-//    per-request cryptographic nonces (res.locals.cspNonce) to completely eliminate 'unsafe-inline'.
-// 2. styleSrc: 'unsafe-inline' is required for Tailwind CSS v4 dynamic client theme injection
-//    and dynamic CSS custom properties.
+// In production, scriptSrc strictly enforces "'self'", completely eliminating 'unsafe-inline'.
+// In development, 'unsafe-inline' is conditionally enabled solely for Vite HMR client preamble.
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"], // Removed 'unsafe-eval'; requires 'unsafe-inline' for Vite dev client preamble
+        scriptSrc: isProduction ? ["'self'"] : ["'self'", "'unsafe-inline'"],
         scriptSrcAttr: ["'none'"], // Disallow inline event handlers (e.g. onclick=)
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], // Required for Tailwind v4 runtime and Google Fonts
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], // Required for Tailwind dynamic styling and Google Fonts
         fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
         imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
         connectSrc: ["'self'", 'https:', 'wss:', 'http://localhost:*'],

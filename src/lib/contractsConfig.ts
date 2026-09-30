@@ -11,7 +11,7 @@
 
 import { Address, getAddress, isAddress, PublicClient } from 'viem';
 import { ChainId } from '../types';
-import { DEX_ERROR_CODES, DexError } from './errorCodes';
+import { DEX_ERROR_CODES, DexError, DexErrorCode } from './errorCodes';
 
 export interface ChainContractConfig {
   chainId: ChainId;
@@ -220,36 +220,76 @@ export function getContractsConfig(chainId: string | number): ChainContractConfi
 }
 
 /**
- * Validates a contract address format, non-zero invariant, and optionally on-chain bytecode.
+ * Validates a contract address format, non-zero invariant, chain match, and on-chain bytecode (Section P0-5).
  */
 export async function validateContractOnChain(
   address: Address,
-  client?: PublicClient
-): Promise<{ isValid: boolean; hasBytecode: boolean; reason?: string }> {
+  client?: PublicClient,
+  options?: {
+    expectedChainId?: number;
+    expectedSelector?: string; // e.g. '0x414bf382' for exactInputSingle
+  }
+): Promise<{ isValid: boolean; hasBytecode: boolean; errorCode?: DexErrorCode; reason?: string }> {
   if (!address || !isAddress(address)) {
-    return { isValid: false, hasBytecode: false, reason: 'Invalid EVM address format' };
+    return { isValid: false, hasBytecode: false, errorCode: DEX_ERROR_CODES.INVALID_ADDRESS, reason: 'Invalid EVM address format' };
   }
   if (address.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
-    return { isValid: false, hasBytecode: false, reason: 'Contract address cannot be zero address' };
+    return { isValid: false, hasBytecode: false, errorCode: DEX_ERROR_CODES.INVALID_ADDRESS, reason: 'Contract address cannot be zero address' };
   }
   // Check for common placeholder addresses
   if (
     address.toLowerCase() === '0x1111111111111111111111111111111111111111' ||
     address.toLowerCase() === '0xdead000000000000000000000000000000000000'
   ) {
-    return { isValid: false, hasBytecode: false, reason: 'Placeholder contract address is not allowed' };
+    return { isValid: false, hasBytecode: false, errorCode: DEX_ERROR_CODES.INVALID_ADDRESS, reason: 'Placeholder contract address is not allowed' };
   }
 
   if (client) {
+    // Validate chain ID if requested
+    if (options?.expectedChainId) {
+      try {
+        const clientChainId = await client.getChainId();
+        if (clientChainId !== options.expectedChainId) {
+          return {
+            isValid: false,
+            hasBytecode: false,
+            errorCode: DEX_ERROR_CODES.CONTRACT_WRONG_CHAIN,
+            reason: `Client chain ID ${clientChainId} does not match expected chain ID ${options.expectedChainId}`,
+          };
+        }
+      } catch (err: any) {
+        return { isValid: false, hasBytecode: false, errorCode: DEX_ERROR_CODES.RPC_ERROR, reason: `Failed to query chain ID: ${err?.message || String(err)}` };
+      }
+    }
+
     try {
       const code = await client.getBytecode({ address });
-      const hasBytecode = Boolean(code && code !== '0x' && code !== '0x0');
+      const hasBytecode = Boolean(code && code !== '0x' && code !== '0x0' && code !== '0x00');
       if (!hasBytecode) {
-        return { isValid: false, hasBytecode: false, reason: 'No smart contract bytecode deployed at this address' };
+        return {
+          isValid: false,
+          hasBytecode: false,
+          errorCode: DEX_ERROR_CODES.CONTRACT_NOT_DEPLOYED,
+          reason: 'No smart contract bytecode deployed at this address (CONTRACT_NOT_DEPLOYED)',
+        };
       }
+
+      // Check ABI selector compatibility if provided
+      if (options?.expectedSelector && code) {
+        const cleanSelector = options.expectedSelector.toLowerCase().replace(/^0x/, '');
+        if (!code.toLowerCase().includes(cleanSelector)) {
+          return {
+            isValid: false,
+            hasBytecode: true,
+            errorCode: DEX_ERROR_CODES.CONTRACT_ABI_MISMATCH,
+            reason: `Contract bytecode does not contain expected function selector ${options.expectedSelector} (CONTRACT_ABI_MISMATCH)`,
+          };
+        }
+      }
+
       return { isValid: true, hasBytecode: true };
     } catch (err: any) {
-      return { isValid: false, hasBytecode: false, reason: `RPC error verifying bytecode: ${err?.message || String(err)}` };
+      return { isValid: false, hasBytecode: false, errorCode: DEX_ERROR_CODES.RPC_ERROR, reason: `RPC error verifying bytecode: ${err?.message || String(err)}` };
     }
   }
 
