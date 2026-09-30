@@ -65,11 +65,12 @@ export const SimulationModal: React.FC = () => {
       return;
     }
 
-    // Strict: Block confirmation if simulation failed or reverted
-    if (!activeSimulation.success || activeSimulation.status === 'FAILED') {
+    // Strict: Block confirmation if simulation failed for reasons other than pending allowance
+    const isUnapprovedAllowance = activeSimulation.allowanceRequired && !activeSimulation.allowanceApproved;
+    if ((!activeSimulation.success || activeSimulation.status === 'FAILED') && !isUnapprovedAllowance) {
       addToast({
         title: 'Giao Dịch Bị Chặn Do Mô Phỏng Thất Bại',
-        message: 'Mô phỏng tiền kiểm tra trên blockchain đã bị revert. Không thể ký giao dịch để tránh mất gas.',
+        message: activeSimulation.revertReason || 'Mô phỏng tiền kiểm tra trên blockchain đã bị revert. Không thể ký giao dịch để tránh mất gas.',
         type: 'error',
       });
       return;
@@ -219,7 +220,8 @@ export const SimulationModal: React.FC = () => {
 
   const simStatus: SimulationStatus = !activeSimulation
     ? 'SIMULATING'
-    : activeSimulation.success && activeSimulation.status !== 'FAILED'
+    : (activeSimulation.success && activeSimulation.status !== 'FAILED') ||
+      (activeSimulation.allowanceRequired && !activeSimulation.allowanceApproved)
     ? 'PASSED'
     : 'FAILED';
 

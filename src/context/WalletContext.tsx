@@ -6,6 +6,7 @@ import { SUPPORTED_CHAINS, VERIFIED_TOKENS } from '../lib/constants';
 import { ReceiptVerifier } from '../lib/execution/ReceiptVerifier';
 import { ERC20_ABI } from '../lib/execution/TransactionBuilder';
 import { validateChainId, getChainConfig, isSupportedChain } from '../lib/chainConfig';
+import { getContractsConfig } from '../lib/contractsConfig';
 import { BalanceEngine, TokenBalanceDetail } from '../lib/balanceEngine';
 import { ApprovalEngine } from '../lib/approvalEngine';
 import { TransactionSyncEngine } from '../lib/transactionSync';
@@ -176,30 +177,7 @@ export function createSandboxEIP1193Provider(
         return parseInt(currentChainHex, 16).toString();
       }
       if (method === 'eth_sendTransaction') {
-        const txBytes = new Uint8Array(32);
-        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-          crypto.getRandomValues(txBytes);
-        } else {
-          for (let i = 0; i < 32; i++) txBytes[i] = Math.floor(Math.random() * 256);
-        }
-        const txHash = '0x' + Array.from(txBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
-
-        // Trigger on-chain confirmation simulation event
-        setTimeout(() => {
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(
-              new CustomEvent('hyperon:transaction_confirmed', {
-                detail: {
-                  txHash,
-                  status: 'confirmed',
-                  blockNumber: 26069500 + Math.floor(Math.random() * 50),
-                },
-              })
-            );
-          }
-        }, 1200);
-
-        return txHash;
+        throw new Error('SANDBOX_TRANSACTION_REJECTED: Chế độ Sandbox chỉ dùng để xem giao diện. Vui lòng kết nối ví Web3 thật (MetaMask, Rabby, Trust Wallet...) để ký và phát sóng giao dịch on-chain.');
       }
       if (method === 'personal_sign' || method === 'eth_signTypedData_v4' || method === 'eth_sign') {
         return '0x' + '1b'.padStart(130, '7a');
@@ -1140,9 +1118,29 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       throw new Error('Chưa kết nối ví Web3. Vui lòng kết nối ví Trust Wallet, MetaMask hoặc ví EVM tương thích để ký giao dịch thật.');
     }
 
-    const target = txData.targetAddress && txData.targetAddress.startsWith('0x') && txData.targetAddress.length === 42
-      ? txData.targetAddress
-      : ('0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D' as `0x${string}`);
+    if (
+      !txData.targetAddress ||
+      !txData.targetAddress.startsWith('0x') ||
+      txData.targetAddress.length !== 42 ||
+      txData.targetAddress === '0x0000000000000000000000000000000000000000'
+    ) {
+      throw new Error('INVALID_TARGET_ADDRESS: Địa chỉ hợp đồng đích không hợp lệ hoặc bị thiếu. Giao dịch bị chặn.');
+    }
+    const target = txData.targetAddress as `0x${string}`;
+    const targetChainId = txData.chainId || chainId;
+    const contracts = getContractsConfig(targetChainId);
+    const validTargets = [
+      contracts.hyperonRouter?.toLowerCase(),
+      contracts.uniswapV3Router?.toLowerCase(),
+      contracts.uniswapV2Router?.toLowerCase(),
+      contracts.universalRouter?.toLowerCase(),
+      contracts.wrappedNativeToken?.toLowerCase(),
+    ].filter(Boolean);
+
+    if (!validTargets.includes(target.toLowerCase())) {
+      throw new Error(`SECURITY_VIOLATION: Địa chỉ router đích ${target} không nằm trong registry hợp đồng đã xác minh cho mạng ${contracts.name}. Giao dịch bị chặn.`);
+    }
+
     const data = txData.calldata && txData.calldata.startsWith('0x') && txData.calldata !== '0x'
       ? txData.calldata
       : ('0x' as `0x${string}`);
@@ -1163,8 +1161,14 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         txHash = hash;
       }
     } catch (err: any) {
-      if (err?.code === 4001) {
-        throw new Error('Người dùng đã hủy yêu cầu ký giao dịch trên ví.');
+      if (
+        err?.code === 4001 ||
+        err?.message?.includes('User rejected') ||
+        err?.message?.includes('user rejected') ||
+        err?.message?.includes('denied') ||
+        err?.message?.includes('cancelled')
+      ) {
+        throw new Error('Bạn đã từ chối giao dịch.');
       }
       throw new Error(err?.message || 'Giao dịch bị từ chối hoặc thất bại trên ví Web3.');
     }

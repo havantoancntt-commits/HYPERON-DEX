@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Address, parseUnits } from 'viem';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
 import { useI18n } from '../context/I18nContext';
@@ -6,6 +7,9 @@ import { Token, SwapQuote } from '../types';
 import { formatCurrency, formatCrypto, shortenAddress } from '../lib/utils';
 import { TokenLogo, DexProtocolIcon } from '../components/CryptoIcon';
 import { RouteVisualization } from '../components/common/RouteVisualization';
+import { SwapExecutionState, getSwapStateLabel, isSwapInFlight } from '../lib/execution/swapStateMachine';
+import { TransactionBuilder, ExactTransactionPayload } from '../lib/execution/TransactionBuilder';
+import { getContractsConfig, ChainContractConfig } from '../lib/contractsConfig';
 import {
   ArrowDownUp,
   ShieldCheck,
@@ -37,6 +41,7 @@ import {
   ExternalLink,
   ShieldAlert,
   ShieldX,
+  Loader2,
 } from 'lucide-react';
 
 const POPULAR_SYMBOLS = new Set([
@@ -84,6 +89,7 @@ export const SwapView: React.FC = () => {
     tokenBalances,
     isConnected,
     isWrongChain,
+    isWatchOnly,
     switchChain,
     connectWallet,
     openConnectModal,
@@ -95,7 +101,12 @@ export const SwapView: React.FC = () => {
     mevProtected,
     setMevProtected,
     address,
-    chainId
+    chainId,
+    executeTransaction,
+    checkAllowance,
+    approveTokenOnChain,
+    refreshBalances,
+    activeCustomProvider,
   } = useWallet();
   const { selectedPair, setActiveSimulation, setActiveQuote, addToast, getLiveToken, liveTokens, addCustomToken } = useExchange();
   const { t } = useI18n();
@@ -112,6 +123,12 @@ export const SwapView: React.FC = () => {
   const [isFetchingQuote, setIsFetchingQuote] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
+  // Formal on-chain execution states
+  const [swapExecutionState, setSwapExecutionState] = useState<SwapExecutionState>('IDLE');
+  const [executionTxHash, setExecutionTxHash] = useState<string | undefined>(undefined);
+  const [approvalTxHash, setApprovalTxHash] = useState<string | undefined>(undefined);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+
   // Invalidate quote and active simulation on chain/account change
   useEffect(() => {
     const handleReset = () => {
@@ -119,6 +136,10 @@ export const SwapView: React.FC = () => {
       setQuoteError(null);
       setActiveQuote(null);
       setActiveSimulation(null);
+      setSwapExecutionState('IDLE');
+      setExecutionTxHash(undefined);
+      setApprovalTxHash(undefined);
+      setExecutionError(null);
     };
     window.addEventListener('hyperon:chain_changed', handleReset);
     window.addEventListener('hyperon:account_changed', handleReset);
@@ -322,6 +343,12 @@ export const SwapView: React.FC = () => {
   };
 
   const handleInitiateSwap = async () => {
+    // 0. Double-submit guard / Idempotency protection (Section 18)
+    if (isSwapInFlight(swapExecutionState) || isSwapping) {
+      return;
+    }
+
+    // 1. Validation of tokens
     if (fromToken.isVerified === false || toToken.isVerified === false) {
       addToast({
         title: 'Trading Disabled',
@@ -331,63 +358,300 @@ export const SwapView: React.FC = () => {
       return;
     }
 
-    if (!quote || isSwapping || numFromAmount <= 0) return;
-
+    // 2. Validation of wallet connection
     if (!isConnected || !address) {
       addToast({
         title: 'Cần kết nối ví',
-        message: 'Vui lòng kết nối ví Web3 bằng nút Ví ở thanh điều hướng dưới cùng để thực thi hoán đổi.',
+        message: 'Vui lòng kết nối ví Web3 để thực thi hoán đổi trên chuỗi.',
         type: 'warning',
       });
       openConnectModal();
       return;
     }
 
-    if (simulateControllerRef.current) {
-      simulateControllerRef.current.abort();
+    // 3. Watch-only wallet guard
+    if (isWatchOnly) {
+      addToast({
+        title: 'Chế Độ Chỉ Xem (Watch-Only)',
+        message: 'Ví này đang ở chế độ theo dõi và không thể ký giao dịch on-chain.',
+        type: 'warning',
+      });
+      return;
     }
-    const controller = new AbortController();
-    simulateControllerRef.current = controller;
-    const signal = controller.signal;
 
+    // 4. Network fail-closed guard
+    if (isWrongChain) {
+      setSwapExecutionState('WRONG_NETWORK');
+      addToast({
+        title: 'Sai Mạng Blockchain',
+        message: 'Ví của bạn đang kết nối mạng không được hỗ trợ. Giao dịch bị khóa.',
+        type: 'error',
+      });
+      return;
+    }
+
+    // 5. Amount & Balance validation
+    const numAmount = parseFloat(fromAmount) || 0;
+    if (numAmount <= 0) {
+      return;
+    }
+    const currentFromBalance = balances[fromToken.symbol] || 0;
+    if (numAmount > currentFromBalance) {
+      setSwapExecutionState('INSUFFICIENT_BALANCE');
+      addToast({
+        title: 'Số Dư Không Đủ',
+        message: `Số dư ${fromToken.symbol} (${currentFromBalance.toFixed(4)}) không đủ để thực hiện lệnh hoán đổi ${numAmount}.`,
+        type: 'error',
+      });
+      return;
+    }
+
+    // Reset previous execution state & initiate pipeline
+    setSwapExecutionState('VALIDATING');
+    setExecutionError(null);
+    setExecutionTxHash(undefined);
+    setApprovalTxHash(undefined);
     setIsSwapping(true);
-    setActiveQuote(quote);
 
     try {
-      const res = await fetch('/api/swaps/simulate', {
+      // 6. QUOTE: Fetch fresh quote or validate existing quote freshness
+      let activeQuote = quote;
+      if (!activeQuote || (activeQuote.expiresAt && Date.now() > activeQuote.expiresAt)) {
+        setSwapExecutionState('FETCHING_QUOTE');
+        const quoteRes = await fetch('/api/quotes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fromTokenSymbol: fromToken.symbol,
+            fromTokenAddress: fromToken.address,
+            toTokenSymbol: toToken.symbol,
+            toTokenAddress: toToken.address,
+            amount: fromAmount,
+            slippage: slippage,
+            chainId,
+            allowMultiHop: true,
+          }),
+        });
+        const quoteData = await quoteRes.json();
+        if (!quoteRes.ok || !quoteData.quote) {
+          setSwapExecutionState('FAILED');
+          throw new Error(quoteData?.userMessage || quoteData?.message || 'Không tìm thấy thanh khoản khả dụng trên mạng lưới on-chain.');
+        }
+        activeQuote = quoteData.quote;
+        setQuote(activeQuote);
+      }
+
+      // Assert quote freshness invariant (reject stale quotes)
+      TransactionBuilder.validateQuoteFreshness(activeQuote!);
+      setActiveQuote(activeQuote);
+
+      // 7. BUILD EXACT CALLDATA: Determine exact router, calldata, value, amountIn, amountOutMinimum
+      const exactTx = TransactionBuilder.buildSwapTransaction({
+        quote: activeQuote!,
+        userAddress: address as Address,
+        deadlineSeconds: 1200,
+      });
+
+      // 8. CONTRACT VALIDATION ON-CHAIN (Section 7: eth_getCode before signing)
+      const provider = activeCustomProvider || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+      if (provider && provider.request) {
+        try {
+          const code = await provider.request({
+            method: 'eth_getCode',
+            params: [exactTx.to, 'latest'],
+          });
+          if (code === '0x' || code === '0x0' || code === '0x00') {
+            setSwapExecutionState('ROUTER_NOT_DEPLOYED');
+            throw new Error(`BLOCKED BY DEPLOYMENT: Hợp đồng Router tại địa chỉ ${exactTx.to} chưa được triển khai (không có bytecode trên mạng ${chainId}).`);
+          }
+        } catch (codeErr: any) {
+          if (codeErr?.message?.includes('BLOCKED BY DEPLOYMENT')) {
+            throw codeErr;
+          }
+          console.warn('[SwapView] On-chain eth_getCode check notice:', codeErr);
+        }
+      }
+
+      // 9. ALLOWANCE & APPROVAL: Real ERC-20 approval flow (Section 12)
+      if (!exactTx.isNativeIn && exactTx.tokenIn && exactTx.tokenIn !== '0x0000000000000000000000000000000000000000') {
+        setSwapExecutionState('CHECKING_ALLOWANCE');
+        const currentAllowance = await checkAllowance(
+          exactTx.tokenIn,
+          address as Address,
+          exactTx.to
+        );
+
+        if (currentAllowance < exactTx.amountInRaw) {
+          setSwapExecutionState('APPROVING');
+          addToast({
+            title: 'Cần Phê Duyệt Token (Approve)',
+            message: `Vui lòng xác nhận phê duyệt chi tiêu ${fromToken.symbol} trong cửa sổ ví Web3 của bạn.`,
+            type: 'info',
+          });
+
+          const approveTxHash = await approveTokenOnChain(
+            exactTx.tokenIn,
+            exactTx.to,
+            exactTx.amountInRaw
+          );
+          setApprovalTxHash(approveTxHash);
+          setSwapExecutionState('WAITING_APPROVAL');
+
+          addToast({
+            title: 'Đã Gửi Lệnh Phê Duyệt',
+            message: `Mã duyệt token: ${approveTxHash.substring(0, 10)}... Đang xác nhận trên chuỗi.`,
+            type: 'info',
+          });
+
+          // Wait and re-read on-chain allowance to verify approval succeeded (Fail Closed)
+          const verifiedAllowance = await checkAllowance(
+            exactTx.tokenIn,
+            address as Address,
+            exactTx.to
+          );
+          if (verifiedAllowance < exactTx.amountInRaw) {
+            setSwapExecutionState('INSUFFICIENT_ALLOWANCE');
+            throw new Error(`Xác thực phê duyệt thất bại: Hạn mức trên chuỗi (${verifiedAllowance.toString()}) vẫn nhỏ hơn lượng cần hoán đổi (${exactTx.amountInRaw.toString()}).`);
+          }
+        }
+      }
+
+      // 10. SIMULATE EXACT CALL (Section 14: simulate exact transaction)
+      setSwapExecutionState('SIMULATING');
+      const simRes = await fetch('/api/swaps/simulate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          quote,
+          quote: activeQuote,
           userAddress: address,
           chainId,
+          calldata: exactTx.data,
+          targetAddress: exactTx.to,
+          valueHex: exactTx.valueHex,
         }),
-        signal,
       });
-      if (signal.aborted) return;
-      const data = await res.json();
-      if (signal.aborted) return;
+      const simData = await simRes.json();
 
-      if (res.ok && data.simulation) {
-        setActiveSimulation(data.simulation);
-      } else {
+      if (!simRes.ok || (simData?.simulation && !simData.simulation.success)) {
+        const isAllowanceIssue = simData?.simulation?.allowanceRequired && !simData.simulation.allowanceApproved;
+        if (!isAllowanceIssue) {
+          setSwapExecutionState('SIMULATION_FAILED');
+          throw new Error(simData?.simulation?.revertReason || simData?.userMessage || simData?.message || 'Mô phỏng tiền kiểm tra trên blockchain đã bị revert. Không thể ký giao dịch để tránh mất gas.');
+        }
+      }
+
+      if (simData?.simulation) {
+        setActiveSimulation(simData.simulation);
+      }
+
+      // 11. WALLET SIGNATURE & BROADCAST (Section 15: real eth_sendTransaction)
+      setSwapExecutionState('AWAITING_SIGNATURE');
+
+      const gasPriceWei = simData?.simulation?.gasPriceWei ? BigInt(simData.simulation.gasPriceWei) : 0n;
+      const gasSpentGwei = gasPriceWei > 0n ? Number(gasPriceWei) / 1e9 : 15;
+      const gasSpentUsd = activeQuote!.estimatedGasUsd || (simData?.simulation?.gasCostUsd > 0 ? simData.simulation.gasCostUsd : 1.85);
+
+      setSwapExecutionState('SUBMITTING');
+      const tx = await executeTransaction({
+        chainId: chainId,
+        type: 'SWAP',
+        fromToken: fromToken.symbol,
+        toToken: toToken.symbol,
+        fromAmount: activeQuote!.fromAmount,
+        toAmount: activeQuote!.expectedOutput,
+        gasSpentGwei: Math.max(0.1, Number(gasSpentGwei.toFixed(2))),
+        gasSpentUsd,
+        targetAddress: exactTx.to,
+        calldata: exactTx.data,
+        valueHex: exactTx.valueHex,
+        toTokenAddress: exactTx.tokenOut,
+        minimumReceivedRaw: exactTx.amountOutMinimumRaw.toString(),
+      });
+
+      // 12. TX HASH & WAIT RECEIPT (Section 19: receipt verification)
+      setExecutionTxHash(tx.txHash);
+
+      if (tx.status === 'confirmed') {
+        setSwapExecutionState('VERIFYING');
+        await refreshBalances();
+        setSwapExecutionState('SUCCESS');
         addToast({
-          title: 'Mô Phỏng Thất Bại',
-          message: data?.userMessage || data?.message || 'Giao dịch có thể bị revert trên blockchain.',
+          title: 'Hoán Đổi Thành Công Trên Chuỗi',
+          message: `Khối #${tx.blockNumber || 'mới nhất'} đã xác nhận. Mã TX: ${tx.txHash.substring(0, 10)}...`,
+          type: 'success',
+        });
+      } else {
+        setSwapExecutionState('CONFIRMING');
+        addToast({
+          title: 'Giao Dịch Đã Phát Lên Mạng',
+          message: `Đang chờ khối xác nhận on-chain... Mã TX: ${tx.txHash.substring(0, 10)}...`,
+          type: 'info',
+        });
+
+        // Listen for live on-chain confirmation event emitted by ReceiptVerifier
+        const confirmationHandler = async (event: any) => {
+          const detail = event?.detail;
+          if (detail && detail.txHash === tx.txHash) {
+            window.removeEventListener('hyperon:transaction_confirmed', confirmationHandler);
+            if (detail.status === 'confirmed') {
+              setSwapExecutionState('VERIFYING');
+              await refreshBalances();
+              setSwapExecutionState('SUCCESS');
+              addToast({
+                title: 'Hoán Đổi Thành Công Trên Chuỗi',
+                message: `Khối #${detail.blockNumber || 'mới nhất'} đã xác nhận hợp lệ.`,
+                type: 'success',
+              });
+            } else {
+              setSwapExecutionState('FAILED');
+              setExecutionError('Giao dịch đã bị hoàn tác (revert) trên blockchain.');
+              addToast({
+                title: 'Giao Dịch Thất Bại Trên Chuỗi',
+                message: 'Giao dịch bị hoàn tác hoặc không thỏa điều kiện bảo vệ trượt giá.',
+                type: 'error',
+              });
+            }
+          }
+        };
+
+        window.addEventListener('hyperon:transaction_confirmed', confirmationHandler);
+      }
+    } catch (err: any) {
+      console.error('[SwapView] Execution error:', err);
+      const isRejection =
+        err?.message?.includes('từ chối') ||
+        err?.message?.includes('User rejected') ||
+        err?.message?.includes('user rejected') ||
+        err?.code === 4001;
+
+      if (isRejection) {
+        setSwapExecutionState('USER_REJECTED');
+        setExecutionError('Bạn đã từ chối giao dịch trên ví Web3.');
+        addToast({
+          title: 'Từ Chối Giao Dịch',
+          message: 'Bạn đã hủy bỏ yêu cầu ký trên ví Web3.',
+          type: 'warning',
+        });
+      } else {
+        const msg = err?.message || 'Lỗi thực thi giao dịch trên chuỗi.';
+        setExecutionError(msg);
+        if (msg.includes('BLOCKED BY DEPLOYMENT') || msg.includes('chưa khả dụng')) {
+          setSwapExecutionState('ROUTER_NOT_DEPLOYED');
+        } else if (msg.includes('trượt giá') || msg.includes('SLIPPAGE')) {
+          setSwapExecutionState('SLIPPAGE_EXCEEDED');
+        } else if (msg.includes('hết hạn') || msg.includes('DEADLINE')) {
+          setSwapExecutionState('DEADLINE_EXPIRED');
+        } else if (swapExecutionState !== 'SIMULATION_FAILED' && swapExecutionState !== 'INSUFFICIENT_ALLOWANCE') {
+          setSwapExecutionState('FAILED');
+        }
+        addToast({
+          title: 'Giao Dịch Thất Bại',
+          message: msg,
           type: 'error',
         });
       }
-    } catch (err: unknown) {
-      if ((err as Error)?.name === 'AbortError' || signal.aborted) return;
-      addToast({
-        title: 'Lỗi Mô Phỏng Giao Dịch',
-        message: (err as Error)?.message || 'Không thể kết nối đến RPC sandbox node.',
-        type: 'error',
-      });
     } finally {
-      if (!signal.aborted) {
-        setIsSwapping(false);
-      }
+      setIsSwapping(false);
     }
   };
 
@@ -935,6 +1199,106 @@ export const SwapView: React.FC = () => {
           </div>
         )}
 
+        {/* FORMAL ON-CHAIN EXECUTION STATUS PANEL (Sections 15, 16, 19) */}
+        {swapExecutionState !== 'IDLE' && (
+          <div className={`p-4 rounded-2xl border transition-all text-xs font-mono space-y-3 ${
+            swapExecutionState === 'SUCCESS'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+              : swapExecutionState === 'USER_REJECTED'
+              ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+              : isSwapInFlight(swapExecutionState)
+              ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-200'
+              : 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                {isSwapInFlight(swapExecutionState) ? (
+                  <RefreshCw className="w-4 h-4 animate-spin text-cyan-400 shrink-0" />
+                ) : swapExecutionState === 'SUCCESS' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : swapExecutionState === 'USER_REJECTED' ? (
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                )}
+                <div>
+                  <div className="font-bold text-white text-sm">
+                    {getSwapStateLabel(swapExecutionState, fromToken.symbol).title}
+                  </div>
+                  <div className="text-[11px] opacity-80 font-sans">
+                    {executionError || getSwapStateLabel(swapExecutionState, fromToken.symbol).detail}
+                  </div>
+                </div>
+              </div>
+
+              {!isSwapInFlight(swapExecutionState) && (
+                <button
+                  onClick={() => {
+                    setSwapExecutionState('IDLE');
+                    setExecutionError(null);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 font-mono transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+              )}
+            </div>
+
+            {/* Approval TxHash tracking */}
+            {approvalTxHash && (
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px]">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="text-slate-400">Phê duyệt:</span>
+                  <span className="text-white font-bold truncate max-w-[140px]">
+                    {approvalTxHash.slice(0, 10)}...{approvalTxHash.slice(-6)}
+                  </span>
+                </div>
+                <a
+                  href={getContractsConfig(chainId).explorerTxUrl(approvalTxHash)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 transition-colors"
+                >
+                  <span>Xem</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            )}
+
+            {/* Swap TxHash & Explorer Link */}
+            {executionTxHash && (
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px]">
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="text-slate-400">TX Hash:</span>
+                  <span className="text-white font-bold truncate max-w-[140px] sm:max-w-[200px]">
+                    {executionTxHash.slice(0, 10)}...{executionTxHash.slice(-8)}
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(executionTxHash);
+                      addToast({ title: 'Đã Sao Chép', message: 'Mã băm giao dịch đã được lưu vào clipboard.', type: 'info' });
+                    }}
+                    className="p-1 hover:text-cyan-300 text-slate-400 transition-colors cursor-pointer"
+                    title="Sao chép TX Hash"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <a
+                  href={getContractsConfig(chainId).explorerTxUrl(executionTxHash)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 font-bold transition-colors"
+                >
+                  <span>Xem Explorer</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* SOLID, NON-FLICKERING ACTION BUTTON */}
         <div className="pt-2">
           {!isConnected ? (
@@ -969,6 +1333,36 @@ export const SwapView: React.FC = () => {
               <AlertCircle className="w-4 h-4 text-rose-400" />
               <span>Offline — Mạng Internet Bị Ngắt Kết Nối</span>
             </button>
+          ) : isSwapInFlight(swapExecutionState) ? (
+            <button
+              disabled
+              className="w-full py-4 bg-blue-600/60 border border-blue-400/30 text-white font-black text-sm uppercase tracking-wide rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 cursor-not-allowed"
+            >
+              <RefreshCw className="w-4 h-4 animate-spin text-cyan-300" />
+              <span>{getSwapStateLabel(swapExecutionState, fromToken.symbol).buttonText}</span>
+            </button>
+          ) : swapExecutionState === 'SUCCESS' ? (
+            <button
+              onClick={() => {
+                setSwapExecutionState('IDLE');
+                setExecutionTxHash(undefined);
+                setApprovalTxHash(undefined);
+                setFromAmount('');
+                setQuote(null);
+              }}
+              className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm uppercase tracking-wide rounded-2xl shadow-xl shadow-emerald-950/30 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+            >
+              <CheckCircle2 className="w-4 h-4 text-white" />
+              <span>Hoán Đổi Mới</span>
+            </button>
+          ) : swapExecutionState === 'USER_REJECTED' ? (
+            <button
+              onClick={handleInitiateSwap}
+              className="w-full py-4 bg-amber-600 hover:bg-amber-500 text-white font-black text-sm uppercase tracking-wide rounded-2xl shadow-xl shadow-amber-950/30 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+            >
+              <RefreshCw className="w-4 h-4 text-white" />
+              <span>Thử Lại Giao Dịch</span>
+            </button>
           ) : numFromAmount <= 0 ? (
             <button
               disabled
@@ -995,20 +1389,11 @@ export const SwapView: React.FC = () => {
           ) : (
             <button
               onClick={handleInitiateSwap}
-              disabled={isSwapping}
+              disabled={isSwapping || isSwapInFlight(swapExecutionState)}
               className="w-full py-4 bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:via-blue-500 hover:to-indigo-500 text-white font-black text-sm uppercase tracking-wide rounded-2xl shadow-xl shadow-cyan-900/30 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] disabled:opacity-50"
             >
-              {isSwapping ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                  <span>{t('trade.simulate_first')}...</span>
-                </>
-              ) : (
-                <>
-                  <Zap className="w-4 h-4 fill-white" />
-                  <span>{t('trade.instant_swap')}</span>
-                </>
-              )}
+              <Zap className="w-4 h-4 fill-white" />
+              <span>{t('trade.instant_swap')}</span>
             </button>
           )}
         </div>
