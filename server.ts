@@ -1632,9 +1632,15 @@ app.post('/api/crosschain/execute', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'MISSING_QUOTE: A valid cross-chain quote is required for execution' });
     }
 
+    if (!userAddress || !isAddress(userAddress) || userAddress === '0x0000000000000000000000000000000000000000') {
+      return res.status(400).json({
+        error: 'INVALID_USER_ADDRESS: A valid, non-zero EVM userAddress is required for cross-chain intent execution.',
+      });
+    }
+
     const status = hyperonCrossChainEngine.executeCrossChainIntent(
       quote,
-      userAddress || '0x71C28B932F99B52EDb3C0257B4393608F79E9E42',
+      userAddress,
       sourceTxHash
     );
 
