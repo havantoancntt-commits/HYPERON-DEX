@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { Token, SwapQuote, TransactionSimulation, LivePriceData, AITradingSignal } from '../types';
 import { VERIFIED_TOKENS } from '../lib/constants';
 
@@ -169,21 +169,23 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, [fetchLivePrices]);
 
-  // Derived live tokens with real-time dynamic pricing
-  const allKnownTokens = [...VERIFIED_TOKENS, ...customTokens];
-  const liveTokens: Token[] = allKnownTokens.map((token) => {
-    const live = livePrices[token.symbol];
-    if (live && typeof live.priceUsd === 'number' && !isNaN(live.priceUsd) && live.priceUsd > 0) {
-      return {
-        ...token,
-        priceUsd: live.priceUsd,
-        change24h: typeof live.change24h === 'number' ? live.change24h : token.change24h,
-        volume24h: typeof live.volume24h === 'number' ? live.volume24h : token.volume24h,
-        marketCapUsd: typeof live.marketCapUsd === 'number' ? live.marketCapUsd : token.marketCapUsd,
-      };
-    }
-    return token;
-  });
+  // Derived live tokens with real-time dynamic pricing - Strictly memoized to prevent infinite renders
+  const allKnownTokens = useMemo(() => [...VERIFIED_TOKENS, ...customTokens], [customTokens]);
+  const liveTokens: Token[] = useMemo(() => {
+    return allKnownTokens.map((token) => {
+      const live = livePrices[token.symbol];
+      if (live && typeof live.priceUsd === 'number' && !isNaN(live.priceUsd) && live.priceUsd > 0) {
+        return {
+          ...token,
+          priceUsd: live.priceUsd,
+          change24h: typeof live.change24h === 'number' ? live.change24h : token.change24h,
+          volume24h: typeof live.volume24h === 'number' ? live.volume24h : token.volume24h,
+          marketCapUsd: typeof live.marketCapUsd === 'number' ? live.marketCapUsd : token.marketCapUsd,
+        };
+      }
+      return token;
+    });
+  }, [allKnownTokens, livePrices]);
 
   const getLiveToken = useCallback(
     (symbol: string): Token => {
@@ -221,13 +223,17 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [livePrices]
   );
 
-  const toggleWatchlist = (symbol: string) => {
+  const toggleWatchlist = useCallback((symbol: string) => {
     setWatchlist((prev) =>
       prev.includes(symbol) ? prev.filter((s) => s !== symbol) : [...prev, symbol]
     );
-  };
+  }, []);
 
-  const addToast = (toast: Omit<ToastMessage, 'id' | 'timestamp'>) => {
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const addToast = useCallback((toast: Omit<ToastMessage, 'id' | 'timestamp'>) => {
     const newToast: ToastMessage = {
       ...toast,
       id: `toast-${Date.now()}-${++toastCounter}`,
@@ -238,20 +244,16 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setTimeout(() => {
       removeToast(newToast.id);
     }, 6000);
-  };
+  }, [removeToast]);
 
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
-
-  const openSwapWithTokens = (fromSymbol: string, toSymbol: string) => {
+  const openSwapWithTokens = useCallback((fromSymbol: string, toSymbol: string) => {
     const from = getLiveToken(fromSymbol);
     const to = getLiveToken(toSymbol);
     setSelectedPair({ base: from, quote: to });
     setActiveView('swap');
-  };
+  }, [getLiveToken]);
 
-  const openTokenScannerWithAddress = (address: string, symbol: string) => {
+  const openTokenScannerWithAddress = useCallback((address: string, symbol: string) => {
     const token = getLiveToken(symbol) || {
       ...VERIFIED_TOKENS[0],
       address,
@@ -259,17 +261,17 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setSelectedToken(token);
     setActiveView('ai-risk-scanner');
-  };
+  }, [getLiveToken]);
 
-  const openPerpetualsWithSignal = (signal: AITradingSignal) => {
+  const openPerpetualsWithSignal = useCallback((signal: AITradingSignal) => {
     setSelectedSignal(signal);
     const token = getLiveToken(signal.symbol);
     const quote = getLiveToken('USDC');
     setSelectedPair({ base: token, quote });
     setActiveView('perpetuals');
-  };
+  }, [getLiveToken]);
 
-  const openSwapWithSignal = (signal: AITradingSignal) => {
+  const openSwapWithSignal = useCallback((signal: AITradingSignal) => {
     setSelectedSignal(signal);
     const token = getLiveToken(signal.symbol);
     const usdc = getLiveToken('USDC');
@@ -279,43 +281,68 @@ export const ExchangeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setSelectedPair({ base: token, quote: usdc });
     }
     setActiveView('swap');
-  };
+  }, [getLiveToken]);
+
+  const contextValue = useMemo(() => ({
+    activeView,
+    setActiveView,
+    selectedToken,
+    setSelectedToken,
+    selectedPair,
+    setSelectedPair,
+    selectedSignal,
+    setSelectedSignal,
+    watchlist,
+    toggleWatchlist,
+    toasts,
+    addToast,
+    removeToast,
+    activeSimulation,
+    setActiveSimulation,
+    activeQuote,
+    setActiveQuote,
+    openSwapWithTokens,
+    openTokenScannerWithAddress,
+    openPerpetualsWithSignal,
+    openSwapWithSignal,
+    livePrices,
+    liveTokens,
+    customTokens,
+    addCustomToken,
+    getLiveToken,
+    getLivePrice,
+    lastPriceUpdate,
+    isPriceLive,
+    tickDirections,
+  }), [
+    activeView,
+    selectedToken,
+    selectedPair,
+    selectedSignal,
+    watchlist,
+    toggleWatchlist,
+    toasts,
+    addToast,
+    removeToast,
+    activeSimulation,
+    activeQuote,
+    openSwapWithTokens,
+    openTokenScannerWithAddress,
+    openPerpetualsWithSignal,
+    openSwapWithSignal,
+    livePrices,
+    liveTokens,
+    customTokens,
+    addCustomToken,
+    getLiveToken,
+    getLivePrice,
+    lastPriceUpdate,
+    isPriceLive,
+    tickDirections,
+  ]);
 
   return (
-    <ExchangeContext.Provider
-      value={{
-        activeView,
-        setActiveView,
-        selectedToken,
-        setSelectedToken,
-        selectedPair,
-        setSelectedPair,
-        selectedSignal,
-        setSelectedSignal,
-        watchlist,
-        toggleWatchlist,
-        toasts,
-        addToast,
-        removeToast,
-        activeSimulation,
-        setActiveSimulation,
-        activeQuote,
-        setActiveQuote,
-        openSwapWithTokens,
-        openTokenScannerWithAddress,
-        openPerpetualsWithSignal,
-        openSwapWithSignal,
-        livePrices,
-        liveTokens,
-        customTokens,
-        addCustomToken,
-        getLiveToken,
-        getLivePrice,
-        lastPriceUpdate,
-        isPriceLive,
-        tickDirections,
-      }}
-    >
+    <ExchangeContext.Provider value={contextValue}>
       {children}
     </ExchangeContext.Provider>
   );

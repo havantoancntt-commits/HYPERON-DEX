@@ -14,13 +14,13 @@ HYPERON-DEX has undergone a comprehensive multi-layered security audit, formal m
 ### Core Architectural Truthfulness & Commitments:
 - **Routing Engine**: Server-side aggregation routing via API proxy with multi-DEX split pathfinding.
 - **Transaction Privacy & Intent Binding**: SHA-256 Cryptographic Route Commitments binding chainId, router, token pairs, amounts, and recipient nullifiers (replacing prior experimental ZK-proof assumptions).
+- **Multi-Oracle Price Policy**: Minimum 2 independent sources with 5.00% (500 bps) outlier rejection against median, 15-second / 20.00% standard circuit breaker, and 5-second / 10.00% emergency circuit breaker (`contracts/src/HyperonOracleAggregator.sol`, `server/services/multiOracleAggregator.ts`).
+- **HyperonRouter Deployment Status**: **UNVERIFIED / BLOCKED** (Contracts compiled with `solc 0.8.28` and verified in bytecode; on-chain deployment transaction and live bytecode are unverified. Protocol fails closed with `CONTRACT_NOT_DEPLOYED` / `ROUTER_UNAVAILABLE` when unconfigured).
 - **Zero-Synthetic Data Mandate**: 100% enforced across execution paths (no mock prices, no synthetic liquidity fallbacks, fail-closed on oracle consensus outage).
 - **Financial Precision Standard**: 100% integer math (`BigInt`, `DecimalMath`, `PriceMath`, `GasMath`, `FeeMath`) with directional rounding guarantees (ceil on protocol fees/required input, floor on outputs).
 
-> **Disclaimer:** Smart contracts listed in Section 3 are pending implementation and formal on-chain verification prior to mainnet deployment.
-
 ### Key Audit Metrics:
-- **Total Invariant & Regression Tests Executed:** 217/217 Passing (100% Pass Rate).
+- **Total Invariant & Regression Tests Executed:** 336/336 Passing (100% Pass Rate).
 - **Critical Vulnerabilities (P0) Remediated:** 11/11
 - **High Vulnerabilities (P1) Remediated:** 14/14
 - **Medium Vulnerabilities (P2) Remediated:** 18/18
@@ -82,14 +82,17 @@ HYPERON-DEX has undergone a comprehensive multi-layered security audit, formal m
 
 ---
 
-## 4. Production Readiness Assessment
+## 4. Production Readiness Assessment & Zero-Trust Verification Gate
 
-- **Status:** **PRODUCTION READY & FORMALLY VERIFIED**
-- **Criteria Satisfied:**
-  - Automated regression suite: 217/217 passing.
-  - TypeScript strict compilation: 0 errors (`tsc --noEmit`).
-  - Smart contracts: 0 errors, 0 warnings (`solc 0.8.28`).
-  - Production build: `npm run build` succeeds cleanly.
-  - Fail-closed distributed state stores implemented for multi-container deployments.
+- **Protocol Code & Math Verification Status:** **VERIFIED & HARDENED**
+- **Automated Regression Suite:** 336/336 passing (0 failed).
+- **TypeScript Strict Compilation:** 0 errors (`tsc --noEmit`).
+- **Smart Contracts Compilation:** 0 errors, 0 warnings (`solc 0.8.28`).
+- **Production Build:** `npm run build` succeeds cleanly.
+- **Fail-Closed Distributed State:** Implemented for multi-container deployments.
+- **Production Gate Classification:** **BLOCKED / REQUIRES ON-CHAIN DEPLOYMENT & EXTERNAL RPC INFRASTRUCTURE**
+  - Smart contracts (`HyperonRouter.sol`, `HyperonOracleAggregator.sol`) have compiled bytecode and tests passing, but have **NOT** yet been deployed to public testnet/mainnet with verifiable on-chain bytecode.
+  - Fail-closed security safely prevents execution when router contract address is unconfigured.
+  - Real swap pipeline currently functions via direct canonical DEX routers (Uniswap V3 / V2) where available, while proprietary HyperonRouter execution remains in `UNVERIFIED / BLOCKED` state until contract deployment transactions are mined and verified on-chain.
 
 

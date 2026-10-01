@@ -659,9 +659,9 @@ export const SwapView: React.FC = () => {
   useEffect(() => {
     const q = searchTokenQuery.trim();
     if (!q) {
-      setRemoteTokenResult(null);
-      setRemoteTokenError(null);
-      setIsResolvingRemote(false);
+      setRemoteTokenResult((prev) => (prev !== null ? null : prev));
+      setRemoteTokenError((prev) => (prev !== null ? null : prev));
+      setIsResolvingRemote((prev) => (prev !== false ? false : prev));
       return;
     }
 
@@ -673,9 +673,9 @@ export const SwapView: React.FC = () => {
     );
 
     if (hasLocalMatch && !q.startsWith('0x')) {
-      setRemoteTokenResult(null);
-      setRemoteTokenError(null);
-      setIsResolvingRemote(false);
+      setRemoteTokenResult((prev) => (prev !== null ? null : prev));
+      setRemoteTokenError((prev) => (prev !== null ? null : prev));
+      setIsResolvingRemote((prev) => (prev !== false ? false : prev));
       return;
     }
 

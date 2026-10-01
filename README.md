@@ -155,7 +155,7 @@ HYPERON-DEX is designed to institutional security standards:
 - **Formal Security Audit Report**: Refer to [`AUDIT.md`](./AUDIT.md) for full audit scopes, threat models, invariant proofs, and automated scanner integrations.
 - **Changelog & Version History**: Refer to [`CHANGELOG.md`](./CHANGELOG.md) for detailed security release notes.
 - **SSRF Mitigation (CVE-2026-63730)**: Strict domain whitelist, RFC 1918 private IP rejection, sensitive port filtering (443 only), and static path enforcement in `server/services/webhookSecurity.ts`.
-- **Multi-Oracle Consensus & Flashloan Circuit Breaker**: Consolidated weighted median across minimum 3 independent sources with 15% outlier filtering and automatic routing halt on >20% price shifts within 60 seconds (`server/services/multiOracleAggregator.ts`).
+- **Multi-Oracle Consensus & Flashloan Circuit Breaker**: Consolidated volume-weighted median across minimum 2 independent sources with 5.00% (500 bps) outlier filtering against median, 15-second / 20.00% standard circuit breaker, and 5-second / 10.00% instant emergency halt with 5-minute cooldown (`contracts/src/HyperonOracleAggregator.sol`, `server/services/multiOracleAggregator.ts`).
 - **Web Security Headers**: Enforced via `helmet` with strict CSP, HSTS (`max-age=31536000`), and `X-Content-Type-Options: nosniff`.
 - **Automated Security Pipeline**: Compatible with Slither and Mythril smart contract static analyzers.
 

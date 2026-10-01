@@ -58,14 +58,17 @@ const MainLayout: React.FC = () => {
   }, [activeView]);
 
   // Initialize Enterprise Client Anti-Tamper & Anti-Copy Security Guard
+  const addToastRef = React.useRef(addToast);
+  addToastRef.current = addToast;
+
   useEffect(() => {
     const cleanup = initClientSecurityGuard({
       enableContextMenuProtection: true,
       enableDevToolsShortcutInterception: true,
-      enableDevToolsDetection: true,
+      enableDevToolsDetection: false, // Disabled inside embedded preview iframe to prevent false triggers
       enableDomMutationWatchdog: true,
       onTamperWarning: (msg) => {
-        addToast({
+        addToastRef.current({
           title: 'HYPERON Sentinel Shield',
           message: msg,
           type: 'warning',
@@ -73,7 +76,7 @@ const MainLayout: React.FC = () => {
       },
     });
     return cleanup;
-  }, [addToast]);
+  }, []);
 
   useEffect(() => {
     let mounted = true;

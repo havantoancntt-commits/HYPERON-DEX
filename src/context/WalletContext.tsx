@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { createPublicClient, http, formatEther, formatUnits, encodeFunctionData, Address } from 'viem';
 import { mainnet, base, arbitrum, optimism, bsc, polygon } from 'viem/chains';
 import { ChainId, TransactionHistoryItem } from '../types';
@@ -416,8 +416,11 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Query live on-chain balance via RPC using Precision BalanceEngine
   const refreshBalances = useCallback(async () => {
     if (!address || !address.startsWith('0x') || address.length !== 42) {
-      setBalances({ ...ZERO_BALANCES });
-      setTokenBalances({});
+      setBalances((prev) => {
+        const isAllZero = Object.values(prev).every((v) => v === 0);
+        return isAllZero ? prev : { ...ZERO_BALANCES };
+      });
+      setTokenBalances((prev) => (Object.keys(prev).length === 0 ? prev : {}));
       return;
     }
 
@@ -482,12 +485,16 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const provider = activeCustomProvider || (window as any).ethereum;
-    if (provider && provider.request) {
+    if (provider && provider.request && address) {
       TransactionSyncEngine.reconcileAllPending(provider, address, (updated) => {
         setTransactions(updated);
       });
     }
   }, [activeCustomProvider, address]);
+
+  // Ref to always use latest refreshBalances without re-subscribing provider listeners
+  const refreshBalancesRef = useRef(refreshBalances);
+  refreshBalancesRef.current = refreshBalances;
 
   // Subscribe to EIP-1193 Web3 provider events
   useEffect(() => {
@@ -511,7 +518,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           localStorage.setItem('hyperon_wallet_connected', 'true');
           localStorage.setItem('hyperon_wallet_address', newAddress);
         }
-        refreshBalances();
+        refreshBalancesRef.current();
       } else {
         // User locked or disconnected their wallet
         setIsConnected(false);
@@ -545,7 +552,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             detail: { newChainId: detectedChainId, isUnsupported: false },
           })
         );
-        refreshBalances();
+        refreshBalancesRef.current();
       } else {
         // Unsupported chain -> WRONG_CHAIN -> FAIL CLOSED!
         setIsWrongChain(true);
@@ -583,13 +590,15 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const savedType = typeof window !== 'undefined' ? localStorage.getItem('hyperon_wallet_type') : null;
       if (savedType === 'sandbox') {
         const savedAddr = (typeof window !== 'undefined' ? localStorage.getItem('hyperon_wallet_address') : null) || '0x71C8A66D268eCBE77E136125027581a94fa4F67a';
-        const simProvider = createSandboxEIP1193Provider(savedAddr, chainId);
-        setActiveCustomProvider(simProvider);
-        setAddress(savedAddr);
-        setIsConnected(true);
-        setWalletType('sandbox');
-        setLifecycleState('CONNECTED');
-        refreshBalances();
+        if (!activeCustomProvider) {
+          const simProvider = createSandboxEIP1193Provider(savedAddr, chainId);
+          setActiveCustomProvider(simProvider);
+          setAddress(savedAddr);
+          setIsConnected(true);
+          setWalletType('sandbox');
+          setLifecycleState('CONNECTED');
+          refreshBalancesRef.current();
+        }
       } else if (savedType && savedType !== 'demo') {
         Promise.all([
           provider.request({ method: 'eth_accounts' }),
@@ -619,7 +628,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 localStorage.setItem('hyperon_wallet_connected', 'true');
                 localStorage.setItem('hyperon_wallet_address', liveAddr);
               }
-              refreshBalances();
+              refreshBalancesRef.current();
             } else {
               // Provider returned no accounts -> user locked wallet or disconnected
               setIsConnected(false);
@@ -645,9 +654,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             }
           });
       } else {
-        setIsConnected(false);
-        setLifecycleState('DISCONNECTED');
-        setAddress('');
+        setIsConnected((prev) => (!prev ? prev : false));
+        setLifecycleState((prev) => (prev === 'DISCONNECTED' ? prev : 'DISCONNECTED'));
+        setAddress((prev) => (prev === '' ? prev : ''));
       }
     } catch {
       // Ignore provider initialization errors
@@ -662,7 +671,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         // Ignore teardown errors
       }
     };
-  }, [activeCustomProvider, refreshBalances]);
+  }, [activeCustomProvider]);
 
   const connectWallet = async (
     type: SupportedWalletType | 'demo' = 'injected', 
