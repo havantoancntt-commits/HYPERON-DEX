@@ -16,7 +16,7 @@
  */
 
 import crypto from 'crypto';
-import { keccak256, toHex } from 'viem';
+import { keccak256, toHex, isAddress } from 'viem';
 import { ChainId, CrossChainBridgeRoute, CrossChainSwapQuote, CrossChainExecutionStatus, Token } from '../../src/types';
 import { getUsdPrice } from './priceFeed';
 import { ROUTER_REGISTRY } from './routerRegistry';
@@ -70,9 +70,13 @@ export class HyperonCrossChainEngine {
       toTokenDecimals,
       amount,
       slippagePercent = 0.5,
-      userAddress = '0x71C28B932F99B52EDb3C0257B4393608F79E9E42',
+      userAddress = '0x0000000000000000000000000000000000000000',
       refuelDestinationGasAmount = 0,
     } = params;
+
+    if (userAddress && !isAddress(userAddress)) {
+      throw new Error('INVALID_USER_ADDRESS: userAddress must be a valid EVM address format');
+    }
 
     if (amount <= 0 || isNaN(amount)) {
       throw new Error('INVALID_AMOUNT: Cross-chain swap amount must be greater than 0');
@@ -322,6 +326,10 @@ export class HyperonCrossChainEngine {
    * and reports NOT_CONFIGURED when bridge infrastructure is not deployed.
    */
   public executeCrossChainIntent(quote: CrossChainSwapQuote, userAddress: string, sourceTxHash?: string): CrossChainExecutionStatus {
+    if (!userAddress || !isAddress(userAddress) || userAddress === '0x0000000000000000000000000000000000000000') {
+      throw new Error('INVALID_USER_ADDRESS: A valid, non-zero EVM userAddress is required for cross-chain execution.');
+    }
+
     if (!sourceTxHash || !/^0x[a-fA-F0-9]{64}$/.test(sourceTxHash)) {
       throw new Error('INVALID_TRANSACTION_HASH: A verified 32-byte on-chain transaction hash is strictly required for cross-chain execution.');
     }

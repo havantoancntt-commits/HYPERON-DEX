@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPublicClient, http, formatEther, formatUnits, encodeFunctionData, Address } from 'viem';
 import { mainnet, base, arbitrum, optimism, bsc, polygon } from 'viem/chains';
 import { ChainId, TransactionHistoryItem } from '../types';
@@ -451,13 +451,26 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         chainTokens
       );
 
-      setTokenBalances(portfolio);
+      setTokenBalances((prev) => {
+        const prevKeys = Object.keys(prev);
+        const newKeys = Object.keys(portfolio);
+        if (
+          prevKeys.length === newKeys.length &&
+          prevKeys.every((k) => prev[k]?.numericBalance === portfolio[k]?.numericBalance)
+        ) {
+          return prev;
+        }
+        return portfolio;
+      });
 
       const numericMap: Record<string, number> = { ...ZERO_BALANCES };
       for (const [sym, detail] of Object.entries(portfolio)) {
         numericMap[sym] = detail.numericBalance;
       }
-      setBalances(numericMap);
+      setBalances((prev) => {
+        const isIdentical = Object.keys(numericMap).every((k) => prev[k] === numericMap[k]);
+        return isIdentical ? prev : numericMap;
+      });
     } catch (err) {
       console.warn('[WalletContext] Live on-chain balance sync:', err);
     }
@@ -588,9 +601,21 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       // Verify connected accounts directly from real provider (Fail Closed)
       const savedType = typeof window !== 'undefined' ? localStorage.getItem('hyperon_wallet_type') : null;
+      const isProduction = Boolean(import.meta.env?.PROD || process.env.NODE_ENV === 'production');
+
       if (savedType === 'sandbox') {
-        const savedAddr = (typeof window !== 'undefined' ? localStorage.getItem('hyperon_wallet_address') : null) || '0x71C8A66D268eCBE77E136125027581a94fa4F67a';
-        if (!activeCustomProvider) {
+        if (isProduction) {
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('hyperon_wallet_connected');
+            localStorage.removeItem('hyperon_wallet_address');
+            localStorage.removeItem('hyperon_wallet_type');
+          }
+          setIsConnected(false);
+          setAddress('');
+          setWalletType(null);
+          setLifecycleState('DISCONNECTED');
+        } else if (!activeCustomProvider) {
+          const savedAddr = (typeof window !== 'undefined' ? localStorage.getItem('hyperon_wallet_address') : null) || '0x71C8A66D268eCBE77E136125027581a94fa4F67a';
           const simProvider = createSandboxEIP1193Provider(savedAddr, chainId);
           setActiveCustomProvider(simProvider);
           setAddress(savedAddr);
@@ -708,6 +733,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // 2. Real EIP-1193 Institutional Sandbox / Testnet Provider (for testing and environments without browser extensions)
     if (type === 'sandbox' || options?.isSimulated) {
+      if (Boolean(import.meta.env?.PROD || process.env.NODE_ENV === 'production')) {
+        throw new Error('SANDBOX_BLOCKED_IN_PRODUCTION: Sandbox mode is strictly disabled in production builds. Please connect a verified Web3 wallet.');
+      }
       const simAddr = (options?.address || '0x71C8A66D268eCBE77E136125027581a94fa4F67a').toLowerCase();
       const simProvider = createSandboxEIP1193Provider(simAddr, chainId);
       setAddress(simAddr);
@@ -1427,60 +1455,88 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     [activeCustomProvider]
   );
 
+  const contextValue = useMemo(
+    () => ({
+      isConnected,
+      lifecycleState,
+      isWrongChain,
+      address,
+      chainId,
+      walletType,
+      balances,
+      tokenBalances,
+      isDemoMode,
+      isWatchOnly,
+      transactions,
+      slippage,
+      mevProtected,
+      gasSpeed,
+      isConnectModalOpen,
+      isAccountModalOpen,
+      isSiweAuthenticated,
+      siweSession,
+      discoveredProviders,
+      sandboxAccounts: SANDBOX_PROFILES,
+      activeSandboxIndex,
+      recentAccounts,
+      switchSandboxAccount,
+      openConnectModal,
+      closeConnectModal,
+      openAccountModal,
+      closeAccountModal,
+      connectWallet,
+      switchWallet,
+      disconnectWallet,
+      impersonateAddress,
+      removeRecentAccount,
+      switchChain,
+      authenticateSiwe,
+      requestFaucetFunds,
+      resetBalances,
+      setSlippage,
+      setMevProtected,
+      setGasSpeed,
+      toggleDemoMode,
+      executeTransaction,
+      revokeApproval,
+      approveToken,
+      tokenApprovals,
+      refreshBalances,
+      activeCustomProvider,
+      checkAllowance,
+      approveTokenOnChain,
+      addTokenToWallet,
+    }),
+    [
+      isConnected,
+      lifecycleState,
+      isWrongChain,
+      address,
+      chainId,
+      walletType,
+      balances,
+      tokenBalances,
+      isDemoMode,
+      isWatchOnly,
+      transactions,
+      slippage,
+      mevProtected,
+      gasSpeed,
+      isConnectModalOpen,
+      isAccountModalOpen,
+      isSiweAuthenticated,
+      siweSession,
+      discoveredProviders,
+      activeSandboxIndex,
+      recentAccounts,
+      tokenApprovals,
+      refreshBalances,
+      activeCustomProvider,
+    ]
+  );
+
   return (
-    <WalletContext.Provider
-      value={{
-        isConnected,
-        lifecycleState,
-        isWrongChain,
-        address,
-        chainId,
-        walletType,
-        balances,
-        tokenBalances,
-        isDemoMode,
-        isWatchOnly,
-        transactions,
-        slippage,
-        mevProtected,
-        gasSpeed,
-        isConnectModalOpen,
-        isAccountModalOpen,
-        isSiweAuthenticated,
-        siweSession,
-        discoveredProviders,
-        sandboxAccounts: SANDBOX_PROFILES,
-        activeSandboxIndex,
-        recentAccounts,
-        switchSandboxAccount,
-        openConnectModal,
-        closeConnectModal,
-        openAccountModal,
-        closeAccountModal,
-        connectWallet,
-        switchWallet,
-        disconnectWallet,
-        impersonateAddress,
-        removeRecentAccount,
-        switchChain,
-        authenticateSiwe,
-        requestFaucetFunds,
-        resetBalances,
-        setSlippage,
-        setMevProtected,
-        setGasSpeed,
-        toggleDemoMode,
-        executeTransaction,
-        revokeApproval,
-        approveToken,
-        tokenApprovals,
-        refreshBalances,
-        activeCustomProvider,
-        checkAllowance,
-        approveTokenOnChain,
-        addTokenToWallet,
-      }}
-    >
+    <WalletContext.Provider value={contextValue}>
       {children}
     </WalletContext.Provider>
   );

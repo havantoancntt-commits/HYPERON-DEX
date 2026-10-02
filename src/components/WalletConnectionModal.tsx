@@ -107,11 +107,9 @@ export const WalletConnectionModal: React.FC = () => {
   const [manualAddressInput, setManualAddressInput] = useState('');
   const [showWatchOnlyInput, setShowWatchOnlyInput] = useState(false);
 
-  // Detect installed browser extensions
-  const [installedMap, setInstalledMap] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  // Detect installed browser extensions via pure memoization (Zero-re-render cycle)
+  const installedMap = useMemo<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {};
     const win = window as any;
     const eth = win.ethereum;
 
@@ -170,8 +168,8 @@ export const WalletConnectionModal: React.FC = () => {
       if (rdns.includes('brave') || name.includes('brave')) detected.brave = true;
     });
 
-    setInstalledMap(detected);
-  }, [isConnectModalOpen, discoveredProviders]);
+    return detected;
+  }, [discoveredProviders]);
 
   // Generate dynamic simulated WalletConnect v2 pairing URI on modal open
   useEffect(() => {

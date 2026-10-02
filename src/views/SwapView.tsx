@@ -655,6 +655,9 @@ export const SwapView: React.FC = () => {
     }
   };
 
+  const liveTokensRef = useRef(liveTokens);
+  liveTokensRef.current = liveTokens;
+
   // On-chain remote resolution for unlisted tokens or addresses
   useEffect(() => {
     const q = searchTokenQuery.trim();
@@ -666,7 +669,7 @@ export const SwapView: React.FC = () => {
     }
 
     // Check if locally matched
-    const hasLocalMatch = (liveTokens || []).some(
+    const hasLocalMatch = (liveTokensRef.current || []).some(
       (t) =>
         t.symbol.toLowerCase() === q.toLowerCase() ||
         t.address.toLowerCase() === q.toLowerCase()
@@ -722,7 +725,7 @@ export const SwapView: React.FC = () => {
         resolveAbortRef.current.abort();
       }
     };
-  }, [searchTokenQuery, chainId, liveTokens]);
+  }, [searchTokenQuery, chainId]);
 
   const filteredSelectionTokens = (liveTokens || []).filter((t) => {
     const q = searchTokenQuery.toLowerCase().trim();

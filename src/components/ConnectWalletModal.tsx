@@ -66,11 +66,9 @@ export const ConnectWalletModal: React.FC = () => {
   const [copiedWcUri, setCopiedWcUri] = useState(false);
   const [isWcPairing, setIsWcPairing] = useState(false);
 
-  // Detect installed extensions
-  const [installedMap, setInstalledMap] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  // Detect installed extensions via pure memoization (Zero-re-render cycle)
+  const installedMap = useMemo<Record<string, boolean>>(() => {
+    if (typeof window === 'undefined') return {};
     const win = window as any;
     const eth = win.ethereum;
 
@@ -108,8 +106,8 @@ export const ConnectWalletModal: React.FC = () => {
       if (rdns.includes('safe') || name.includes('safe')) detected.safe = true;
     });
 
-    setInstalledMap(detected);
-  }, [isConnectModalOpen, discoveredProviders]);
+    return detected;
+  }, [discoveredProviders]);
 
   // Generate a realistic WalletConnect v2 pairing URI on modal open
   useEffect(() => {

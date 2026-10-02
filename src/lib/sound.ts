@@ -5,9 +5,15 @@ class SoundEngine {
 
   constructor() {
     // Lazy initialized on first user interaction
-    const saved = localStorage.getItem('hyperon_sound_enabled');
-    if (saved !== null) {
-      this.isEnabled = saved === 'true';
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('hyperon_sound_enabled');
+        if (saved !== null) {
+          this.isEnabled = saved === 'true';
+        }
+      } catch {
+        // Safe fallback
+      }
     }
   }
 

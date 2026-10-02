@@ -143,8 +143,9 @@ export const TradeTerminalView: React.FC = () => {
 
   // Update positions with live mark price
   useEffect(() => {
-    setPositions((prev) =>
-      prev.map((pos) => {
+    setPositions((prev) => {
+      if (prev.length === 0) return prev;
+      return prev.map((pos) => {
         if (pos.pair.startsWith(activeSymbol)) {
           const currentPrice = activePair.priceUsd;
           const diff = pos.side === 'long' ? currentPrice - pos.entryPrice : pos.entryPrice - currentPrice;
@@ -158,8 +159,8 @@ export const TradeTerminalView: React.FC = () => {
           };
         }
         return pos;
-      })
-    );
+      });
+    });
   }, [activePair.priceUsd, activeSymbol]);
 
   // Fetch real-time OHLCV candles

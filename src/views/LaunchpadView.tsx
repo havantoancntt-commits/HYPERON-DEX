@@ -25,7 +25,7 @@ import {
 
 export const LaunchpadView: React.FC = () => {
   const { addToast } = useExchange();
-  const { isConnected, connectWallet, address } = useWallet();
+  const { isConnected, connectWallet, openConnectModal, address } = useWallet();
 
   const [projects, setProjects] = useState<LaunchpadProject[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -109,6 +109,16 @@ export const LaunchpadView: React.FC = () => {
 
   const handleDeployFairLaunch = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isConnected || !address || !isAddress(address)) {
+      addToast({
+        title: 'Chưa Kết Nối Ví',
+        message: 'Vui lòng kết nối ví Web3 để khởi tạo và triển khai hợp đồng token.',
+        type: 'warning',
+      });
+      openConnectModal();
+      return;
+    }
+
     if (!deployName || !deploySymbol) {
       addToast({
         title: 'Vui Lòng Điền Đủ Thông Tin',
@@ -141,7 +151,7 @@ export const LaunchpadView: React.FC = () => {
         status: 'LIVE',
         vestingSchedule: 'Instant Unlocked at TGE',
         contractAddress: getContractAddress({
-          from: (address && isAddress(address) ? address : '0x71C28B932F99B52EDb3C0257B4393608F79E9E42') as Address,
+          from: address as Address,
           nonce: BigInt(Date.now() % 1000000),
         }),
         acceptedToken: 'USDC',
