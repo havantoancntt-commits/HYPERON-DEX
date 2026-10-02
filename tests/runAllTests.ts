@@ -545,17 +545,18 @@ async function runTests() {
   );
   assert(gasCostOut > 0n, 'calculateGasCostInTokenOutRaw computes valid EIP-1559 moving average gas cost in token units');
 
-  // Zero-Knowledge Proof & Relayer Execution
-  const zkProof = await generateZkRoutingProof(
+  // Cryptographic Route Commitment & Relayer Execution
+  const routeCommitment = await generateZkRoutingProof(
     '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     '1.0',
     '2650.0'
   );
-  assert(verifyZkProof(zkProof) === true, 'Generates and verifies cryptographically valid Zero-Knowledge routing proof');
+  assert(verifyZkProof(routeCommitment) === true, 'Generates and verifies cryptographically valid Route Commitment');
 
   const relayerRes = await relayTransaction({
-    zkProof,
+    routeCommitment,
+    zkProof: routeCommitment,
     chainId: 'ethereum',
   });
   assert(relayerRes.status === 'RELAYED_FLASHBOTS' && relayerRes.txHash.startsWith('0x'), 'Relayer safely dispatches shielded transaction into Flashbots private mempool');

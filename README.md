@@ -15,9 +15,9 @@ The platform provides mathematically verified on-chain routing, dynamic split op
                           ┌──────────────────────────┐
                           │   HYPERON React Client   │
                           │   (Client-Side Routing,  │
-                          │    ZK Proofs via viem)   │
+                          │   Route Commitments)     │
                           └─────────────┬────────────┘
-                                        │ Signed Payload / ZK Proof
+                                        │ Signed Payload / Route Commitment
                           ┌─────────────▼────────────┐
                           │  Minimal Private Relayer  │
                           │  (/api/submit, Flashbots) │
@@ -45,7 +45,7 @@ The platform provides mathematically verified on-chain routing, dynamic split op
 
 0. **Zero-Trust Client-Side Routing & Relayer (`src/lib/router.ts`, `server.ts`)**:
    - Computes multi-venue swap paths directly in browser / Web Worker using public RPCs.
-   - Generates Zero-Knowledge routing proofs (`snarkjs` / SHA256-Merkle) to shield trade intent and eliminate user profiling.
+   - Generates Cryptographic Route Commitments (SHA-256 Merkle intent binding) to shield trade intent and eliminate user profiling.
    - Minimal Relayer `/api/submit` broadcasts transactions into private mempools (Flashbots Protect) without participating in decision calculations.
 
 1. **Smart Contracts (`contracts/`)**:

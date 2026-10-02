@@ -126,7 +126,7 @@ export class HyperonCrossChainEngine {
     const hyperonNetReceived = Number((hyperonNetValueUsd / safeToPrice).toFixed(6));
 
     const hyperonRoute: CrossChainBridgeRoute = {
-      id: 'bridge-hyperon-zk',
+      id: 'bridge-hyperon-intent',
       protocolName: 'Hyperon Quantum Tunnel™ (Cryptographic Relay)',
       logo: '⚡',
       fromChain,
