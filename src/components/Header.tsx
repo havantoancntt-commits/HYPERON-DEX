@@ -7,6 +7,7 @@ import { ChainId } from '../types';
 import { shortenAddress, formatCurrency } from '../lib/utils';
 import { ChainLogo, TokenLogo, Hyperon3DLogo } from './CryptoIcon';
 import { soundManager } from '../lib/sound';
+import { isAuthorizedDeployer } from '../lib/hyprConfig';
 import { CommandPalette } from './CommandPalette';
 import { PWAInstallButton } from './PWAInstallButton';
 import { 
@@ -42,7 +43,9 @@ import {
   ShieldX,
   Eye,
   Check,
-  Layers
+  Layers,
+  Lock,
+  SlidersHorizontal
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -86,6 +89,7 @@ export const Header: React.FC = () => {
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [soundActive, setSoundActive] = useState(soundManager.getSoundEnabled());
+  const isAdmin = isAuthorizedDeployer(address);
 
   const toggleSound = () => {
     const next = soundManager.toggleSound();
@@ -264,6 +268,22 @@ export const Header: React.FC = () => {
               </button>
             ))}
 
+            {/* Admin Console Direct Access */}
+            {isAdmin && (
+              <button
+                onClick={() => setActiveView('admin-console')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeView === 'admin-console'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-sm shadow-amber-500/20'
+                    : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                }`}
+                title="Trung tâm Quản trị Toàn quyền (Super Admin)"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
+                <span>Admin</span>
+              </button>
+            )}
+
             {/* Dropdown More */}
             <div className="relative">
               <button
@@ -276,11 +296,12 @@ export const Header: React.FC = () => {
 
               {showMoreMenu && (
                 <div
-                  className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#0B0F19] border border-white/10 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95"
+                  className="absolute right-0 mt-2 w-64 rounded-2xl bg-[#0B0F19] border border-white/10 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95"
                   onClick={() => setShowMoreMenu(false)}
                 >
-                  <div className="text-[10px] font-mono uppercase text-slate-400 px-2.5 py-1 font-bold">
-                    HYPERON ECOSYSTEM
+                  <div className="text-[10px] font-mono uppercase text-slate-400 px-2.5 py-1 font-bold flex items-center justify-between">
+                    <span>HYPERON ECOSYSTEM</span>
+                    <span className="text-cyan-400 text-[9px]">V4.2</span>
                   </div>
                   <div className="space-y-0.5 mt-1">
                     {[
@@ -294,17 +315,30 @@ export const Header: React.FC = () => {
                       { id: 'liquidity', label: 'Concentrated Liquidity', icon: Layers },
                       { id: 'cross-chain', label: 'Cross-Chain Bridge', icon: ArrowRightLeft },
                       { id: 'developer-api', label: 'Developer API (SDK)', icon: Terminal },
-                      { id: 'admin-console', label: 'Admin Console', icon: Sliders },
+                      { id: 'admin-console', label: 'Quản Trị Hệ Thống (Admin)', icon: SlidersHorizontal, isSpecial: true },
                     ].map((item) => (
                       <button
                         key={item.id}
                         onClick={() => setActiveView(item.id as any)}
-                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs transition-colors cursor-pointer text-left ${
-                          activeView === item.id ? 'bg-cyan-500/15 text-cyan-300 font-bold' : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors cursor-pointer text-left ${
+                          item.isSpecial
+                            ? activeView === item.id
+                              ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40'
+                              : 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/20'
+                            : activeView === item.id
+                              ? 'bg-cyan-500/15 text-cyan-300 font-bold'
+                              : 'text-slate-300 hover:bg-white/5 hover:text-white'
                         }`}
                       >
-                        <item.icon className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                        <span>{item.label}</span>
+                        <div className="flex items-center gap-2">
+                          <item.icon className={`w-3.5 h-3.5 ${item.isSpecial ? 'text-amber-400' : 'text-cyan-400'} shrink-0`} />
+                          <span>{item.label}</span>
+                        </div>
+                        {item.isSpecial && (
+                          <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 font-mono text-[9px] font-bold">
+                            GOV
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>

@@ -192,7 +192,7 @@ export class AdminService {
     }
 
     const artifact = COMPILED_ARTIFACTS.contracts[contractType];
-    if (!artifact || !artifact.bytecode || artifact.bytecode === '0x') {
+    if (!artifact || !artifact.bytecode || (artifact.bytecode as string) === '0x') {
       throw new Error(`CONTRACT_NOT_COMPILED: Bytecode for ${contractType} is not available.`);
     }
 
