@@ -188,3 +188,102 @@ export function resolveProviderForWallet(
       return win.ethereum || null;
   }
 }
+
+/**
+ * Accurately determines if a specific Web3 wallet extension is installed and available in the browser.
+ */
+export function isWalletInstalled(
+  type: SupportedWalletType,
+  discoveredProviders: EIP6963ProviderDetail[] = []
+): boolean {
+  if (type === 'walletconnect') return true;
+  if (typeof window === 'undefined') return false;
+
+  const win = window as any;
+
+  // 1. Check EIP-6963 discovered providers
+  if (type && discoveredProviders.length > 0) {
+    const hasEip6963 = discoveredProviders.some((dp) => {
+      const rdns = (dp.info.rdns || '').toLowerCase();
+      const name = (dp.info.name || '').toLowerCase();
+      if (type === 'metamask' && (rdns.includes('metamask') || name.includes('metamask'))) return true;
+      if (type === 'rabby' && (rdns.includes('rabby') || name.includes('rabby'))) return true;
+      if (type === 'coinbase' && (rdns.includes('coinbase') || name.includes('coinbase'))) return true;
+      if (type === 'phantom' && (rdns.includes('phantom') || name.includes('phantom'))) return true;
+      if (type === 'okx' && (rdns.includes('okx') || rdns.includes('okex') || name.includes('okx'))) return true;
+      if (type === 'trust' && (rdns.includes('trust') || name.includes('trust'))) return true;
+      if (type === 'rainbow' && (rdns.includes('rainbow') || name.includes('rainbow'))) return true;
+      if (type === 'bitget' && (rdns.includes('bitget') || rdns.includes('bitkeep') || name.includes('bitget'))) return true;
+      if (type === 'zerion' && (rdns.includes('zerion') || name.includes('zerion'))) return true;
+      if (type === 'brave' && (rdns.includes('brave') || name.includes('brave'))) return true;
+      if (type === 'safe' && (rdns.includes('safe') || name.includes('safe'))) return true;
+      if (type === 'binance' && (rdns.includes('binance') || name.includes('binance'))) return true;
+      if (type === 'kraken' && (rdns.includes('kraken') || name.includes('kraken'))) return true;
+      if (type === 'exodus' && (rdns.includes('exodus') || name.includes('exodus'))) return true;
+      if (type === 'backpack' && (rdns.includes('backpack') || name.includes('backpack'))) return true;
+      if (type === 'uniswap' && (rdns.includes('uniswap') || name.includes('uniswap'))) return true;
+      if (type === 'onekey' && (rdns.includes('onekey') || name.includes('onekey'))) return true;
+      return false;
+    });
+    if (hasEip6963) return true;
+  }
+
+  // 2. Check multi-provider array in window.ethereum.providers
+  const providers = win.ethereum?.providers;
+  if (Array.isArray(providers) && providers.length > 0) {
+    if (type === 'metamask' && providers.some((p: any) => p.isMetaMask && !p.isRabby && !p.isBraveWallet && !p.isPhantom)) return true;
+    if (type === 'rabby' && providers.some((p: any) => p.isRabby)) return true;
+    if (type === 'coinbase' && providers.some((p: any) => p.isCoinbaseWallet)) return true;
+    if (type === 'phantom' && providers.some((p: any) => p.isPhantom)) return true;
+    if (type === 'okx' && providers.some((p: any) => p.isOkxWallet)) return true;
+    if (type === 'trust' && providers.some((p: any) => p.isTrust || p.isTrustWallet || p.isTrustWalletExtension)) return true;
+    if (type === 'rainbow' && providers.some((p: any) => p.isRainbow)) return true;
+    if (type === 'bitget' && providers.some((p: any) => p.isBitKeep || p.isBitget)) return true;
+    if (type === 'binance' && providers.some((p: any) => p.isBinance || p.isBinanceW3W || p.isBinanceWallet)) return true;
+    if (type === 'zerion' && providers.some((p: any) => p.isZerion)) return true;
+    if (type === 'brave' && providers.some((p: any) => p.isBraveWallet)) return true;
+  }
+
+  // 3. Check dedicated window globals
+  switch (type) {
+    case 'trust':
+      return Boolean(win.trustwallet || win.trustWallet || win.ethereum?.isTrust || win.ethereum?.isTrustWallet);
+    case 'rabby':
+      return Boolean(win.rabby || win.ethereum?.isRabby);
+    case 'coinbase':
+      return Boolean(win.coinbaseWalletExtension || win.ethereum?.isCoinbaseWallet);
+    case 'phantom':
+      return Boolean(win.phantom?.ethereum || win.ethereum?.isPhantom);
+    case 'okx':
+      return Boolean(win.okxwallet || win.ethereum?.isOkxWallet);
+    case 'rainbow':
+      return Boolean(win.rainbow || win.ethereum?.isRainbow);
+    case 'bitget':
+      return Boolean(win.bitkeep?.ethereum || win.bitkeep);
+    case 'binance':
+      return Boolean(win.binancew3w?.ethereum || win.BinanceChain || win.binance || win.ethereum?.isBinance);
+    case 'kraken':
+      return Boolean(win.kraken?.ethereum || win.kraken);
+    case 'exodus':
+      return Boolean(win.exodus?.ethereum || win.exodus);
+    case 'backpack':
+      return Boolean(win.backpack?.ethereum || win.backpack);
+    case 'uniswap':
+      return Boolean(win.uniswap?.ethereum || win.uniswap);
+    case 'onekey':
+      return Boolean(win.$onekey?.ethereum || win.onekey);
+    case 'zerion':
+      return Boolean(win.zerionWallet || win.ethereum?.isZerion);
+    case 'brave':
+      return Boolean(win.braveEthereum || win.ethereum?.isBraveWallet);
+    case 'safe':
+      return Boolean(win.safe || win.ethereum?.isSafe);
+    case 'metamask':
+      return Boolean(win.ethereum?.isMetaMask && !win.ethereum?.isRabby);
+    case 'injected':
+      return Boolean(win.ethereum);
+    default:
+      return false;
+  }
+}
+

@@ -48,7 +48,7 @@ export const AISignalsView: React.FC = () => {
     addToast,
     getLiveToken
   } = useExchange();
-  const { isConnected, connectWallet } = useWallet();
+  const { isConnected, connectWallet, openConnectModal } = useWallet();
 
   const [signals, setSignals] = useState<AITradingSignal[]>([]);
   const [metaInfo, setMetaInfo] = useState<AIMetaInfo>({
@@ -126,11 +126,11 @@ export const AISignalsView: React.FC = () => {
   const handleToggleAutoBot = () => {
     if (!isConnected) {
       addToast({
-        title: 'Wallet Connection Required',
-        message: 'Please connect your Web3 wallet to activate the Non-Custodial AI Execution Bot.',
+        title: 'Yêu cầu kết nối ví',
+        message: 'Vui lòng kết nối ví Web3 để kích hoạt Bot AI Tự động Thực thi.',
         type: 'warning',
       });
-      connectWallet('sandbox');
+      openConnectModal();
       return;
     }
     const nextState = !autoExecuteBotActive;

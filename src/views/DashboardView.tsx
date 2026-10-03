@@ -38,7 +38,7 @@ export const DashboardView: React.FC = () => {
     getLiveToken, 
     tickDirections 
   } = useExchange();
-  const { balances, isDemoMode, chainId } = useWallet();
+  const { balances, chainId } = useWallet();
 
   const ethPrice = getLiveToken('ETH').priceUsd;
   const wbtcPrice = getLiveToken('WBTC').priceUsd;

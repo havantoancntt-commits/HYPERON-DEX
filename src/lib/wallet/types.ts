@@ -34,7 +34,6 @@ export type SupportedWalletType =
   | 'onekey'
   | 'walletconnect'
   | 'injected'
-  | 'sandbox'
   | null;
 
 export interface EIP1193Provider {

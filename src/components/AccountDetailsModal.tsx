@@ -61,7 +61,6 @@ export const AccountDetailsModal: React.FC = () => {
     chainId,
     walletType,
     balances,
-    isDemoMode,
     isWatchOnly,
     isSiweAuthenticated,
     authenticateSiwe,
@@ -228,8 +227,6 @@ export const AccountDetailsModal: React.FC = () => {
         return 'Bitget / Binance Web3';
       case 'walletconnect':
         return 'WalletConnect v2';
-      case 'sandbox':
-        return 'Institutional Sandbox';
       default:
         return 'Browser Web3 Provider';
     }
@@ -250,12 +247,12 @@ export const AccountDetailsModal: React.FC = () => {
             <div className="relative">
               <span
                 className={`w-3 h-3 rounded-full block ${
-                  isWatchOnly ? 'bg-amber-400' : isDemoMode ? 'bg-cyan-400' : 'bg-emerald-400'
+                  isWatchOnly ? 'bg-amber-400' : 'bg-emerald-400'
                 }`}
               />
               <span
                 className={`w-3 h-3 rounded-full absolute inset-0 animate-ping opacity-75 ${
-                  isWatchOnly ? 'bg-amber-400' : isDemoMode ? 'bg-cyan-400' : 'bg-emerald-400'
+                  isWatchOnly ? 'bg-amber-400' : 'bg-emerald-400'
                 }`}
               />
             </div>
@@ -268,10 +265,10 @@ export const AccountDetailsModal: React.FC = () => {
                 <span>•</span>
                 <span
                   className={`font-mono font-bold ${
-                    isWatchOnly ? 'text-amber-400' : isDemoMode ? 'text-cyan-400' : 'text-emerald-400'
+                    isWatchOnly ? 'text-amber-400' : 'text-emerald-400'
                   }`}
                 >
-                  {isWatchOnly ? 'WATCH-ONLY' : isDemoMode ? 'DEMO SANDBOX' : 'LIVE ON-CHAIN'}
+                  {isWatchOnly ? 'WATCH-ONLY' : 'LIVE ON-CHAIN'}
                 </span>
               </div>
             </div>

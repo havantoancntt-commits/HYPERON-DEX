@@ -23,37 +23,7 @@ export type WalletLifecycleState =
   | 'WRONG_CHAIN'
   | 'ERROR';
 
-export type SupportedWalletType =
-  | 'metamask'
-  | 'coinbase'
-  | 'rabby'
-  | 'phantom'
-  | 'okx'
-  | 'trust'
-  | 'rainbow'
-  | 'bitget'
-  | 'zerion'
-  | 'brave'
-  | 'safe'
-  | 'binance'
-  | 'kraken'
-  | 'exodus'
-  | 'backpack'
-  | 'uniswap'
-  | 'onekey'
-  | 'walletconnect'
-  | 'injected'
-  | 'sandbox'
-  | null;
-
-export type { EIP6963ProviderInfo, EIP6963ProviderDetail } from '../lib/wallet/types';
-
-export interface SandboxAccount {
-  address: string;
-  name: string;
-  tag: string;
-  balances: Record<string, number>;
-}
+export type { SupportedWalletType, EIP6963ProviderInfo, EIP6963ProviderDetail } from '../lib/wallet/types';
 
 export interface RecentWalletAccount {
   type: SupportedWalletType;
@@ -71,7 +41,6 @@ interface WalletContextType {
   walletType: SupportedWalletType;
   balances: Record<string, number>;
   tokenBalances: Record<string, TokenBalanceDetail>;
-  isDemoMode: boolean;
   isWatchOnly: boolean;
   transactions: TransactionHistoryItem[];
   slippage: number;
@@ -82,35 +51,31 @@ interface WalletContextType {
   isSiweAuthenticated: boolean;
   siweSession: { address: string; nonce: string; verifiedAt: number } | null;
   discoveredProviders: EIP6963ProviderDetail[];
-  sandboxAccounts: SandboxAccount[];
-  activeSandboxIndex: number;
   recentAccounts: RecentWalletAccount[];
-  switchSandboxAccount: (index: number) => void;
   openConnectModal: () => void;
   closeConnectModal: () => void;
   openAccountModal: () => void;
   closeAccountModal: () => void;
   connectWallet: (
-    type?: SupportedWalletType | 'demo', 
+    type?: SupportedWalletType, 
     customProvider?: any,
-    options?: { isSimulated?: boolean; address?: string; name?: string }
+    options?: { address?: string; name?: string }
   ) => Promise<void>;
   switchWallet: (
-    type: SupportedWalletType | 'demo', 
+    type: SupportedWalletType, 
     customProvider?: any,
-    options?: { isSimulated?: boolean; address?: string; name?: string }
+    options?: { address?: string; name?: string }
   ) => Promise<void>;
   disconnectWallet: (options?: { zeroTrust?: boolean }) => Promise<void>;
+  connectWatchOnly: (address: string, label?: string) => void;
   impersonateAddress: (address: string, label?: string) => void;
   removeRecentAccount: (address: string) => void;
   switchChain: (newChainId: ChainId) => Promise<void>;
   authenticateSiwe: () => Promise<boolean>;
-  requestFaucetFunds: (tokenSymbol: string, amount: number) => void;
   resetBalances: () => void;
   setSlippage: (slippage: number) => void;
   setMevProtected: (enabled: boolean) => void;
   setGasSpeed: (speed: 'standard' | 'fast' | 'instant') => void;
-  toggleDemoMode: () => void;
   executeTransaction: (
     tx: Omit<TransactionHistoryItem, 'id' | 'timestamp' | 'status' | 'txHash' | 'blockNumber' | 'correlationId'>
   ) => Promise<TransactionHistoryItem>;
@@ -153,62 +118,6 @@ const ID_TO_HEX_CHAIN: Record<ChainId, string> = {
   polygon: '0x89',
 };
 
-/**
- * Standard compliant EIP-1193 Testnet / Sandbox Provider for institutional demonstration & tests
- * Allows seamless Web3 execution (eth_sendTransaction, personal_sign, switchChain) in web preview environments
- */
-export function createSandboxEIP1193Provider(
-  initialAddress = '0x71C8A66D268eCBE77E136125027581a94fa4F67a',
-  initialChainId: ChainId = 'ethereum'
-): EIP1193Provider {
-  let currentAddress = initialAddress.toLowerCase();
-  let currentChainHex = ID_TO_HEX_CHAIN[initialChainId] || '0x1';
-  const listeners: Record<string, ((...args: any[]) => void)[]> = {};
-
-  return {
-    async request({ method, params }: { method: string; params?: any }) {
-      if (method === 'eth_requestAccounts' || method === 'eth_accounts') {
-        return [currentAddress];
-      }
-      if (method === 'eth_chainId') {
-        return currentChainHex;
-      }
-      if (method === 'net_version') {
-        return parseInt(currentChainHex, 16).toString();
-      }
-      if (method === 'eth_sendTransaction') {
-        throw new Error('SANDBOX_TRANSACTION_REJECTED: Chế độ Sandbox chỉ dùng để xem giao diện. Vui lòng kết nối ví Web3 thật (MetaMask, Rabby, Trust Wallet...) để ký và phát sóng giao dịch on-chain.');
-      }
-      if (method === 'personal_sign' || method === 'eth_signTypedData_v4' || method === 'eth_sign') {
-        return '0x' + '1b'.padStart(130, '7a');
-      }
-      if (method === 'wallet_switchEthereumChain') {
-        const requestedHex = params?.[0]?.chainId;
-        if (requestedHex) {
-          currentChainHex = requestedHex.toLowerCase();
-          const list = listeners['chainChanged'] || [];
-          list.forEach((fn) => fn(currentChainHex));
-        }
-        return null;
-      }
-      if (method === 'wallet_revokePermissions') {
-        const list = listeners['accountsChanged'] || [];
-        list.forEach((fn) => fn([]));
-        return null;
-      }
-      return null;
-    },
-    on(eventName: string, listener: (...args: any[]) => void) {
-      if (!listeners[eventName]) listeners[eventName] = [];
-      listeners[eventName].push(listener);
-    },
-    removeListener(eventName: string, listener: (...args: any[]) => void) {
-      if (!listeners[eventName]) return;
-      listeners[eventName] = listeners[eventName].filter((l) => l !== listener);
-    },
-  };
-}
-
 export const ZERO_BALANCES: Record<string, number> = {
   ETH: 0,
   USDC: 0,
@@ -233,18 +142,12 @@ export const ZERO_BALANCES: Record<string, number> = {
   NEAR: 0,
 };
 
-// Deprecated mock profiles kept as empty array for interface backward-compatibility
-export const SANDBOX_PROFILES: SandboxAccount[] = [];
-
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeSandboxIndex, setActiveSandboxIndex] = useState<number>(0);
-
   // FAIL CLOSED: Never assume wallet is connected on startup from localStorage without provider verification
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [address, setAddress] = useState<string>('');
   const [chainId, setChainId] = useState<ChainId>('ethereum');
   const [walletType, setWalletType] = useState<SupportedWalletType>(null);
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
   const [isWatchOnly, setIsWatchOnly] = useState<boolean>(false);
 
   const [recentAccounts, setRecentAccounts] = useState<RecentWalletAccount[]>(() => {
@@ -603,28 +506,18 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const savedType = typeof window !== 'undefined' ? localStorage.getItem('hyperon_wallet_type') : null;
       const isProduction = Boolean(import.meta.env?.PROD || process.env.NODE_ENV === 'production');
 
-      if (savedType === 'sandbox') {
-        if (isProduction) {
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('hyperon_wallet_connected');
-            localStorage.removeItem('hyperon_wallet_address');
-            localStorage.removeItem('hyperon_wallet_type');
-          }
-          setIsConnected(false);
-          setAddress('');
-          setWalletType(null);
-          setLifecycleState('DISCONNECTED');
-        } else if (!activeCustomProvider) {
-          const savedAddr = (typeof window !== 'undefined' ? localStorage.getItem('hyperon_wallet_address') : null) || '0x71C8A66D268eCBE77E136125027581a94fa4F67a';
-          const simProvider = createSandboxEIP1193Provider(savedAddr, chainId);
-          setActiveCustomProvider(simProvider);
-          setAddress(savedAddr);
-          setIsConnected(true);
-          setWalletType('sandbox');
-          setLifecycleState('CONNECTED');
-          refreshBalancesRef.current();
+      if (savedType === 'sandbox' || savedType === 'demo') {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('hyperon_wallet_connected');
+          localStorage.removeItem('hyperon_wallet_address');
+          localStorage.removeItem('hyperon_wallet_type');
+          localStorage.removeItem('hyperon_wallet_sandbox_idx');
         }
-      } else if (savedType && savedType !== 'demo') {
+        setIsConnected(false);
+        setAddress('');
+        setWalletType(null);
+        setLifecycleState('DISCONNECTED');
+      } else if (savedType) {
         Promise.all([
           provider.request({ method: 'eth_accounts' }),
           provider.request({ method: 'eth_chainId' }).catch(() => null),
@@ -699,9 +592,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [activeCustomProvider]);
 
   const connectWallet = async (
-    type: SupportedWalletType | 'demo' = 'injected', 
+    type: SupportedWalletType = 'injected', 
     customProvider?: any,
-    options?: { isSimulated?: boolean; address?: string; name?: string }
+    options?: { address?: string; name?: string }
   ) => {
     // 1. Explicit watch-only portfolio inspection mode (Strictly decoupled from authorized signing connection)
     if (options?.address) {
@@ -714,7 +607,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setIsWatchOnly(true);
       const resolvedType: SupportedWalletType = (type as SupportedWalletType) || 'injected';
       setWalletType(resolvedType);
-      setIsDemoMode(false);
       setActiveCustomProvider(null);
       setBalances({ ...ZERO_BALANCES });
 
@@ -731,32 +623,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    // 2. Real EIP-1193 Institutional Sandbox / Testnet Provider (for testing and environments without browser extensions)
-    if (type === 'sandbox' || options?.isSimulated) {
-      if (Boolean(import.meta.env?.PROD || process.env.NODE_ENV === 'production')) {
-        throw new Error('SANDBOX_BLOCKED_IN_PRODUCTION: Sandbox mode is strictly disabled in production builds. Please connect a verified Web3 wallet.');
-      }
-      const simAddr = (options?.address || '0x71C8A66D268eCBE77E136125027581a94fa4F67a').toLowerCase();
-      const simProvider = createSandboxEIP1193Provider(simAddr, chainId);
-      setAddress(simAddr);
-      setIsConnected(true);
-      setIsWatchOnly(false);
-      setActiveCustomProvider(simProvider);
-      setWalletType('sandbox');
-      setIsDemoMode(false);
-      setLifecycleState('CONNECTED');
-      recordRecentAccount('sandbox', simAddr, options?.name || 'Institutional Sandbox (Testnet)');
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('hyperon_wallet_connected', 'true');
-        localStorage.setItem('hyperon_wallet_address', simAddr);
-        localStorage.setItem('hyperon_wallet_type', 'sandbox');
-      }
-      closeConnectModal();
-      await refreshBalances();
-      return;
-    }
-
-    // 3. Real WalletConnect v2 Protocol Connection
+    // 2. Real WalletConnect v2 Protocol Connection
     if (type === 'walletconnect') {
       const wcProvider = await walletConnectManager.getOrCreateProvider();
       await (wcProvider as any).connect();
@@ -772,7 +639,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setIsWatchOnly(false);
       setActiveCustomProvider(wcProvider);
       setWalletType('walletconnect');
-      setIsDemoMode(false);
       setLifecycleState('CONNECTED');
 
       if (chainHex) {
@@ -798,7 +664,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     // 3. Real Web3 injected / EIP-6963 provider connection
-    const provider = resolveProviderForWallet(type as SupportedWalletType, discoveredProviders, customProvider);
+    const provider = resolveProviderForWallet(type, discoveredProviders, customProvider);
     if (!provider || !provider.request) {
       const walletName = type === 'rabby' ? 'Rabby' : type === 'metamask' ? 'MetaMask' : type === 'coinbase' ? 'Coinbase' : type === 'phantom' ? 'Phantom' : type === 'okx' ? 'OKX' : type === 'trust' ? 'Trust Wallet' : type === 'binance' ? 'Binance Web3' : type === 'rainbow' ? 'Rainbow' : 'Web3';
       throw new Error(`Ví ${walletName} chưa được kích hoạt hoặc cài đặt trong trình duyệt này. Vui lòng mở tiện ích ví hoặc quét mã QR di động.`);
@@ -816,9 +682,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setIsConnected(true);
         setIsWatchOnly(false);
         setActiveCustomProvider(provider);
-        const resolvedType: SupportedWalletType = (type as SupportedWalletType) || 'injected';
+        const resolvedType: SupportedWalletType = type || 'injected';
         setWalletType(resolvedType);
-        setIsDemoMode(false);
         setLifecycleState('CONNECTED');
 
         if (chainHex) {
@@ -832,7 +697,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           }
         }
 
-        const wLabel = (type?.toUpperCase() || 'EVM') + ' Wallet';
+        const wLabel = (type ? type.toUpperCase() : 'EVM') + ' Wallet';
         recordRecentAccount(resolvedType, liveAddr, wLabel);
         if (typeof window !== 'undefined') {
           localStorage.setItem('hyperon_wallet_connected', 'true');
@@ -857,9 +722,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const switchWallet = async (
-    type: SupportedWalletType | 'demo', 
+    type: SupportedWalletType = 'injected', 
     customProvider?: any,
-    options?: { isSimulated?: boolean; address?: string; name?: string }
+    options?: { address?: string; name?: string }
   ) => {
     // Unbind listeners from previous provider safely
     if (activeCustomProvider?.removeListener) {
@@ -883,7 +748,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setIsConnected(false); // Invariant: Watch-only is strictly NOT authorized to sign on-chain transactions
     setIsWatchOnly(true);
     setWalletType('injected');
-    setIsDemoMode(false);
     setActiveCustomProvider(null);
 
     // Initialize to genuine zero balances and immediately query real blockchain state
@@ -1126,10 +990,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const resetBalances = () => {
     setBalances({ ...ZERO_BALANCES });
     refreshBalances();
-  };
-
-  const toggleDemoMode = () => {
-    setIsDemoMode((prev) => !prev);
   };
 
   const executeTransaction = async (
@@ -1465,7 +1325,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       walletType,
       balances,
       tokenBalances,
-      isDemoMode,
       isWatchOnly,
       transactions,
       slippage,
@@ -1476,10 +1335,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isSiweAuthenticated,
       siweSession,
       discoveredProviders,
-      sandboxAccounts: SANDBOX_PROFILES,
-      activeSandboxIndex,
       recentAccounts,
-      switchSandboxAccount,
       openConnectModal,
       closeConnectModal,
       openAccountModal,
@@ -1487,16 +1343,15 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       connectWallet,
       switchWallet,
       disconnectWallet,
+      connectWatchOnly: impersonateAddress,
       impersonateAddress,
       removeRecentAccount,
       switchChain,
       authenticateSiwe,
-      requestFaucetFunds,
       resetBalances,
       setSlippage,
       setMevProtected,
       setGasSpeed,
-      toggleDemoMode,
       executeTransaction,
       revokeApproval,
       approveToken,
@@ -1516,7 +1371,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       walletType,
       balances,
       tokenBalances,
-      isDemoMode,
       isWatchOnly,
       transactions,
       slippage,
@@ -1527,7 +1381,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isSiweAuthenticated,
       siweSession,
       discoveredProviders,
-      activeSandboxIndex,
       recentAccounts,
       tokenApprovals,
       refreshBalances,

@@ -120,6 +120,29 @@ class WalletConnectManager {
     }
   }
 
+  /**
+   * Proactively triggers pairing URI generation so QR code displays immediately.
+   */
+  public async initiatePairing(onUri?: (uri: string) => void): Promise<string> {
+    if (this.currentUri) {
+      onUri?.(this.currentUri);
+      return this.currentUri;
+    }
+
+    const provider = await this.getOrCreateProvider({
+      onDisplayUri: (uri) => {
+        onUri?.(uri);
+      },
+    });
+
+    // Calling connect() triggers 'display_uri'
+    (provider as any).connect().catch((_err: any) => {
+      // Connect will resolve once user scans and approves or rejects
+    });
+
+    return this.currentUri;
+  }
+
   public async disconnect(): Promise<void> {
     if (this.provider) {
       try {

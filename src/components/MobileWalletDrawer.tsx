@@ -31,7 +31,6 @@ export const MobileWalletDrawer: React.FC<MobileWalletDrawerProps> = ({ isOpen, 
     chainId,
     balances,
     walletType,
-    isDemoMode,
     isWatchOnly,
     disconnectWallet,
     switchChain,
@@ -49,7 +48,7 @@ export const MobileWalletDrawer: React.FC<MobileWalletDrawerProps> = ({ isOpen, 
   const currentChain = SUPPORTED_CHAINS[chainId] || SUPPORTED_CHAINS.arbitrum;
   const ethBalance = balances.ETH ?? 0;
   const usdcBalance = balances.USDC ?? 0;
-  const hyprBalance = (balances.HYPR ?? balances.AETH) ?? 2500;
+  const hyprBalance = balances.HYPR ?? 0;
   const totalWalletApprox = ethBalance * 3200 + usdcBalance;
 
   const handleCopy = () => {
@@ -120,7 +119,7 @@ export const MobileWalletDrawer: React.FC<MobileWalletDrawerProps> = ({ isOpen, 
               <h3 className="text-sm font-bold text-white font-mono flex items-center gap-2">
                 <span>{isWatchOnly ? 'Watch-Only Account' : 'Web3 Wallet Hub'}</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-bold">
-                  {isDemoMode ? 'Sandbox' : 'Active'}
+                  {isWatchOnly ? 'Watch-Only' : 'Active On-Chain'}
                 </span>
               </h3>
               <p className="text-[11px] text-slate-400">
