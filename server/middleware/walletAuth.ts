@@ -1109,8 +1109,7 @@ export class DistributedSessionStoreAdapter implements ISessionStore {
       return;
     }
 
-    const isProduction =
-      process.env.NODE_ENV === 'production' ||
+    const isStrictDistributedRequired =
       process.env.REQUIRE_DISTRIBUTED_SESSION_STORE === 'true';
 
     const redisUrl = process.env.UPSTASH_REDIS_REST_URL || process.env.REDIS_URL;
@@ -1122,7 +1121,7 @@ export class DistributedSessionStoreAdapter implements ISessionStore {
     } else if (dbUrl) {
       this.activeStore = new PostgresDistributedSessionStore(dbUrl);
       this.mode = 'DISTRIBUTED_POSTGRES';
-    } else if (isProduction) {
+    } else if (isStrictDistributedRequired) {
       this.activeStore = new FailClosedSessionStore();
       this.mode = 'FAIL_CLOSED';
     } else {

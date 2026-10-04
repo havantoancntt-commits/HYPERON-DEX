@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
 import { useI18n } from '../context/I18nContext';
@@ -89,7 +89,15 @@ export const Header: React.FC = () => {
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [soundActive, setSoundActive] = useState(soundManager.getSoundEnabled());
-  const isAdmin = isAuthorizedDeployer(address);
+  const [authVersion, setAuthVersion] = useState(0);
+
+  useEffect(() => {
+    const handleAdminUpdate = () => setAuthVersion((v) => v + 1);
+    window.addEventListener('hyperon-admin-updated', handleAdminUpdate);
+    return () => window.removeEventListener('hyperon-admin-updated', handleAdminUpdate);
+  }, []);
+
+  const isAdmin = useMemo(() => isAuthorizedDeployer(address), [address, authVersion]);
 
   const toggleSound = () => {
     const next = soundManager.toggleSound();

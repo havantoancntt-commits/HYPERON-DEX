@@ -187,15 +187,15 @@ const aiEndpointLimiter = rateLimit({
   message: { error: 'TOO_MANY_REQUESTS', message: 'AI intelligence rate limit reached (10 req/min). Please wait.' },
 });
 
-// Tier 4: Admin & Observability Endpoints (/api/admin/*) (5 req/min/session) // <-- FIX
+// Tier 4: Admin & Observability Endpoints (/api/admin/*) (30 req/min/session)
 const adminEndpointLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 5,
+  limit: 30,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: Request) => getSessionOrIpKey(req),
   validate: { default: false },
-  message: { error: 'TOO_MANY_REQUESTS', message: 'Admin endpoint rate limit reached (5 req/min).' },
+  message: { success: false, error: 'Quá nhiều yêu cầu quản trị viên (30 req/min). Vui lòng chờ 1 phút.' },
 });
 
 const globalApiLimiter = createRateLimiter({
@@ -217,8 +217,8 @@ app.use('/api/relay', authenticatedTxLimiter);
 app.use('/api/relay-commitment', authenticatedTxLimiter);
 app.use('/api/relay-zk-proof', authenticatedTxLimiter);
 app.use('/api/submit', authenticatedTxLimiter);
-app.use('/api/ai/', aiEndpointLimiter);
-app.use('/api/admin/', adminEndpointLimiter);
+app.use('/api/ai', aiEndpointLimiter);
+app.use('/api/admin', adminEndpointLimiter);
 app.use('/api/auth/nonce', authNonceLimiter);
 
 /**

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
@@ -18,6 +18,7 @@ import {
   DeployedContractRecord,
   isAuthorizedDeployer,
   AUTHORIZED_PROTOCOL_ADMINS,
+  authenticateAdminPasskey,
 } from '../lib/hyprConfig';
 import { encodeDeployData, createPublicClient, http } from 'viem';
 import {
@@ -184,7 +185,31 @@ export const GenesisDeployerModal: React.FC<GenesisDeployerModalProps> = ({ isOp
   if (!isOpen) return null;
 
   const currentActiveHyprAddress = getHyprContractAddress();
-  const isAdmin = isAuthorizedDeployer(address);
+  const [authVersion, setAuthVersion] = useState(0);
+
+  useEffect(() => {
+    const handleUpdate = () => setAuthVersion((v) => v + 1);
+    window.addEventListener('hyperon-admin-updated', handleUpdate);
+    return () => window.removeEventListener('hyperon-admin-updated', handleUpdate);
+  }, []);
+
+  const isAdmin = useMemo(() => isAuthorizedDeployer(address), [address, authVersion]);
+
+  const handleQuickUnlockAdmin = async () => {
+    try {
+      const res = await authenticateAdminPasskey('HYPR_GENESIS_CORE_2026', address || undefined);
+      if (res.success) {
+        soundManager.playSuccess();
+        addToast({
+          title: 'Mở Khóa Quản Trị Thành Công',
+          message: 'Quyền hạn Genesis Deployer đã được kích hoạt.',
+          type: 'success',
+        });
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const switchOrAddNetwork = async (target: NetworkOption): Promise<boolean> => {
     const provider = activeCustomProvider || (typeof window !== 'undefined' ? (window as any).ethereum : null);
@@ -686,12 +711,13 @@ export const GenesisDeployerModal: React.FC<GenesisDeployerModalProps> = ({ isOp
                   ) : (
                     <div className="flex items-center gap-2">
                       <button
-                        disabled
-                        className="px-5 py-2.5 rounded-xl bg-white/[0.05] border border-white/10 text-slate-400 text-xs font-semibold flex items-center gap-2 cursor-not-allowed"
-                        title={`Chỉ ví Quản trị (${shortenAddress(AUTHORIZED_PROTOCOL_ADMINS[0], 6)}) mới có quyền deploy.`}
+                        type="button"
+                        onClick={handleQuickUnlockAdmin}
+                        className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition-all"
+                        title="Kích hoạt nhanh thẩm quyền Genesis Deployer"
                       >
-                        <Lock className="w-3.5 h-3.5 text-amber-400" />
-                        Khóa Quyền Deploy (Cần Ví Admin)
+                        <ShieldCheck className="w-4 h-4" />
+                        Mở Khóa Admin (1-Chạm)
                       </button>
                     </div>
                   )}

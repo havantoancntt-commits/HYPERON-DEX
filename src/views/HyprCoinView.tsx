@@ -12,6 +12,10 @@ import {
   DEFAULT_HYPR_ADDRESS,
   resetHyprContractAddress,
   isAuthorizedDeployer,
+  AUTHORIZED_PROTOCOL_ADMINS,
+  authenticateAdminPasskey,
+  clearAdminSession,
+  MASTER_ADMIN_PASSKEYS,
 } from '../lib/hyprConfig';
 import {
   Sparkles,
@@ -42,7 +46,6 @@ import {
   X,
   Unlock,
 } from 'lucide-react';
-import { AUTHORIZED_PROTOCOL_ADMINS } from '../lib/hyprConfig';
 
 interface TimeframeData {
   label: string;
@@ -172,47 +175,53 @@ export const HyprCoinView: React.FC = () => {
   const [authVersion, setAuthVersion] = useState(0);
   const [currentContractAddress, setCurrentContractAddress] = useState(getHyprContractAddress());
 
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+
   // Smart & Professional Governance Admin Permission Verification
   const isAdmin = useMemo(() => isAuthorizedDeployer(address), [address, authVersion]);
 
-  const handleActivateAdmin = (e?: React.FormEvent) => {
+  const handleActivateAdmin = async (e?: React.FormEvent, customKey?: string) => {
     if (e) e.preventDefault();
-    if (adminPasskey.trim() === 'HYPR_GENESIS_CORE_2026') {
-      localStorage.setItem('HYPERON_ADMIN_DEV_KEY', 'HYPR_GENESIS_CORE_2026');
-      if (address) {
-        try {
-          const existing = localStorage.getItem('HYPERON_CUSTOM_ADMINS');
-          const list = existing ? JSON.parse(existing) : [];
-          if (!list.includes(address.toLowerCase())) {
-            list.push(address.toLowerCase());
-            localStorage.setItem('HYPERON_CUSTOM_ADMINS', JSON.stringify(list));
-          }
-        } catch {
-          // ignore
-        }
+    const keyToUse = customKey !== undefined ? customKey : adminPasskey;
+    const cleanPasskey = keyToUse.trim().replace(/^["']|["']$/g, '');
+    const isGenesisWallet = Boolean(address && AUTHORIZED_PROTOCOL_ADMINS.includes(address.toLowerCase()));
+
+    if (!cleanPasskey && !isGenesisWallet) {
+      setAuthError('Vui lòng nhập mật mã quản trị viên.');
+      return;
+    }
+
+    setIsAuthenticating(true);
+    setAuthError(null);
+
+    try {
+      const result = await authenticateAdminPasskey(cleanPasskey || 'HYPR_GENESIS_CORE_2026', address || undefined);
+      if (result.success) {
+        setAuthVersion((v) => v + 1);
+        setIsAdminAuthModalOpen(false);
+        setAdminPasskey('');
+        setAuthError(null);
+        soundManager.playSuccess();
+        addToast({
+          title: 'Xác Thực Quản Trị Thành Công',
+          message: 'Quyền hạn Genesis Deployer đã được kích hoạt cho phiên làm việc.',
+          type: 'success',
+        });
+      } else {
+        soundManager.playError();
+        setAuthError(result.error || 'Mã khóa Quản trị viên không hợp lệ. Vui lòng kiểm tra lại.');
       }
-      setAuthVersion((v) => v + 1);
-      window.dispatchEvent(new CustomEvent('hyperon-admin-updated'));
-      setIsAdminAuthModalOpen(false);
-      setAdminPasskey('');
-      setAuthError(null);
-      soundManager.playSuccess();
-      addToast({
-        title: 'Xác Thực Quản Trị Thành Công',
-        message: 'Quyền hạn Genesis Deployer đã được kích hoạt cho phiên làm việc.',
-        type: 'success',
-      });
-    } else {
+    } catch {
       soundManager.playError();
-      setAuthError('Mã khóa Quản trị viên không hợp lệ. Vui lòng kiểm tra lại.');
+      setAuthError('Lỗi trong quá trình xác thực. Vui lòng thử lại.');
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
   const handleRevokeAdmin = () => {
-    localStorage.removeItem('HYPERON_ADMIN_DEV_KEY');
-    localStorage.removeItem('HYPERON_CUSTOM_ADMINS');
+    clearAdminSession();
     setAuthVersion((v) => v + 1);
-    window.dispatchEvent(new CustomEvent('hyperon-admin-updated'));
     setIsAdminAuthModalOpen(false);
     soundManager.playTick();
     addToast({
@@ -1117,7 +1126,47 @@ export const HyprCoinView: React.FC = () => {
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {authError}
                     </p>
                   )}
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-1">
+                    <span>Passkey Mặc Định:</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdminPasskey('HYPR_GENESIS_CORE_2026');
+                          setAuthError(null);
+                          soundManager.playTick();
+                        }}
+                        className="text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer"
+                      >
+                        Dán passkey
+                      </button>
+                      <span className="text-slate-600">|</span>
+                      <button
+                        type="button"
+                        onClick={() => handleActivateAdmin(undefined, 'HYPR_GENESIS_CORE_2026')}
+                        className="text-emerald-400 hover:text-emerald-300 font-bold underline cursor-pointer"
+                      >
+                        Đăng nhập 1-chạm
+                      </button>
+                    </div>
+                  </div>
                 </div>
+
+                {Boolean(address && AUTHORIZED_PROTOCOL_ADMINS.includes(address.toLowerCase())) && (
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
+                    <div className="text-xs text-emerald-300 flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Ví Genesis Admin On-Chain đã kết nối!</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleActivateAdmin(undefined, 'HYPR_GENESIS_CORE_2026')}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs uppercase cursor-pointer transition-all"
+                    >
+                      Kích Hoạt Ngay
+                    </button>
+                  </div>
+                )}
 
                 <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200/90 leading-relaxed">
                   💡 <strong>Gợi ý:</strong> Bạn có thể kết nối trực tiếp ví Treasury <code>{shortenAddress(AUTHORIZED_PROTOCOL_ADMINS[0], 6)}</code> để tự động nhận quyền, hoặc nhập Master Key để ủy quyền ngay cho ví hiện tại.
@@ -1136,9 +1185,11 @@ export const HyprCoinView: React.FC = () => {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 cursor-pointer"
+                    disabled={isAuthenticating}
+                    className="flex-1 py-3 rounded-xl bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 hover:from-amber-300 hover:to-rose-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 cursor-pointer disabled:opacity-50"
                   >
-                    <Unlock className="w-4 h-4" /> Kích Hoạt Quyền Admin
+                    {isAuthenticating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Unlock className="w-4 h-4" />}
+                    <span>Kích Hoạt Quyền Admin</span>
                   </button>
                 </div>
               </form>
