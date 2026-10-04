@@ -12,18 +12,8 @@ import { ApprovalEngine } from '../lib/approvalEngine';
 import { TransactionSyncEngine } from '../lib/transactionSync';
 import { resolveProviderForWallet, registerAnnouncedProvider } from '../lib/wallet/providerDiscovery';
 import { walletConnectManager } from '../lib/wallet/walletConnectManager';
-import { EIP1193Provider, EIP6963ProviderDetail } from '../lib/wallet/types';
-
-export type WalletLifecycleState =
-  | 'DISCONNECTED'
-  | 'CONNECTING'
-  | 'CONNECTED'
-  | 'RECONNECTING'
-  | 'CHAIN_SWITCHING'
-  | 'WRONG_CHAIN'
-  | 'ERROR';
-
-export type { SupportedWalletType, EIP6963ProviderInfo, EIP6963ProviderDetail } from '../lib/wallet/types';
+import { EIP1193Provider, EIP6963ProviderDetail, EIP6963ProviderInfo, SupportedWalletType, WalletLifecycleState } from '../lib/wallet/types';
+export type { SupportedWalletType, EIP6963ProviderInfo, EIP6963ProviderDetail, WalletLifecycleState };
 
 export interface RecentWalletAccount {
   type: SupportedWalletType;
@@ -281,7 +271,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         {
           type: wType,
           address: addr,
-          name: name || (wType === 'sandbox' ? 'Institutional Sandbox' : `${wType?.toUpperCase() || 'EVM'} (${addr.slice(0, 6)}...${addr.slice(-4)})`),
+          name: name || `${wType ? wType.toUpperCase() : 'EVM'} (${addr.slice(0, 6)}...${addr.slice(-4)})`,
           lastConnected: Date.now(),
         },
         ...filtered,
@@ -301,11 +291,6 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return updated;
     });
-  };
-
-  // Switch sandbox profile (Deprecated in production)
-  const switchSandboxAccount = (_index: number) => {
-    // Production mode operates strictly on real Web3 connections and on-chain addresses
   };
 
   // Helper to safely get the provider for a wallet type
@@ -832,7 +817,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setLifecycleState('CHAIN_SWITCHING');
 
     const provider = activeCustomProvider || resolveProviderForWallet(walletType, discoveredProviders);
-    if (provider && provider.request && walletType !== 'sandbox') {
+    if (provider && provider.request) {
       const chainConfig = getChainConfig(validated);
       const chainHex = chainConfig.hexChainId;
       try {

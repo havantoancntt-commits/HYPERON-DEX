@@ -67,7 +67,7 @@ export const LaunchpadView: React.FC = () => {
         message: 'Please connect your Web3 wallet to commit funds to this verified IDO.',
         type: 'warning',
       });
-      connectWallet('demo');
+      openConnectModal();
       return;
     }
 

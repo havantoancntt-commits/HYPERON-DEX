@@ -76,7 +76,7 @@ export const WalletConnectionModal: React.FC = () => {
     switchWallet,
     disconnectWallet,
     switchChain,
-    impersonateAddress,
+    connectWatchOnly,
     discoveredProviders,
     recentAccounts,
     removeRecentAccount,
@@ -852,7 +852,7 @@ export const WalletConnectionModal: React.FC = () => {
                       >
                         <button
                           onClick={() => {
-                            impersonateAddress(ra.address, ra.name || 'Recent Wallet');
+                            connectWatchOnly(ra.address, ra.name || 'Recent Wallet');
                             soundManager.playSuccess();
                             closeConnectModal();
                           }}
@@ -1021,7 +1021,7 @@ export const WalletConnectionModal: React.FC = () => {
                 onClick={() => {
                   if (!manualAddressInput.trim()) return;
                   try {
-                    impersonateAddress(manualAddressInput.trim(), 'Watch-Only Portfolio');
+                    connectWatchOnly(manualAddressInput.trim(), 'Watch-Only Portfolio');
                     soundManager.playSuccess();
                     addToast({
                       title: 'Chế độ theo dõi kích hoạt',

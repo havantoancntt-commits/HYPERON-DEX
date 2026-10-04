@@ -66,7 +66,7 @@ export const AccountDetailsModal: React.FC = () => {
     authenticateSiwe,
     disconnectWallet,
     switchWallet,
-    impersonateAddress,
+    connectWatchOnly,
     recentAccounts,
     removeRecentAccount,
     discoveredProviders,
@@ -156,18 +156,18 @@ export const AccountDetailsModal: React.FC = () => {
     }
   };
 
-  const handleImpersonate = (addrToUse?: string, label?: string) => {
+  const handleWatchOnly = (addrToUse?: string, label?: string) => {
     setImpersonateError(null);
     const target = addrToUse || impersonateInput.trim();
     if (!target.startsWith('0x') || target.length !== 42) {
-      setImpersonateError('EVM address must start with 0x and have exactly 42 characters.');
+      setImpersonateError('Địa chỉ ví EVM phải bắt đầu bằng 0x và có đúng 42 ký tự.');
       return;
     }
     try {
-      impersonateAddress(target, label);
+      connectWatchOnly(target, label);
       addToast({
-        title: 'Watch-Only Account Activated',
-        message: `Now inspecting portfolio for ${shortenAddress(target, 6)} in read-only mode.`,
+        title: 'Chế độ theo dõi kích hoạt',
+        message: `Đang xem danh mục của ${shortenAddress(target, 6)} ở chế độ chỉ đọc.`,
         type: 'info',
       });
       setImpersonateInput('');
@@ -498,22 +498,22 @@ export const AccountDetailsModal: React.FC = () => {
                   <span className="text-[10px] text-slate-400 font-mono">Read-Only Safe</span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Enter any public Ethereum or L2 address to test swap routes, review portfolio breakdown, and simulate trades without exposing private keys.
+                  Nhập địa chỉ ví Ethereum hoặc Layer 2 công khai để kiểm tra số dư, danh mục và thanh khoản on-chain theo thời gian thực (chế độ chỉ xem an toàn).
                 </p>
 
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="0x... paste any EVM address"
+                    placeholder="0x... dán địa chỉ ví EVM"
                     value={impersonateInput}
                     onChange={(e) => setImpersonateInput(e.target.value)}
                     className="flex-1 bg-black/50 border border-white/10 focus:border-amber-500/50 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 font-mono outline-none"
                   />
                   <button
-                    onClick={() => handleImpersonate()}
+                    onClick={() => handleWatchOnly()}
                     className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold rounded-xl cursor-pointer transition-colors"
                   >
-                    Inspect
+                    Kiểm Tra
                   </button>
                 </div>
 
@@ -527,13 +527,13 @@ export const AccountDetailsModal: React.FC = () => {
                 {/* Quick Presets */}
                 <div className="pt-1">
                   <div className="text-[10px] text-slate-400 font-mono uppercase tracking-wider mb-1.5">
-                    Quick Whales:
+                    Ví Cá Voi Tiêu Biểu:
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {WATCH_PRESETS.map((preset) => (
                       <button
                         key={preset.address}
-                        onClick={() => handleImpersonate(preset.address, preset.label)}
+                        onClick={() => handleWatchOnly(preset.address, preset.label)}
                         className="text-[10px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-amber-500/15 text-slate-300 hover:text-amber-300 border border-white/10 hover:border-amber-500/30 transition-colors font-mono cursor-pointer"
                       >
                         {preset.label}

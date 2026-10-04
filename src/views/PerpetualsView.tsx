@@ -35,7 +35,7 @@ export const PerpetualsView: React.FC = () => {
     getLivePrice, 
     addToast 
   } = useExchange();
-  const { isConnected, connectWallet, address } = useWallet();
+  const { isConnected, openConnectModal, address } = useWallet();
 
   const [side, setSide] = useState<'LONG' | 'SHORT'>('LONG');
   const [leverage, setLeverage] = useState<number>(10);
@@ -170,7 +170,7 @@ export const PerpetualsView: React.FC = () => {
         message: 'Please connect your Web3 wallet to submit perpetual contract orders.',
         type: 'warning',
       });
-      connectWallet('demo');
+      openConnectModal();
       return;
     }
 
