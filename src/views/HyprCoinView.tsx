@@ -45,6 +45,7 @@ import {
   KeyRound,
   X,
   Unlock,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 interface TimeframeData {
@@ -529,12 +530,22 @@ export const HyprCoinView: React.FC = () => {
               <button
                 onClick={() => {
                   soundManager.playTick();
+                  setActiveView('admin-console');
+                }}
+                className="px-3.5 py-3 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                title="Mở Bảng Điều Khiển Quản Trị Hệ Thống"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" /> Bảng Admin
+              </button>
+              <button
+                onClick={() => {
+                  soundManager.playTick();
                   setIsAdminAuthModalOpen(true);
                 }}
-                className="px-3.5 py-3 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-amber-400/30 text-amber-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                className="px-3.5 py-3 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/10 text-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                 title="Quản lý phiên Quản trị viên"
               >
-                <KeyRound className="w-3.5 h-3.5" /> Quản Lý Admin
+                <KeyRound className="w-3.5 h-3.5" /> Quản Lý Phiên
               </button>
               <button
                 onClick={() => {

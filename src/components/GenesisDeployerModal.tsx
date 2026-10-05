@@ -182,9 +182,6 @@ export const GenesisDeployerModal: React.FC<GenesisDeployerModalProps> = ({ isOp
     }
   }, [isOpen, activeChainId]);
 
-  if (!isOpen) return null;
-
-  const currentActiveHyprAddress = getHyprContractAddress();
   const [authVersion, setAuthVersion] = useState(0);
 
   useEffect(() => {
@@ -194,6 +191,9 @@ export const GenesisDeployerModal: React.FC<GenesisDeployerModalProps> = ({ isOp
   }, []);
 
   const isAdmin = useMemo(() => isAuthorizedDeployer(address), [address, authVersion]);
+  const currentActiveHyprAddress = useMemo(() => getHyprContractAddress(), [authVersion]);
+
+  if (!isOpen || typeof document === 'undefined') return null;
 
   const handleQuickUnlockAdmin = async () => {
     try {
@@ -414,11 +414,15 @@ export const GenesisDeployerModal: React.FC<GenesisDeployerModalProps> = ({ isOp
     }
   };
 
-  if (!isOpen || typeof document === 'undefined') return null;
-
   return createPortal(
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="relative w-full max-w-4xl rounded-3xl bg-[#090D18] border border-cyan-500/30 shadow-2xl overflow-hidden my-auto">
+    <div 
+      className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div 
+        className="relative w-full max-w-4xl rounded-3xl bg-[#090D18] border border-cyan-500/30 shadow-2xl overflow-hidden my-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Glow Header */}
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600" />
         <div className="p-5 sm:p-7 border-b border-white/10 flex items-center justify-between">

@@ -10,6 +10,7 @@ import { SimulationModal } from './components/SimulationModal';
 import { WalletConnectionModal } from './components/WalletConnectionModal';
 import { AccountDetailsModal } from './components/AccountDetailsModal';
 import { ToastContainer } from './components/ToastContainer';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
 import { soundManager } from './lib/sound';
 import { initClientSecurityGuard } from './lib/clientSecurityGuard';
@@ -247,13 +248,15 @@ const MainLayout: React.FC = () => {
 
 export default function App() {
   return (
-    <I18nProvider>
-      <WalletProvider>
-        <ExchangeProvider>
-          <MainLayout />
-        </ExchangeProvider>
-      </WalletProvider>
-    </I18nProvider>
+    <ErrorBoundary fallbackTitle="HYPERON-DEX System Protection">
+      <I18nProvider>
+        <WalletProvider>
+          <ExchangeProvider>
+            <MainLayout />
+          </ExchangeProvider>
+        </WalletProvider>
+      </I18nProvider>
+    </ErrorBoundary>
   );
 }
 
