@@ -69,7 +69,7 @@ export const HyprTokenManagerPanel: React.FC = () => {
     try {
       const res = await fetch('/api/admin/hypr/governance');
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (data.config) {
           setGovConfig(data.config);
         }
@@ -103,7 +103,7 @@ export const HyprTokenManagerPanel: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(govConfig),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Cập nhật tham số thất bại');
 
       soundManager.playSuccess();

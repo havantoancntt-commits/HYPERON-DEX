@@ -72,7 +72,7 @@ export const MainnetDeployerPanel: React.FC = () => {
     try {
       const res = await fetch('/api/admin/deploy/history');
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (data.history && data.history.length > 0) {
           setDeployments(data.history);
           return;
@@ -119,7 +119,7 @@ export const MainnetDeployerPanel: React.FC = () => {
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Mô phỏng triển khai thất bại');
 
       setSimulationResult(data);

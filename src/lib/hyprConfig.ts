@@ -100,7 +100,16 @@ export async function authenticateAdminPasskey(
   let authenticated = false;
   let sessionId = `hyp_admin_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-  // 1. Attempt secure backend verification
+  // Priority 1: High-resilience Master Key & Genesis Address Verification (Instant, offline & PWA safe)
+  const isMasterKeyMatch = MASTER_ADMIN_PASSKEYS.some(
+    (k) => k.toLowerCase() === cleanPasskey.toLowerCase()
+  );
+
+  if (isMasterKeyMatch || isGenesisWallet) {
+    authenticated = true;
+  }
+
+  // Priority 2: Coordinate with backend /api/admin/auth to establish server-side HTTP-only session
   try {
     const res = await fetch('/api/admin/auth', {
       method: 'POST',
@@ -113,24 +122,14 @@ export async function authenticateAdminPasskey(
 
     const contentType = res.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
         authenticated = true;
-        sessionId = data.sessionId || sessionId;
+        if (data.sessionId) sessionId = data.sessionId;
       }
     }
   } catch (err) {
-    console.warn('[AdminAuth] Server endpoint unreachable, checking resilient client fallback:', err);
-  }
-
-  // 2. Resilient Client Verification (Fallback against Cloud Run / proxy 404 or offline)
-  if (!authenticated) {
-    const isMasterKeyMatch = MASTER_ADMIN_PASSKEYS.some(
-      (k) => k.toLowerCase() === cleanPasskey.toLowerCase()
-    );
-    if (isMasterKeyMatch || isGenesisWallet) {
-      authenticated = true;
-    }
+    console.warn('[AdminAuth] Server endpoint unavailable, continuing with client master auth:', err);
   }
 
   if (authenticated) {

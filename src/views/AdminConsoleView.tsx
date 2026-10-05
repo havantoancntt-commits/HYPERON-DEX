@@ -118,7 +118,7 @@ export const AdminConsoleView: React.FC = () => {
       const res = await fetch('/api/admin/metrics');
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
         if (data && data.metrics) {
           setMetrics(data.metrics);
           return;
@@ -175,7 +175,7 @@ export const AdminConsoleView: React.FC = () => {
       const contentType = res.headers.get('content-type') || '';
       let data: any = null;
       if (contentType.includes('application/json')) {
-        data = await res.json();
+        data = await res.json().catch(() => null);
       }
       if (!res.ok) throw new Error(data?.error || `Lỗi máy chủ (${res.status})`);
 
