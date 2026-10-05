@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useExchange, ProductView } from '../context/ExchangeContext';
 import { useI18n } from '../context/I18nContext';
 import { useWallet } from '../context/WalletContext';
 import { shortenAddress } from '../lib/utils';
+import { isAuthorizedDeployer } from '../lib/hyprConfig';
 import {
   LayoutDashboard,
   ArrowLeftRight,
@@ -63,6 +64,15 @@ export const Navigation: React.FC = () => {
   const [isMobileMoreDrawerOpen, setIsMobileMoreDrawerOpen] = useState(false);
   const totalWalletApprox = (balances.ETH || 0) * 3200 + (balances.USDC || 0);
 
+  const [authVersion, setAuthVersion] = useState(0);
+  useEffect(() => {
+    const handleAdminUpdate = () => setAuthVersion((v) => v + 1);
+    window.addEventListener('hyperon-admin-updated', handleAdminUpdate);
+    return () => window.removeEventListener('hyperon-admin-updated', handleAdminUpdate);
+  }, []);
+
+  const isAdmin = useMemo(() => isAuthorizedDeployer(address), [address, authVersion]);
+
   const sections: NavSection[] = [
     {
       title: t('nav.section.ai'),
@@ -112,7 +122,15 @@ export const Navigation: React.FC = () => {
       items: [
         { id: 'security-center', label: t('nav.security'), icon: ShieldCheck },
         { id: 'developer-api', label: t('nav.developer'), icon: Code2 },
-        { id: 'admin-console', label: t('nav.admin_console'), icon: SlidersHorizontal },
+        { 
+          id: 'admin-console', 
+          label: t('nav.admin_console'), 
+          icon: SlidersHorizontal,
+          badge: isAdmin ? 'ADMIN' : 'ACCESS',
+          badgeColor: isAdmin 
+            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
+            : 'bg-slate-800 text-slate-400 border-slate-700'
+        },
         { id: 'settings', label: t('nav.settings'), icon: Settings },
       ],
     },
@@ -378,14 +396,23 @@ export const Navigation: React.FC = () => {
                             setActiveView(item.id);
                             setIsMobileMoreDrawerOpen(false);
                           }}
-                          className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-sans transition-all text-left ${
-                            isActive
+                          className={`flex items-center justify-between p-2.5 rounded-xl border text-xs font-sans transition-all text-left ${
+                            item.id === 'admin-console' && isAdmin
+                              ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 font-bold'
+                              : isActive
                               ? 'bg-cyan-500/15 border-cyan-500/30 text-white font-bold'
                               : 'bg-white/[0.03] border-white/[0.06] text-slate-300 hover:text-white hover:bg-white/[0.06]'
                           }`}
                         >
-                          <Icon className="w-4 h-4 text-cyan-400 shrink-0" />
-                          <span className="truncate">{item.label}</span>
+                          <div className="flex items-center gap-2 truncate">
+                            <Icon className={`w-4 h-4 shrink-0 ${item.id === 'admin-console' ? 'text-amber-400' : 'text-cyan-400'}`} />
+                            <span className="truncate">{item.label}</span>
+                          </div>
+                          {item.badge && (
+                            <span className={`text-[9px] font-mono px-1 py-0.2 rounded border font-semibold shrink-0 ${item.badgeColor}`}>
+                              {item.badge}
+                            </span>
+                          )}
                         </button>
                       );
                     })}

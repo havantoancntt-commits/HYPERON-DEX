@@ -1222,7 +1222,7 @@ export async function createAuthenticatedSession(params: {
 export function extractSessionId(req: Request): string | null {
   const cookieHeader = req.headers.cookie;
   if (cookieHeader) {
-    const match = cookieHeader.match(/(?:^|;\s*)hyp_session_id=([^;]+)/);
+    const match = cookieHeader.match(/(?:^|;\s*)(?:hyp_session_id|hyperon_session)=([^;]+)/);
     if (match && match[1]) {
       return decodeURIComponent(match[1]);
     }
@@ -1231,13 +1231,13 @@ export function extractSessionId(req: Request): string | null {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7).trim();
-    if (token.startsWith('hyp_sess_')) {
+    if (token.startsWith('hyp_sess_') || token.startsWith('hyp_admin_')) {
       return token;
     }
   }
 
   const xSession = req.headers['x-session-id'] as string;
-  if (xSession && xSession.trim().startsWith('hyp_sess_')) {
+  if (xSession && (xSession.trim().startsWith('hyp_sess_') || xSession.trim().startsWith('hyp_admin_'))) {
     return xSession.trim();
   }
 
