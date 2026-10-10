@@ -58,6 +58,50 @@ const MainLayout: React.FC = () => {
     soundManager.playTick();
   }, [activeView]);
 
+  // Global Admin Access Shortcut (Ctrl + Shift + A / Cmd + Shift + A) & URL Routing
+  useEffect(() => {
+    const handleUrlRoute = () => {
+      try {
+        const hash = window.location.hash.toLowerCase();
+        const search = window.location.search.toLowerCase();
+        if (
+          hash === '#admin' ||
+          hash === '#admin-console' ||
+          search.includes('view=admin-console') ||
+          search.includes('admin=true') ||
+          search.includes('admin=1')
+        ) {
+          setActiveView('admin-console');
+        }
+      } catch {
+        // Safe fallback in restricted iframes
+      }
+    };
+
+    handleUrlRoute();
+    window.addEventListener('hashchange', handleUrlRoute);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Shortcut: Ctrl + Shift + A or Cmd + Shift + A
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        setActiveView('admin-console');
+        addToastRef.current({
+          title: 'Cổng Quản Trị Hệ Thống',
+          message: 'Đang điều hướng đến Cổng Xác Thực Quản Trị Toàn Quyền...',
+          type: 'info',
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('hashchange', handleUrlRoute);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [setActiveView]);
+
   // Initialize Enterprise Client Anti-Tamper & Anti-Copy Security Guard
   const addToastRef = React.useRef(addToast);
   addToastRef.current = addToast;

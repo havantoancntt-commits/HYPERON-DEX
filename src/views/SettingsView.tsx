@@ -1,11 +1,13 @@
 import React from 'react';
 import { useWallet } from '../context/WalletContext';
 import { useExchange } from '../context/ExchangeContext';
-import { Settings, ShieldCheck, Fuel, Sliders, Globe, Moon, Lock } from 'lucide-react';
+import { Settings, ShieldCheck, Fuel, Sliders, Globe, Moon, Lock, SlidersHorizontal, KeyRound } from 'lucide-react';
+import { isAuthorizedDeployer } from '../lib/hyprConfig';
 
 export const SettingsView: React.FC = () => {
-  const { slippage, setSlippage, mevProtected, setMevProtected, gasSpeed, setGasSpeed } = useWallet();
-  const { addToast } = useExchange();
+  const { slippage, setSlippage, mevProtected, setMevProtected, gasSpeed, setGasSpeed, address } = useWallet();
+  const { addToast, setActiveView } = useExchange();
+  const isAdmin = isAuthorizedDeployer(address);
 
   const handleSave = () => {
     addToast({
@@ -95,6 +97,41 @@ export const SettingsView: React.FC = () => {
               }`}
             />
           </button>
+        </div>
+
+        {/* Protocol Admin Portal Card */}
+        <div className="p-4 rounded-xl bg-gradient-to-r from-[#0E1322] to-[#121A2E] border border-amber-500/20 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+                <SlidersHorizontal className="w-4 h-4 text-amber-400" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white flex items-center gap-2">
+                  <span>Cổng Quản Trị Hệ Thống (Protocol Admin Portal)</span>
+                  {isAdmin ? (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      ACTIVE
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-slate-800 text-slate-400 border border-white/10">
+                      SECURE GATE
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  Dành riêng cho Quản trị viên Super Admin để quản lý Treasury, Mainnet Deployer, Circuit Breaker và Tokenomics.
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveView('admin-console')}
+              className="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-mono text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>{isAdmin ? 'Mở Bảng Admin' : 'Truy Cập Cổng Admin'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Disclaimers & Non-Custody Notice */}

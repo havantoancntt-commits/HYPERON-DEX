@@ -22,6 +22,8 @@ import {
   ExternalLink,
   Zap,
   Compass,
+  SlidersHorizontal,
+  KeyRound,
 } from 'lucide-react';
 
 interface CommandPaletteProps {
@@ -94,6 +96,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     { id: 'liquidity', label: 'Concentrated Liquidity (V3)', desc: 'Provide range-bound liquidity and earn protocol fees', icon: <Layers className="w-4 h-4 text-purple-400" /> },
     { id: 'cross-chain', label: 'Cross-Chain Bridge', desc: 'Atomic cross-chain swaps without wrapped counterparty risk', icon: <Globe className="w-4 h-4 text-teal-400" /> },
     { id: 'perpetuals', label: 'Perpetuals DEX (50x)', desc: 'Decentralized perps with deep shared liquidity', icon: <TrendingUp className="w-4 h-4 text-rose-400" /> },
+    { id: 'hypr-coin', label: 'Hyperon (HYPR) Native Coin', desc: 'Tokenomics, genesis contract, burn & staking rewards', icon: <Zap className="w-4 h-4 text-cyan-400" /> },
+    { id: 'admin-console', label: 'Admin Console & Protocol Governance', desc: 'Cổng quản trị toàn quyền Super Admin (Yêu cầu xác thực passkey)', icon: <SlidersHorizontal className="w-4 h-4 text-amber-400" /> },
     { id: 'settings', label: 'Terminal Settings', desc: 'Configure RPC, sound, layout density & language', icon: <Settings className="w-4 h-4 text-slate-300" /> },
   ];
 

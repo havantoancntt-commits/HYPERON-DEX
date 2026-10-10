@@ -122,17 +122,15 @@ export const Navigation: React.FC = () => {
       items: [
         { id: 'security-center', label: t('nav.security'), icon: ShieldCheck },
         { id: 'developer-api', label: t('nav.developer'), icon: Code2 },
-        ...(isAdmin
-          ? [
-              {
-                id: 'admin-console' as ProductView,
-                label: t('nav.admin_console'),
-                icon: SlidersHorizontal,
-                badge: 'ADMIN',
-                badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-              },
-            ]
-          : []),
+        {
+          id: 'admin-console' as ProductView,
+          label: t('nav.admin_console') || 'Admin Console',
+          icon: SlidersHorizontal,
+          badge: isAdmin ? 'ACTIVE' : 'GATE',
+          badgeColor: isAdmin
+            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+            : 'bg-slate-800 text-slate-400 border-white/10',
+        },
         { id: 'settings', label: t('nav.settings'), icon: Settings },
       ],
     },

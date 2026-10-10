@@ -358,21 +358,23 @@ export const HyprCoinView: React.FC = () => {
                   <ShieldCheck className="w-3.5 h-3.5" /> 100% CERTIK AUDITED
                 </span>
 
-                {/* Authenticated Admin Pill */}
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      soundManager.playTick();
-                      setIsAdminAuthModalOpen(true);
-                    }}
-                    className="px-2.5 py-1 rounded-lg font-mono text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all bg-amber-500/20 border border-amber-400/60 text-amber-300 hover:bg-amber-500/30 shadow-sm"
-                    title="Mở bảng Quản trị Admin"
-                  >
-                    <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                    <span>ADMIN ACTIVE</span>
-                  </button>
-                )}
+                {/* Admin Portal Pill */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    soundManager.playTick();
+                    setIsAdminAuthModalOpen(true);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg font-mono text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+                    isAdmin
+                      ? 'bg-amber-500/20 border border-amber-400/60 text-amber-300 hover:bg-amber-500/30 shadow-sm'
+                      : 'bg-white/[0.04] border border-white/10 text-slate-400 hover:text-white hover:bg-white/[0.08]'
+                  }`}
+                  title={isAdmin ? "Mở bảng Quản trị Admin" : "Xác thực Quản trị Viên HYPR Coin"}
+                >
+                  <KeyRound className={`w-3.5 h-3.5 ${isAdmin ? 'text-amber-400' : 'text-slate-400'}`} />
+                  <span>{isAdmin ? 'ADMIN ACTIVE' : 'ADMIN GATE'}</span>
+                </button>
               </div>
 
               <p className="text-sm text-slate-300 max-w-xl leading-relaxed">
