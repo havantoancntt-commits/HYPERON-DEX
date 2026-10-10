@@ -18,7 +18,6 @@ import {
   DeployedContractRecord,
   isAuthorizedDeployer,
   AUTHORIZED_PROTOCOL_ADMINS,
-  authenticateAdminPasskey,
 } from '../lib/hyprConfig';
 import { encodeDeployData, createPublicClient, http } from 'viem';
 import {
@@ -194,22 +193,6 @@ export const GenesisDeployerModal: React.FC<GenesisDeployerModalProps> = ({ isOp
   const currentActiveHyprAddress = useMemo(() => getHyprContractAddress(), [authVersion]);
 
   if (!isOpen || typeof document === 'undefined') return null;
-
-  const handleQuickUnlockAdmin = async () => {
-    try {
-      const res = await authenticateAdminPasskey('HYPR_GENESIS_CORE_2026', address || undefined);
-      if (res.success) {
-        soundManager.playSuccess();
-        addToast({
-          title: 'Mở Khóa Quản Trị Thành Công',
-          message: 'Quyền hạn Genesis Deployer đã được kích hoạt.',
-          type: 'success',
-        });
-      }
-    } catch {
-      // ignore
-    }
-  };
 
   const switchOrAddNetwork = async (target: NetworkOption): Promise<boolean> => {
     const provider = activeCustomProvider || (typeof window !== 'undefined' ? (window as any).ethereum : null);
@@ -714,15 +697,10 @@ export const GenesisDeployerModal: React.FC<GenesisDeployerModalProps> = ({ isOp
                     </button>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleQuickUnlockAdmin}
-                        className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md transition-all"
-                        title="Kích hoạt nhanh thẩm quyền Genesis Deployer"
-                      >
-                        <ShieldCheck className="w-4 h-4" />
-                        Mở Khóa Admin (1-Chạm)
-                      </button>
+                      <span className="px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-1.5 font-mono">
+                        <Lock className="w-3.5 h-3.5 text-amber-400" />
+                        Chỉ Admin Genesis mới có quyền triển khai
+                      </span>
                     </div>
                   )}
                 </div>

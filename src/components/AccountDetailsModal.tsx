@@ -95,8 +95,8 @@ export const AccountDetailsModal: React.FC = () => {
     navigator.clipboard.writeText(address);
     setCopied(true);
     addToast({
-      title: 'Address Copied',
-      message: `${address} copied to clipboard`,
+      title: 'Đã sao chép địa chỉ ví',
+      message: `${address} đã được lưu vào clipboard`,
       type: 'info',
     });
     setTimeout(() => setCopied(false), 2000);
@@ -108,9 +108,15 @@ export const AccountDetailsModal: React.FC = () => {
       const success = await authenticateSiwe();
       if (success) {
         addToast({
-          title: 'SIWE Cryptographic Auth Verified',
-          message: 'EIP-4361 cryptographic signature validated on HYPERON-DEX.',
+          title: 'Xác thực SIWE thành công',
+          message: 'Chữ ký mật mã học EIP-4361 đã được xác minh trên HYPERON-DEX.',
           type: 'success',
+        });
+      } else {
+        addToast({
+          title: 'Xác thực SIWE thất bại',
+          message: 'Vui lòng xác nhận chữ ký trên ví Web3 của bạn.',
+          type: 'error',
         });
       }
     } finally {
@@ -122,15 +128,15 @@ export const AccountDetailsModal: React.FC = () => {
     if (currentVal) {
       await revokeApproval(token);
       addToast({
-        title: 'Allowance Revoked',
-        message: `Unlimited spending allowance for ${token} has been revoked for zero-trust security.`,
+        title: 'Đã thu hồi hạn mức cấp phép',
+        message: `Hạn mức chi tiêu cho ${token} đã được hủy bỏ để bảo đảm an toàn Zero-Trust.`,
         type: 'info',
       });
     } else {
       await approveToken(token);
       addToast({
-        title: 'Allowance Approved',
-        message: `Permitted router contract to trade ${token}.`,
+        title: 'Đã cấp phép token',
+        message: `Đã cho phép hợp đồng định tuyến swap token ${token}.`,
         type: 'success',
       });
     }

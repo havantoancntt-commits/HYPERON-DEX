@@ -342,7 +342,9 @@ export const Header: React.FC = () => {
                       { id: 'liquidity', label: 'Concentrated Liquidity', icon: Layers },
                       { id: 'cross-chain', label: 'Cross-Chain Bridge', icon: ArrowRightLeft },
                       { id: 'developer-api', label: 'Developer API (SDK)', icon: Terminal },
-                      { id: 'admin-console', label: 'Quản Trị Hệ Thống (Admin)', icon: SlidersHorizontal, isSpecial: true },
+                      ...(isAdmin
+                        ? [{ id: 'admin-console', label: 'Quản Trị Hệ Thống (Admin)', icon: SlidersHorizontal, isSpecial: true }]
+                        : []),
                     ].map((item) => (
                       <button
                         key={item.id}

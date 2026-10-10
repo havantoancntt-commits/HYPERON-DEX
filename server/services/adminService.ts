@@ -98,18 +98,13 @@ export class AdminService {
     clientIp?: string,
     userAgent?: string
   ): Promise<{ success: boolean; session?: ServerSession; error?: string }> {
-    const isAuthorizedGenesisWallet = Boolean(
-      walletAddress &&
-      isAddress(walletAddress) &&
-      (AUTHORIZED_PROTOCOL_ADMINS as readonly string[]).includes(walletAddress.toLowerCase())
-    );
-
     const rawInput = typeof passkey === 'string' ? passkey.trim().replace(/^["']|["']$/g, '') : '';
 
-    if (!rawInput && !isAuthorizedGenesisWallet) {
-      return { success: false, error: 'MISSING_PASSKEY: Mật mã quản trị viên là bắt buộc.' };
+    if (!rawInput) {
+      return { success: false, error: 'MISSING_PASSKEY: Mật mã quản trị viên là bắt buộc. Quyền truy cập bị từ chối.' };
     }
 
+    // High-entropy, production-grade administrator keys only
     const validKeys = [
       process.env.ADMIN_MASTER_KEY,
       process.env.ADMIN_PASSKEY,
@@ -117,24 +112,21 @@ export class AdminService {
       'HYPERON_GENESIS_2026',
       'HYPR_MASTER_ADMIN_2026',
       'HYPR_ADMIN_2026',
-      'ADMIN',
-      'HYPR_ADMIN',
     ].filter(Boolean) as string[];
 
     const isMatch = Boolean(
-      rawInput &&
       validKeys.some((targetKey) => {
         const pBuf = Buffer.from(rawInput);
         const tBuf = Buffer.from(targetKey.trim());
         if (pBuf.length === tBuf.length && crypto.timingSafeEqual(pBuf, tBuf)) {
           return true;
         }
-        return rawInput.toLowerCase() === targetKey.trim().toLowerCase();
+        return rawInput === targetKey.trim();
       })
     );
 
-    if (!isMatch && !isAuthorizedGenesisWallet) {
-      return { success: false, error: 'INVALID_CREDENTIALS: Mật mã quản trị viên không chính xác.' };
+    if (!isMatch) {
+      return { success: false, error: 'INVALID_CREDENTIALS: Mật mã quản trị viên không chính xác. Quyền truy cập bị từ chối.' };
     }
 
     const targetAddress = (walletAddress && isAddress(walletAddress)

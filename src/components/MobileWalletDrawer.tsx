@@ -16,7 +16,9 @@ import {
   ShieldCheck,
   X,
   Sliders,
-  Globe
+  Globe,
+  KeyRound,
+  RefreshCw
 } from 'lucide-react';
 
 interface MobileWalletDrawerProps {
@@ -32,6 +34,8 @@ export const MobileWalletDrawer: React.FC<MobileWalletDrawerProps> = ({ isOpen, 
     balances,
     walletType,
     isWatchOnly,
+    isSiweAuthenticated,
+    authenticateSiwe,
     disconnectWallet,
     switchChain,
     openConnectModal,
@@ -42,6 +46,7 @@ export const MobileWalletDrawer: React.FC<MobileWalletDrawerProps> = ({ isOpen, 
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const [isSwitchingChain, setIsSwitchingChain] = useState<string | null>(null);
+  const [isSigningSiwe, setIsSigningSiwe] = useState(false);
 
   if (!isOpen) return null;
 
@@ -92,6 +97,29 @@ export const MobileWalletDrawer: React.FC<MobileWalletDrawerProps> = ({ isOpen, 
       message: 'Phiên Web3 đã được ngắt kết nối an toàn.',
       type: 'info',
     });
+  };
+
+  const handleSignSiwe = async () => {
+    if (isSigningSiwe) return;
+    setIsSigningSiwe(true);
+    try {
+      const ok = await authenticateSiwe();
+      if (ok) {
+        addToast({
+          title: 'Xác thực SIWE thành công',
+          message: 'Phiên mật mã học EIP-4361 đã được kích hoạt an toàn.',
+          type: 'success',
+        });
+      } else {
+        addToast({
+          title: 'Ký SIWE thất bại',
+          message: 'Vui lòng kiểm tra và phê duyệt yêu cầu trên ví Web3.',
+          type: 'error',
+        });
+      }
+    } finally {
+      setIsSigningSiwe(false);
+    }
   };
 
   const drawerContent = (
@@ -205,6 +233,49 @@ export const MobileWalletDrawer: React.FC<MobileWalletDrawerProps> = ({ isOpen, 
                 </span>
                 <span className="text-slate-500">Flashbots RPC Active</span>
               </div>
+            </div>
+
+            {/* SIWE Cryptographic Verification Card */}
+            <div className="p-3.5 rounded-2xl bg-[#090E18] border border-cyan-500/20 font-mono text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-cyan-300 font-bold text-[11px]">
+                  <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>XÁC THỰC SIWE (EIP-4361)</span>
+                </div>
+                {isSiweAuthenticated ? (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[9px] border border-emerald-500/30">
+                    ĐÃ XÁC THỰC ✓
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold text-[9px] border border-amber-500/30">
+                    CHƯA KÝ CHỮ KÝ
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                {isSiweAuthenticated
+                  ? 'Phiên làm việc an toàn với server đã được kích hoạt. Không tốn gas fee.'
+                  : 'Ký thông điệp mật mã để xác thực danh tính Web3 và mở khóa các tính năng cao cấp.'}
+              </p>
+              {!isSiweAuthenticated && (
+                <button
+                  onClick={handleSignSiwe}
+                  disabled={isSigningSiwe}
+                  className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-cyan-950/40 disabled:opacity-50"
+                >
+                  {isSigningSiwe ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Đang Ký Xác Thực...</span>
+                    </>
+                  ) : (
+                    <>
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>Ký Xác Thực SIWE Ngay (Zero-Gas)</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
 
             {/* Live Balances Snapshot */}

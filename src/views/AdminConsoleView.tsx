@@ -33,8 +33,7 @@ import {
   AUTHORIZED_PROTOCOL_ADMINS, 
   setAdminSession, 
   clearAdminSession,
-  authenticateAdminPasskey,
-  MASTER_ADMIN_PASSKEYS
+  authenticateAdminPasskey
 } from '../lib/hyprConfig';
 import { shortenAddress } from '../lib/utils';
 import { soundManager } from '../lib/sound';
@@ -50,7 +49,7 @@ export const AdminConsoleView: React.FC = () => {
   const [metrics, setMetrics] = useState<any>(null);
   const [metricsLoading, setMetricsLoading] = useState<boolean>(false);
   
-  // Security Authentication Gate (Password is NEVER displayed in UI)
+  // Security Authentication Gate (Password is NEVER displayed or defaulted in UI)
   const [adminPasskey, setAdminPasskey] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -65,13 +64,11 @@ export const AdminConsoleView: React.FC = () => {
     return () => window.removeEventListener('hyperon-admin-updated', handleUpdate);
   }, []);
 
-  const handleActivateAdmin = async (e?: React.FormEvent, customKey?: string) => {
+  const handleActivateAdmin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const keyToUse = customKey !== undefined ? customKey : adminPasskey;
-    const cleanPasskey = keyToUse.trim().replace(/^["']|["']$/g, '');
-    const isGenesisWallet = Boolean(address && AUTHORIZED_PROTOCOL_ADMINS.includes(address.toLowerCase()));
+    const cleanPasskey = adminPasskey.trim().replace(/^["']|["']$/g, '');
 
-    if (!cleanPasskey && !isGenesisWallet) {
+    if (!cleanPasskey) {
       setAuthError('Vui lòng nhập mật mã quản trị viên.');
       return;
     }
@@ -80,7 +77,7 @@ export const AdminConsoleView: React.FC = () => {
     setAuthError(null);
 
     try {
-      const result = await authenticateAdminPasskey(cleanPasskey || 'HYPR_GENESIS_CORE_2026', address || undefined);
+      const result = await authenticateAdminPasskey(cleanPasskey, address || undefined);
       if (result.success) {
         setAdminPasskey('');
         setAuthError(null);
@@ -278,58 +275,16 @@ export const AdminConsoleView: React.FC = () => {
                   <AlertCircle className="w-4 h-4 shrink-0" /> {authError}
                 </p>
               )}
-
-              {Boolean(address && AUTHORIZED_PROTOCOL_ADMINS.includes(address.toLowerCase())) && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
-                  <div className="text-xs text-emerald-300 flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Ví Genesis Admin On-Chain đã kết nối!</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleActivateAdmin(undefined, 'HYPR_GENESIS_CORE_2026')}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs uppercase cursor-pointer transition-all"
-                  >
-                    Kích Hoạt Ngay
-                  </button>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-1">
-                <span>Passkey Genesis Mặc Định:</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAdminPasskey('HYPR_GENESIS_CORE_2026');
-                      setAuthError(null);
-                      soundManager.playTick();
-                    }}
-                    className="text-amber-400 hover:text-amber-300 font-bold underline cursor-pointer"
-                  >
-                    Dán passkey
-                  </button>
-                  <span className="text-slate-600">|</span>
-                  <button
-                    type="button"
-                    onClick={() => handleActivateAdmin(undefined, 'HYPR_GENESIS_CORE_2026')}
-                    className="text-emerald-400 hover:text-emerald-300 font-bold underline cursor-pointer"
-                  >
-                    Đăng nhập 1-chạm
-                  </button>
-                </div>
-              </div>
             </div>
 
-            {/* Instruction Notice (Completely sanitized: NO password leaked!) */}
-            <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/20 text-xs text-amber-200/90 leading-relaxed space-y-1.5">
+            {/* Instruction Notice (Strict Security Policy: Zero leaked credentials) */}
+            <div className="p-4 rounded-2xl bg-[#090D18] border border-white/10 text-xs text-slate-300 leading-relaxed space-y-1.5">
               <div className="font-bold flex items-center gap-1.5 text-amber-300">
-                <KeyRound className="w-3.5 h-3.5" /> Phương Thức Xác Thực Quản Trị:
+                <ShieldCheck className="w-4 h-4 text-emerald-400" /> Chính Sách Bảo Mật Cấp Cao (Zero-Trust):
               </div>
-              <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px]">
-                <li><strong>Cách 1 (Tự động):</strong> Kết nối trực tiếp ví Genesis Treasury đã được ủy quyền on-chain.</li>
-                <li><strong>Cách 2 (Mật mã):</strong> Nhập Master Admin Passkey được cấp bởi Ban Quản Trị Multi-Sig vào ô phía trên để mở khóa phiên làm việc.</li>
-              </ul>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Quyền hạn Quản trị viên Toàn quyền yêu cầu Master Passkey chính xác được cấp độc quyền bởi Ban Quản trị Multi-Sig. Mọi lượt thử nghiệm xác thực không hợp lệ đều được ghi vết và giám sát an ninh mạng.
+              </p>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 pt-2">

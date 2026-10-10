@@ -6,7 +6,7 @@
 export interface ServerTreasuryRecord {
   chainId: string;
   name: string;
-  networkType: 'EVM' | 'Solana' | 'Tron';
+  networkType: 'EVM' | 'Solana' | 'Tron' | 'Bitcoin' | 'TON';
   address: string;
   explorerUrl: string;
   totalCollectedUsd24h: number;
@@ -15,12 +15,22 @@ export interface ServerTreasuryRecord {
 }
 
 export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = {
+  bitcoin: {
+    chainId: 'bitcoin',
+    name: 'Bitcoin Network',
+    networkType: 'Bitcoin',
+    address: 'bc1qxs6c23cv4hpexp0vnrfwgdtzhpjz7j4nhwkhm8',
+    explorerUrl: 'https://mempool.space/address/bc1qxs6c23cv4hpexp0vnrfwgdtzhpjz7j4nhwkhm8',
+    totalCollectedUsd24h: 0.0,
+    totalCollectedLifetimeUsd: 0.0,
+    status: 'ACTIVE',
+  },
   ethereum: {
     chainId: 'ethereum',
     name: 'Ethereum Mainnet',
     networkType: 'EVM',
-    address: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
-    explorerUrl: 'https://etherscan.io/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
+    address: '0x5b97c3De7F387EbEbE0cCe3CaE888448c4832892',
+    explorerUrl: 'https://etherscan.io/address/0x5b97c3De7F387EbEbE0cCe3CaE888448c4832892',
     totalCollectedUsd24h: 0.0,
     totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',
@@ -29,8 +39,8 @@ export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = 
     chainId: 'solana',
     name: 'Solana Network',
     networkType: 'Solana',
-    address: '5zz8MHDqLTV3yBX3Qs2KnmjvMzh6qvbzMC4b6zfXAtt4',
-    explorerUrl: 'https://solscan.io/account/5zz8MHDqLTV3yBX3Qs2KnmjvMzh6qvbzMC4b6zfXAtt4',
+    address: '4GrHndZVMiu6N8xC2aYj6ay6EZN6AUs1CrPpi2PbCZWX',
+    explorerUrl: 'https://solscan.io/account/4GrHndZVMiu6N8xC2aYj6ay6EZN6AUs1CrPpi2PbCZWX',
     totalCollectedUsd24h: 0.0,
     totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',
@@ -39,8 +49,8 @@ export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = 
     chainId: 'bsc',
     name: 'BNB Smart Chain',
     networkType: 'EVM',
-    address: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
-    explorerUrl: 'https://bscscan.com/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
+    address: '0x5b97c3De7F387EbEbE0cCe3CaE888448c4832892',
+    explorerUrl: 'https://bscscan.com/address/0x5b97c3De7F387EbEbE0cCe3CaE888448c4832892',
     totalCollectedUsd24h: 0.0,
     totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',
@@ -49,8 +59,8 @@ export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = 
     chainId: 'tron',
     name: 'TRON Network (TRC-20)',
     networkType: 'Tron',
-    address: 'TLzquLdPwYGf8q71V6E4mPAAnPYgvxQNBj',
-    explorerUrl: 'https://tronscan.org/#/address/TLzquLdPwYGf8q71V6E4mPAAnPYgvxQNBj',
+    address: 'TQ1AP8Kah45mgHQdJqewhQ9i7nbnfA4B7v',
+    explorerUrl: 'https://tronscan.org/#/address/TQ1AP8Kah45mgHQdJqewhQ9i7nbnfA4B7v',
     totalCollectedUsd24h: 0.0,
     totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',
@@ -59,8 +69,8 @@ export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = 
     chainId: 'arbitrum',
     name: 'Arbitrum One',
     networkType: 'EVM',
-    address: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
-    explorerUrl: 'https://arbiscan.io/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
+    address: '0x5b97c3De7F387EbEbE0cCe3CaE888448c4832892',
+    explorerUrl: 'https://arbiscan.io/address/0x5b97c3De7F387EbEbE0cCe3CaE888448c4832892',
     totalCollectedUsd24h: 0.0,
     totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',
@@ -69,8 +79,18 @@ export const SERVER_TREASURY_RECIPIENTS: Record<string, ServerTreasuryRecord> = 
     chainId: 'base',
     name: 'Base L2 (Coinbase)',
     networkType: 'EVM',
-    address: '0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
-    explorerUrl: 'https://basescan.org/address/0x87743246e8cfBc3760a82dAAD00987b1d971a5A9',
+    address: '0x5b97c3De7F387EbEbE0cCe3CaE888448c4832892',
+    explorerUrl: 'https://basescan.org/address/0x5b97c3De7F387EbEbE0cCe3CaE888448c4832892',
+    totalCollectedUsd24h: 0.0,
+    totalCollectedLifetimeUsd: 0.0,
+    status: 'ACTIVE',
+  },
+  ton: {
+    chainId: 'ton',
+    name: 'The Open Network',
+    networkType: 'TON',
+    address: 'UQCMupNgeeNvXxcS2DdhoMmDelysndJFO7mnLmtTcYpLyOsN',
+    explorerUrl: 'https://tonscan.org/address/UQCMupNgeeNvXxcS2DdhoMmDelysndJFO7mnLmtTcYpLyOsN',
     totalCollectedUsd24h: 0.0,
     totalCollectedLifetimeUsd: 0.0,
     status: 'ACTIVE',

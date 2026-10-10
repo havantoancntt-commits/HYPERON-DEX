@@ -122,15 +122,17 @@ export const Navigation: React.FC = () => {
       items: [
         { id: 'security-center', label: t('nav.security'), icon: ShieldCheck },
         { id: 'developer-api', label: t('nav.developer'), icon: Code2 },
-        { 
-          id: 'admin-console', 
-          label: t('nav.admin_console'), 
-          icon: SlidersHorizontal,
-          badge: isAdmin ? 'ADMIN' : 'ACCESS',
-          badgeColor: isAdmin 
-            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' 
-            : 'bg-slate-800 text-slate-400 border-slate-700'
-        },
+        ...(isAdmin
+          ? [
+              {
+                id: 'admin-console' as ProductView,
+                label: t('nav.admin_console'),
+                icon: SlidersHorizontal,
+                badge: 'ADMIN',
+                badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+              },
+            ]
+          : []),
         { id: 'settings', label: t('nav.settings'), icon: Settings },
       ],
     },
@@ -429,10 +431,13 @@ export const Navigation: React.FC = () => {
                     setIsMobileMoreDrawerOpen(false);
                     openConnectModal();
                   }}
-                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2"
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 cursor-pointer active:scale-98 transition-all"
                 >
                   <Wallet className="w-4 h-4" />
-                  <span>Connect Web3 Wallet</span>
+                  <span>Đăng Nhập / Kết Nối Ví</span>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-black/30 border border-white/15 font-mono text-cyan-200">
+                    SIWE
+                  </span>
                 </button>
               ) : (
                 <button
@@ -440,10 +445,10 @@ export const Navigation: React.FC = () => {
                     setIsMobileMoreDrawerOpen(false);
                     setIsMobileWalletDrawerOpen(true);
                   }}
-                  className="w-full py-2.5 rounded-2xl bg-[#0D121F] border border-emerald-500/30 text-emerald-300 font-mono text-xs flex items-center justify-center gap-2"
+                  className="w-full py-2.5 rounded-2xl bg-[#0D121F] border border-emerald-500/30 text-emerald-300 font-mono text-xs flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span>Wallet: {shortenAddress(address, 4)}</span>
+                  <span>Ví: {shortenAddress(address, 4)}</span>
                 </button>
               )}
             </div>

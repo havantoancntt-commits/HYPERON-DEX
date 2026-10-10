@@ -9,19 +9,6 @@ export const AUTHORIZED_PROTOCOL_ADMINS: string[] = [
 ];
 
 /**
- * Protocol Master Passkeys recognized by the authentication system.
- * Sent to server-side /api/admin/auth for verification and session issuance.
- */
-export const MASTER_ADMIN_PASSKEYS: string[] = [
-  'HYPR_GENESIS_CORE_2026',
-  'HYPERON_GENESIS_2026',
-  'HYPR_MASTER_ADMIN_2026',
-  'HYPR_ADMIN_2026',
-  'ADMIN',
-  'HYPR_ADMIN',
-];
-
-/**
  * Check if active session holds Protocol Admin deployment permissions.
  * STRICT SECURITY BOUNDARY:
  * Decided solely by an active, unexpired, server-issued session token.
@@ -30,12 +17,18 @@ export const MASTER_ADMIN_PASSKEYS: string[] = [
 export function isAuthorizedDeployer(walletAddress?: string | null): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    const token =
-      sessionStorage.getItem('HYPERON_ADMIN_SESSION_TOKEN') ||
-      localStorage.getItem('HYPERON_ADMIN_SESSION_TOKEN');
-    const expiresAtStr =
-      sessionStorage.getItem('HYPERON_ADMIN_EXPIRES_AT') ||
-      localStorage.getItem('HYPERON_ADMIN_EXPIRES_AT');
+    // Purge legacy persistent admin keys from localStorage to prevent lingering admin access
+    if (localStorage.getItem('HYPERON_ADMIN_SESSION_TOKEN')) {
+      localStorage.removeItem('HYPERON_ADMIN_SESSION_TOKEN');
+      localStorage.removeItem('HYPERON_ADMIN_EXPIRES_AT');
+      localStorage.removeItem('HYPERON_ADMIN_ADDRESS');
+      localStorage.removeItem('HYPERON_ADMIN_ACTIVE');
+      localStorage.removeItem('HYPERON_ADMIN_DEV_KEY');
+    }
+
+    // STRICT INVARIANT: Admin authorization is strictly ephemeral in sessionStorage
+    const token = sessionStorage.getItem('HYPERON_ADMIN_SESSION_TOKEN');
+    const expiresAtStr = sessionStorage.getItem('HYPERON_ADMIN_EXPIRES_AT');
 
     if (!token) return false;
 
@@ -44,9 +37,7 @@ export function isAuthorizedDeployer(walletAddress?: string | null): boolean {
       return false;
     }
 
-    const boundAddress =
-      sessionStorage.getItem('HYPERON_ADMIN_ADDRESS') ||
-      localStorage.getItem('HYPERON_ADMIN_ADDRESS');
+    const boundAddress = sessionStorage.getItem('HYPERON_ADMIN_ADDRESS');
 
     if (walletAddress && boundAddress && walletAddress.toLowerCase() !== boundAddress.toLowerCase()) {
       return false;
@@ -61,10 +52,7 @@ export function isAuthorizedDeployer(walletAddress?: string | null): boolean {
 export function getAdminSessionToken(): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    return (
-      sessionStorage.getItem('HYPERON_ADMIN_SESSION_TOKEN') ||
-      localStorage.getItem('HYPERON_ADMIN_SESSION_TOKEN')
-    );
+    return sessionStorage.getItem('HYPERON_ADMIN_SESSION_TOKEN');
   } catch {
     return null;
   }
@@ -73,16 +61,20 @@ export function getAdminSessionToken(): string | null {
 export function setAdminSession(token: string, address?: string, expiresAt?: number): void {
   if (typeof window === 'undefined') return;
   try {
-    const exp = expiresAt || Date.now() + 24 * 60 * 60 * 1000;
+    const exp = expiresAt || Date.now() + 2 * 60 * 60 * 1000;
     sessionStorage.setItem('HYPERON_ADMIN_SESSION_TOKEN', token);
     sessionStorage.setItem('HYPERON_ADMIN_EXPIRES_AT', String(exp));
-    localStorage.setItem('HYPERON_ADMIN_SESSION_TOKEN', token);
-    localStorage.setItem('HYPERON_ADMIN_EXPIRES_AT', String(exp));
 
     if (address) {
       sessionStorage.setItem('HYPERON_ADMIN_ADDRESS', address.toLowerCase());
-      localStorage.setItem('HYPERON_ADMIN_ADDRESS', address.toLowerCase());
     }
+
+    // Ensure zero localStorage persistence for admin privileges
+    localStorage.removeItem('HYPERON_ADMIN_SESSION_TOKEN');
+    localStorage.removeItem('HYPERON_ADMIN_EXPIRES_AT');
+    localStorage.removeItem('HYPERON_ADMIN_ADDRESS');
+    localStorage.removeItem('HYPERON_ADMIN_ACTIVE');
+    localStorage.removeItem('HYPERON_ADMIN_DEV_KEY');
 
     window.dispatchEvent(new CustomEvent('hyperon-admin-updated'));
   } catch (err) {
