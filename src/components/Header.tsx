@@ -45,7 +45,8 @@ import {
   Check,
   Layers,
   Lock,
-  SlidersHorizontal
+  SlidersHorizontal,
+  KeyRound
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -67,7 +68,25 @@ export const Header: React.FC = () => {
     openConnectModal,
     openAccountModal,
     isSiweAuthenticated,
+    discoveredProviders,
   } = useWallet();
+
+  // Detect installed browser extension for smart header login prompt
+  const detectedWalletName = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    const win = window as any;
+    if (win.rabby || win.ethereum?.isRabby) return 'Rabby';
+    if (win.trustwallet || win.ethereum?.isTrust) return 'Trust Wallet';
+    if (win.ethereum?.isMetaMask && !win.ethereum?.isRabby) return 'MetaMask';
+    if (win.okxwallet || win.ethereum?.isOkxWallet) return 'OKX';
+    if (win.phantom?.ethereum) return 'Phantom';
+    if (win.coinbaseWalletExtension) return 'Coinbase';
+    if (win.bitkeep?.ethereum) return 'Bitget';
+    if (discoveredProviders && discoveredProviders.length > 0) {
+      return discoveredProviders[0].info.name;
+    }
+    return null;
+  }, [discoveredProviders]);
 
   const { 
     activeView,
@@ -544,30 +563,80 @@ export const Header: React.FC = () => {
             <button
               onClick={openConnectModal}
               id="top-header-connect-wallet-btn"
-              className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-cyan-900/40 cursor-pointer active:scale-95 border border-cyan-400/30 shrink-0"
-              title="Mở cổng kết nối ví Web3 (Trust Wallet, MetaMask, OKX, Binance...)"
+              className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-blue-600 via-cyan-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-cyan-900/40 cursor-pointer active:scale-95 border border-cyan-400/30 shrink-0 group relative overflow-hidden"
+              title="Mở cổng kết nối ví Web3 & Đăng nhập SIWE EIP-4361"
             >
-              <Wallet className="w-4 h-4" />
-              <span className="hidden sm:inline">Kết Nối Ví</span>
-              <span className="sm:hidden">Ví Web3</span>
+              <div className="w-2 h-2 rounded-full bg-cyan-300 animate-ping shrink-0" />
+              <Wallet className="w-4 h-4 shrink-0" />
+              {detectedWalletName ? (
+                <>
+                  <span className="hidden sm:inline">Kết Nối {detectedWalletName}</span>
+                  <span className="sm:hidden">Ví {detectedWalletName}</span>
+                </>
+              ) : (
+                <>
+                  <span className="hidden sm:inline">Đăng Nhập / Kết Nối Ví</span>
+                  <span className="sm:hidden">Đăng Nhập</span>
+                </>
+              )}
+              <span className="hidden lg:inline text-[9px] px-1.5 py-0.2 rounded bg-black/30 border border-white/10 font-mono text-cyan-200">
+                SIWE
+              </span>
             </button>
           ) : (
             <div className="flex items-center gap-1.5 bg-[#0D111A] border border-cyan-500/30 rounded-xl p-1 shadow-sm shrink-0">
+              {/* Native Balance Quick Snippet */}
+              <div className="hidden sm:flex items-center gap-1 px-2 py-0.5 font-mono text-[11px] text-slate-300 border-r border-white/10">
+                <span className="text-cyan-400 font-bold">{(balances.ETH || 0).toFixed(3)}</span>
+                <span className="text-slate-400 text-[10px]">ETH</span>
+              </div>
+
+              {/* SIWE Security Badge & Quick Trigger */}
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('hyperon:open_siwe_tab'));
+                  openConnectModal();
+                }}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                  isSiweAuthenticated
+                    ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
+                    : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 animate-pulse'
+                }`}
+                title={isSiweAuthenticated ? 'Đã xác thực chữ ký SIWE EIP-4361 (Nhấn để xem phiên)' : 'Chưa ký xác thực SIWE EIP-4361 (Nhấn để ký ngay)'}
+              >
+                {isSiweAuthenticated ? (
+                  <>
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="hidden md:inline">SIWE ✓</span>
+                  </>
+                ) : (
+                  <>
+                    <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden md:inline">Ký SIWE</span>
+                  </>
+                )}
+              </button>
+
+              {/* Account Address Modal Trigger */}
               <button
                 onClick={openAccountModal}
                 className="flex items-center gap-2 px-2.5 py-1 text-xs font-mono font-bold text-slate-200 hover:text-white transition-colors cursor-pointer"
-                title="Quản trị ví & số dư"
+                title="Quản trị ví & số dư tài khoản"
               >
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 <span>{shortenAddress(address, 4)}</span>
-                {walletType === 'trust' && (
-                  <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-cyan-300 text-[10px] font-sans font-bold">Trust</span>
+                {walletType && walletType !== 'injected' && (
+                  <span className="hidden md:inline px-1.5 py-0.2 rounded bg-blue-500/20 text-cyan-300 text-[9px] font-sans font-bold capitalize">
+                    {walletType}
+                  </span>
                 )}
               </button>
+
+              {/* Switch Wallet Button */}
               <button
                 onClick={openConnectModal}
                 className="px-2 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer font-sans"
-                title="Đổi sang ví khác (Trust Wallet, MetaMask, OKX...)"
+                title="Đổi sang ví khác (Rabby, MetaMask, Trust, OKX...)"
               >
                 Đổi Ví
               </button>
